@@ -2,7 +2,7 @@ import { cp, copyFile, mkdir, readFile, rm, unlink, writeFile } from "node:fs/pr
 import { resolve } from "node:path";
 
 const projectRoot = resolve(import.meta.dirname, "..");
-const sourceDir = resolve(projectRoot, "dist");
+const sourceDir = resolve(projectRoot, "dist-public-source");
 const publicDir = resolve(projectRoot, "dist-public");
 
 await rm(publicDir, { recursive: true, force: true });
@@ -26,6 +26,8 @@ await writeFile(
   serviceWorker.replace('    "./",', '    "./",\n    "./app.html",'),
   "utf8",
 );
+
+await rm(sourceDir, { recursive: true, force: true });
 
 console.log("Sitio público preparado en dist-public:");
 console.log("- / abre la landing");

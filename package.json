@@ -9,7 +9,7 @@
     "dev": "node scripts/dev-full.mjs",
     "dev:web": "vite",
     "build": "vite build",
-    "build:public": "vite build --mode public && node scripts/prepare-public-build.mjs",
+    "build:public": "vite build --mode public --outDir dist-public-source && node scripts/prepare-public-build.mjs",
     "preview": "vite preview",
     "preview:public": "vite preview --outDir dist-public --host 0.0.0.0 --port 4190",
     "mobile:preview": "vite build && vite preview --host 0.0.0.0 --port 4173",
