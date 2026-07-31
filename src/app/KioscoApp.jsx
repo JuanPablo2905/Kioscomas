@@ -39,7 +39,7 @@ import { lookupBarcode } from "../shared/productLookup";
 import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, rolesPorDefecto, seedCuentas, seedDatos } from "./data";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
-const PUBLIC_DEMO_MODE = true;
+const PUBLIC_DEMO_MODE = import.meta.env.VITE_PUBLIC_DEMO === "true";
 const PUBLIC_DEMO_IDENTITY = { usuarioId: "cuenta:2", tenantId: "2", rol: "Dueño", nombre: "María", superAdmin: false, publicDemo: true };
 const DEMO_INTRO_TUTORIAL_KEY = "__demo_intro__";
 const TUTORIAL_VIEW_NAMES = { home: "Inicio", notificaciones: "Notificaciones", stock: "Stock", vitrina: "Vitrina", ventas: "Ventas y caja", compras: "Compras", gastos: "Gastos", clientes: "Clientes", reportes: "Reportes", gestion: "Gestión", administracion: "Administración" };
