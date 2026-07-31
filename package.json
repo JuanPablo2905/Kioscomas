@@ -27,17 +27,17 @@
   "dependencies": {
     "@vitejs/plugin-react": "latest",
     "@zxing/browser": "0.1.5",
+    "autoprefixer": "latest",
     "lucide-react": "latest",
+    "postcss": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "tailwindcss": "^3.4.17",
     "vite": "latest"
   },
   "devDependencies": {
-    "autoprefixer": "latest",
     "electron": "latest",
-    "electron-builder": "latest",
-    "postcss": "latest",
-    "tailwindcss": "^3.4.17"
+    "electron-builder": "latest"
   },
   "build": {
     "appId": "com.kioscoplus.desktop",

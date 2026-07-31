@@ -14,34 +14,34 @@ importers:
       '@zxing/browser':
         specifier: 0.1.5
         version: 0.1.5(@zxing/library@0.21.3)
+      autoprefixer:
+        specifier: latest
+        version: 10.5.4(postcss@8.5.20)
       lucide-react:
         specifier: latest
         version: 1.25.0(react@19.2.7)
+      postcss:
+        specifier: latest
+        version: 8.5.20
       react:
         specifier: latest
         version: 19.2.7
       react-dom:
         specifier: latest
         version: 19.2.7(react@19.2.7)
+      tailwindcss:
+        specifier: ^3.4.17
+        version: 3.4.19
       vite:
         specifier: latest
         version: 8.1.5(@types/node@26.1.1)(jiti@1.21.7)
     devDependencies:
-      autoprefixer:
-        specifier: latest
-        version: 10.5.4(postcss@8.5.20)
       electron:
         specifier: latest
         version: 43.1.1
       electron-builder:
         specifier: latest
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
-      postcss:
-        specifier: latest
-        version: 8.5.20
-      tailwindcss:
-        specifier: ^3.4.17
-        version: 3.4.19
 
 packages:
 
