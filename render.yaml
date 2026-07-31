@@ -17,3 +17,13 @@ services:
       - path: /*
         name: X-Frame-Options
         value: SAMEORIGIN
+  - type: web
+    runtime: node
+    name: kiosco-plus-api
+    plan: free
+    buildCommand: echo "Servidor Kiosco+ listo"
+    startCommand: node server/cloud-server.mjs
+    healthCheckPath: /v1/health
+    envVars:
+      - key: KIOSCO_LOCAL_MODE
+        value: "0"

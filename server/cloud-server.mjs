@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const databasePath = process.env.KIOSCO_CLOUD_DB || path.join(root, "cloud-dev-data", "database.json");
 const dataDirectory = process.env.KIOSCO_CLOUD_DATA_DIR || path.dirname(databasePath);
-const port = Number(process.env.KIOSCO_CLOUD_PORT || 8787);
+// Render and most cloud hosts provide the public port through PORT.
+// KIOSCO_CLOUD_PORT remains available for the local desktop server.
+const port = Number(process.env.PORT || process.env.KIOSCO_CLOUD_PORT || 8787);
 const localMode = process.env.KIOSCO_LOCAL_MODE !== "0";
 const emptyDb = () => ({ schemaVersion: 3, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {} });
 const cleanBarcode = (value) => String(value || "").replace(/\D/g, "").slice(0, 18);
@@ -590,4 +592,6 @@ server.on("error", (error) => {
   console.error(error);
   process.exit(1);
 });
-server.listen(port, "0.0.0.0", () => console.log(`Kiosco Cloud Local: http://127.0.0.1:${port} · datos: ${dataDirectory}`));
+server.listen(port, "0.0.0.0", () => {
+  console.log(`Kiosco Cloud activo en el puerto ${port} · datos: ${dataDirectory}`);
+});
