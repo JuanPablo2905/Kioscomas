@@ -2,7 +2,7 @@ services:
   - type: web
     runtime: static
     name: kiosco-plus
-    buildCommand: corepack enable && pnpm install --prod --frozen-lockfile && pnpm run build:public
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --ignore-scripts && pnpm run build:public
     staticPublishPath: ./dist-public
     headers:
       - path: /*
