@@ -1,0 +1,73 @@
+{
+  "name": "kiosco-app",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.9.0",
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev-full.mjs",
+    "dev:web": "vite",
+    "build": "vite build",
+    "build:public": "vite build --mode public && node scripts/prepare-public-build.mjs",
+    "preview": "vite preview",
+    "preview:public": "vite preview --outDir dist-public --host 0.0.0.0 --port 4190",
+    "mobile:preview": "vite build && vite preview --host 0.0.0.0 --port 4173",
+    "test:views": "node scripts/smoke-views.mjs",
+    "test:functions": "node scripts/functional-tests.mjs",
+    "test:cloud": "node scripts/cloud-integration-tests.mjs",
+    "test:tutorials": "node scripts/tutorial-target-tests.mjs",
+    "test:all": "node scripts/tutorial-target-tests.mjs && node scripts/smoke-views.mjs && node scripts/functional-tests.mjs && vite build",
+    "desktop": "electron .",
+    "desktop:build": "vite build && electron-builder --win portable",
+    "desktop:launcher": "vite build && electron-builder --win portable --config.directories.output=launcher-build --config.portable.artifactName=KioscoPlus-Desarrollo.exe"
+    ,"cloud:dev": "node server/cloud-server.mjs",
+    "dev:full": "node scripts/dev-full.mjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "@zxing/browser": "0.1.5",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "autoprefixer": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "postcss": "latest",
+    "tailwindcss": "^3.4.17"
+  },
+  "build": {
+    "appId": "com.kioscoplus.desktop",
+    "productName": "Kiosco+",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/main.cjs",
+      "desktop/preload.cjs",
+      "desktop/icon.png",
+      "desktop/icon.ico",
+      "desktop/splash.html",
+      "desktop/splash-logo.png",
+      "server/cloud-server.mjs",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "server/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "icon": "desktop/icon.ico",
+      "target": [
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "KioscoPlus-${version}-portable.exe"
+    }
+  }
+}

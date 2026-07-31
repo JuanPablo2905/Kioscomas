@@ -1,0 +1,9 @@
+{
+  "appId": "com.kioscoapp.mobile",
+  "appName": "KioscoApp",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}
