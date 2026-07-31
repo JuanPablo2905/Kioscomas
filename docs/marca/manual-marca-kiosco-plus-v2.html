@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Kiosco+ — Manual de marca</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --petroleo:#1C4A44;
+    --mostaza:#E3A23C;
+    --papel:#F6F1E7;
+    --tinta:#2A241E;
+    --sello:#B8412F;
+    --linea: rgba(42,36,30,0.12);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--papel);
+    color:var(--tinta);
+    font-family:'Space Grotesk', sans-serif;
+    padding:0 0 100px 0;
+  }
+  .wrap{max-width:960px; margin:0 auto; padding:0 28px;}
+
+  /* NAV DOTS */
+  .toc{
+    position:sticky; top:0; z-index:10;
+    background:var(--papel);
+    border-bottom:1px solid var(--linea);
+    padding:14px 0;
+    font-size:12px;
+    display:flex; gap:22px; flex-wrap:wrap;
+    letter-spacing:.04em;
+  }
+  .toc a{color:var(--tinta); opacity:0.55; text-decoration:none; font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:.1em;}
+  .toc a:hover{opacity:1; color:var(--sello);}
+
+  .hero{padding:56px 0 44px;}
+  .eyebrow{font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--sello); font-weight:700; margin-bottom:16px;}
+  h1.brandname{font-family:'Fraunces', serif; font-weight:900; font-size:clamp(44px,8vw,84px); line-height:0.95; letter-spacing:-0.01em; color:var(--petroleo);}
+  .brandname .plus{color:var(--sello); display:inline-block; transform:rotate(-8deg);}
+  .sub{font-size:17px; max-width:520px; margin-top:16px; opacity:0.8; line-height:1.5;}
+
+  .section{padding:52px 0; border-top:1px solid var(--linea); scroll-margin-top:60px;}
+  .label{font-size:13px; letter-spacing:.12em; text-transform:uppercase; font-weight:700; color:var(--petroleo); margin-bottom:26px;}
+
+  /* LOGO LOCKUP */
+  .lockup-box{
+    background:var(--petroleo); border-radius:10px; padding:64px 40px;
+    display:flex; align-items:center; justify-content:center; margin-bottom:20px;
+  }
+  .lockup{display:flex; align-items:baseline; gap:2px;}
+  .lockup .word{font-family:'Fraunces', serif; font-weight:900; font-size:64px; color:var(--papel);}
+  .lockup .plus{font-family:'Fraunces', serif; font-weight:900; font-size:44px; color:var(--mostaza); transform:rotate(-10deg) translateY(2px); display:inline-block;}
+  .lockup-alt{background:var(--papel); border:1px solid var(--linea);}
+  .lockup-alt .word{color:var(--petroleo);}
+  .lockup-alt .plus{color:var(--sello);}
+  .lockup-row{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+
+  /* MONOGRAM GRID */
+  .mono-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:18px;}
+  .mono-tile{aspect-ratio:1; border-radius:20px; display:flex; align-items:center; justify-content:center; border:1px solid var(--linea);}
+  .mono-tile svg{width:60%; height:60%;}
+
+  /* PALETTE */
+  .palette{display:flex; border-radius:8px; overflow:hidden; border:1px solid var(--linea);}
+  .swatch{flex:1; height:120px; display:flex; align-items:flex-end; padding:12px 14px; font-size:12px; font-weight:700; font-family:'Space Mono', monospace;}
+  .swatch .name{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:13px; display:block; margin-bottom:2px;}
+
+  /* TYPE */
+  .type-sample{margin-bottom:30px;}
+  .type-sample .role{font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--sello); font-weight:700; margin-bottom:8px;}
+  .type-sample .display{font-family:'Fraunces', serif; font-weight:700; font-size:38px; color:var(--petroleo); line-height:1.15;}
+  .type-sample .body{font-family:'Space Grotesk', sans-serif; font-size:16px; line-height:1.6; max-width:540px; margin-top:8px;}
+  .type-sample .mono{font-family:'Space Mono', monospace; font-size:14px; opacity:0.75;}
+
+  /* APP ICON MOCK */
+  .app-icons{display:flex; gap:24px; align-items:center; flex-wrap:wrap;}
+  .phone-icon{width:84px; height:84px; border-radius:20px; display:flex; align-items:center; justify-content:center;}
+  .phone-icon svg{width:56%; height:56%;}
+
+  /* RECEIPT MOCK */
+  .receipt{
+    background:white; border:1px solid var(--linea); border-radius:2px;
+    width:280px; padding:24px 22px; font-family:'Space Mono', monospace; font-size:12px;
+    box-shadow:0 12px 30px rgba(42,36,30,0.08);
+  }
+  .receipt .rheader{text-align:center; margin-bottom:14px;}
+  .receipt .rname{font-family:'Fraunces', serif; font-weight:900; font-size:20px; color:var(--petroleo);}
+  .receipt .rname .plus{color:var(--sello); transform:rotate(-10deg); display:inline-block;}
+  .receipt .rline{display:flex; justify-content:space-between; margin-bottom:5px; color:var(--tinta);}
+  .receipt hr{border:none; border-top:1px dashed var(--linea); margin:10px 0;}
+  .receipt .rtotal{font-weight:700; font-size:14px;}
+
+  /* SIGN MOCK */
+  .sign{
+    background:var(--petroleo); border-radius:6px; padding:36px 30px;
+    display:flex; align-items:center; justify-content:center; position:relative;
+    overflow:hidden;
+  }
+  .sign::before{
+    content:""; position:absolute; inset:0;
+    background:repeating-linear-gradient(-45deg, rgba(246,241,231,0.03) 0 12px, transparent 12px 24px);
+  }
+  .sign .signword{font-family:'Fraunces', serif; font-weight:900; font-size:46px; color:var(--papel); position:relative; z-index:1;}
+  .sign .signword .plus{color:var(--mostaza); transform:rotate(-10deg); display:inline-block;}
+
+  /* LOGIN MOCK */
+  .login-mock{
+    background:var(--papel); border:1px solid var(--linea); border-radius:12px;
+    max-width:340px; padding:36px 28px; box-shadow:0 20px 40px rgba(42,36,30,0.10);
+  }
+  .login-mock .lname{font-family:'Fraunces', serif; font-weight:900; font-size:30px; color:var(--petroleo); margin-bottom:6px;}
+  .login-mock .lname .plus{color:var(--sello); transform:rotate(-10deg); display:inline-block;}
+  .login-mock .ltag{font-size:13px; opacity:0.6; margin-bottom:26px;}
+  .login-mock input{
+    width:100%; padding:12px 14px; border:1px solid var(--linea); border-radius:6px;
+    font-family:'Space Grotesk', sans-serif; font-size:14px; margin-bottom:12px; background:white;
+  }
+  .login-mock button{
+    width:100%; padding:13px; border:none; border-radius:6px; background:var(--sello); color:white;
+    font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:14px; margin-top:8px;
+  }
+
+  .why{font-size:14px; line-height:1.7; max-width:620px; opacity:0.8; margin-top:16px;}
+  .why b{color:var(--petroleo);}
+
+  .two-col{display:grid; grid-template-columns:1fr 1fr; gap:32px; align-items:start;}
+  @media (max-width:640px){ .two-col, .lockup-row{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+
+<div class="toc">
+  <div class="wrap" style="display:flex; gap:22px; flex-wrap:wrap;">
+    <a href="#logo">Logo</a>
+    <a href="#mono">Monograma</a>
+    <a href="#paleta">Paleta</a>
+    <a href="#tipografia">Tipografía</a>
+    <a href="#aplicaciones">Aplicaciones</a>
+    <a href="#reglas">Reglas de uso</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="hero">
+    <div class="eyebrow">Manual de marca</div>
+    <h1 class="brandname">Kiosco<span class="plus">+</span></h1>
+    <p class="sub">El mismo mostrador de siempre, con las cuentas claras.</p>
+  </div>
+
+  <div class="section" id="logo">
+    <div class="label">01 — Logotipo</div>
+    <div class="lockup-row">
+      <div class="lockup-box">
+        <div class="lockup"><span class="word">Kiosco</span><span class="plus">+</span></div>
+      </div>
+      <div class="lockup-box lockup-alt">
+        <div class="lockup"><span class="word">Kiosco</span><span class="plus">+</span></div>
+      </div>
+    </div>
+    <p class="why">Versión clara sobre fondo oscuro (petróleo) para cartelería y redes; versión oscura sobre papel para uso en documentos, facturas y web. El "+" siempre inclinado a -10°, nunca derecho.</p>
+  </div>
+
+  <div class="section" id="mono">
+    <div class="label">02 — Monograma K+</div>
+    <div class="mono-grid">
+      <div class="mono-tile" style="background:var(--petroleo);">
+        <svg viewBox="0 0 100 100"><g transform="rotate(-10 50 50)">
+          <text x="46" y="70" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="62" fill="var(--papel)">K</text>
+          <text x="78" y="58" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="44" fill="var(--mostaza)">+</text>
+        </g></svg>
+      </div>
+      <div class="mono-tile" style="background:var(--mostaza);">
+        <svg viewBox="0 0 100 100"><g transform="rotate(-10 50 50)">
+          <text x="46" y="70" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="62" fill="var(--tinta)">K</text>
+          <text x="78" y="58" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="44" fill="var(--sello)">+</text>
+        </g></svg>
+      </div>
+      <div class="mono-tile" style="background:var(--papel); border:1px solid var(--linea);">
+        <svg viewBox="0 0 100 100"><g transform="rotate(-10 50 50)">
+          <text x="46" y="70" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="62" fill="var(--petroleo)">K</text>
+          <text x="78" y="58" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="44" fill="var(--sello)">+</text>
+        </g></svg>
+      </div>
+      <div class="mono-tile" style="background:var(--tinta);">
+        <svg viewBox="0 0 100 100"><g transform="rotate(-10 50 50)">
+          <text x="46" y="70" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="62" fill="var(--papel)">K</text>
+          <text x="78" y="58" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="44" fill="var(--sello)">+</text>
+        </g></svg>
+      </div>
+    </div>
+    <p class="why">Uso principal recomendado: fondo <b>petróleo</b> con "K" en papel y "+" en mostaza — es el que mejor contraste y calidez tiene para ícono de app.</p>
+  </div>
+
+  <div class="section" id="paleta">
+    <div class="label">03 — Paleta</div>
+    <div class="palette">
+      <div class="swatch" style="background:#1C4A44; color:#F6F1E7;"><span class="name">Petróleo</span>#1C4A44</div>
+      <div class="swatch" style="background:#E3A23C; color:#2A241E;"><span class="name">Mostaza</span>#E3A23C</div>
+      <div class="swatch" style="background:#F6F1E7; color:#2A241E;"><span class="name">Papel</span>#F6F1E7</div>
+      <div class="swatch" style="background:#2A241E; color:#F6F1E7;"><span class="name">Tinta</span>#2A241E</div>
+      <div class="swatch" style="background:#B8412F; color:#F6F1E7;"><span class="name">Sello</span>#B8412F</div>
+    </div>
+    <p class="why">Petróleo = marca/seriedad · Mostaza = calidez, se usa para acentos y el "+" sobre fondo oscuro · Sello = alertas, CTAs, el "+" sobre fondo claro · Papel/Tinta = fondo y texto base.</p>
+  </div>
+
+  <div class="section" id="tipografia">
+    <div class="label">04 — Tipografía</div>
+    <div class="type-sample">
+      <div class="role">Display — Fraunces (títulos, logo)</div>
+      <div class="display">Dejá el cuaderno.<br>Empezá a saber.</div>
+    </div>
+    <div class="type-sample">
+      <div class="role">Texto — Space Grotesk (interfaz, copy)</div>
+      <div class="body">Registrá ventas, controlá stock y sabé quién te debe, todo desde el mostrador. Funciona incluso sin internet.</div>
+    </div>
+    <div class="type-sample">
+      <div class="role">Mono — Space Mono (números, tickets, datos)</div>
+      <div class="mono">TOTAL $ 4.850,00 — 12 ítems — Caja #1</div>
+    </div>
+  </div>
+
+  <div class="section" id="aplicaciones">
+    <div class="label">05 — Aplicaciones</div>
+
+    <p class="why" style="margin-top:0; margin-bottom:20px;"><b>Ícono de app / avatar</b></p>
+    <div class="app-icons">
+      <div class="phone-icon" style="background:var(--petroleo); border-radius:20px;">
+        <svg viewBox="0 0 100 100"><g transform="rotate(-10 50 50)">
+          <text x="46" y="70" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="62" fill="var(--papel)">K</text>
+          <text x="78" y="58" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="44" fill="var(--mostaza)">+</text>
+        </g></svg>
+      </div>
+      <div class="phone-icon" style="background:var(--petroleo); border-radius:50%;">
+        <svg viewBox="0 0 100 100"><g transform="rotate(-10 50 50)">
+          <text x="46" y="70" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="62" fill="var(--papel)">K</text>
+          <text x="78" y="58" text-anchor="middle" font-family="Fraunces, serif" font-weight="900" font-size="44" fill="var(--mostaza)">+</text>
+        </g></svg>
+      </div>
+    </div>
+
+    <div style="height:40px;"></div>
+
+    <div class="two-col">
+      <div>
+        <p class="why" style="margin-top:0; margin-bottom:16px;"><b>Cartel de vidriera</b></p>
+        <div class="sign">
+          <div class="signword">Kiosco<span class="plus">+</span></div>
+        </div>
+      </div>
+      <div>
+        <p class="why" style="margin-top:0; margin-bottom:16px;"><b>Recibo / ticket</b></p>
+        <div class="receipt">
+          <div class="rheader">
+            <div class="rname">Kiosco<span class="plus">+</span></div>
+          </div>
+          <div class="rline"><span>Gaseosa 500ml</span><span>$1.200</span></div>
+          <div class="rline"><span>Alfajor x2</span><span>$1.400</span></div>
+          <div class="rline"><span>Cigarrillos</span><span>$2.250</span></div>
+          <hr>
+          <div class="rline rtotal"><span>TOTAL</span><span>$4.850</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:40px;"></div>
+
+    <p class="why" style="margin-top:0; margin-bottom:16px;"><b>Pantalla de login</b></p>
+    <div class="login-mock">
+      <div class="lname">Kiosco<span class="plus">+</span></div>
+      <div class="ltag">Tu negocio, bajo control</div>
+      <input type="text" placeholder="Usuario" disabled>
+      <input type="password" placeholder="Contraseña" disabled>
+      <button>Entrar</button>
+    </div>
+
+  </div>
+
+  <div class="section" id="reglas">
+    <div class="label">06 — Reglas de uso</div>
+
+    <p class="why" style="margin-top:0;"><b>Regla fija del "+"</b>: siempre inclinado -10° (nunca derecho), más chico que la letra o palabra que acompaña, y de un color distinto tomado de la paleta. Aplica igual al logotipo completo y al monograma.</p>
+
+    <p class="why"><b>Combinaciones de color válidas:</b></p>
+    <p class="why" style="margin-top:-8px;">
+      · Fondo Petróleo + texto/K en Papel + "+" en Mostaza (versión principal)<br>
+      · Fondo Papel + texto/K en Petróleo + "+" en Sello (versión clara)<br>
+      · No mezclar el "+" en Mostaza sobre fondo claro, ni en Sello sobre fondo oscuro.
+    </p>
+
+    <p class="why"><b>Qué no hacer:</b></p>
+    <p class="why" style="margin-top:-8px;">
+      · No usar otros colores fuera de la paleta indicada.<br>
+      · No usar tipografías redondeadas "cute" o infantiles.<br>
+      · No agregar íconos de carrito de compras genéricos ni clichés visuales de "fintech".
+    </p>
+
+  </div>
+
+</div>
+</body>
+</html>

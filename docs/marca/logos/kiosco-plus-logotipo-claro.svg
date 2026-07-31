@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 160" role="img" aria-labelledby="title description">
+  <title id="title">Kiosco+ — logotipo sobre fondo claro</title>
+  <desc id="description">Palabra Kiosco en petróleo y signo más sello, inclinado diez grados hacia la izquierda.</desc>
+  <style>
+    @font-face {
+      font-family: "Fraunces Brand";
+      src: url("../../../public/fraunces-brand.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 900;
+    }
+  </style>
+  <g font-family="'Fraunces Brand', Fraunces, Georgia, serif" font-weight="900">
+    <text x="12" y="118" font-size="118" letter-spacing="-1" fill="#1C4A44">Kiosco</text>
+    <text x="416" y="91" font-size="78" fill="#B8412F" transform="rotate(-10 416 91)">+</text>
+  </g>
+</svg>

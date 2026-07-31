@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title description">
+  <title id="title">K+ — monograma sobre fondo claro</title>
+  <desc id="description">Fondo papel, K petróleo y signo más sello, inclinados diez grados hacia la izquierda.</desc>
+  <style>
+    @font-face {
+      font-family: "Fraunces Brand";
+      src: url("../../../public/fraunces-brand.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 900;
+    }
+  </style>
+  <rect width="100" height="100" rx="20" fill="#F6F1E7"/>
+  <g transform="rotate(-10 50 50)" font-family="'Fraunces Brand', Fraunces, Georgia, serif" font-weight="900">
+    <text x="46" y="70" text-anchor="middle" font-size="62" fill="#1C4A44">K</text>
+    <text x="78" y="58" text-anchor="middle" font-size="44" fill="#B8412F">+</text>
+  </g>
+</svg>

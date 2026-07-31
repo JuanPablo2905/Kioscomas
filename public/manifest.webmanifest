@@ -1,0 +1,23 @@
+{
+  "id": "./",
+  "name": "Kiosco+",
+  "short_name": "Kiosco+",
+  "description": "Gestión de stock, ventas y caja para pequeños comercios.",
+  "lang": "es-AR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#F6F1E7",
+  "theme_color": "#1C4A44",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "./pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

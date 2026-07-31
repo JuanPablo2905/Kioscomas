@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 160" role="img" aria-labelledby="title description">
+  <title id="title">Kiosco+ — logotipo principal</title>
+  <desc id="description">Palabra Kiosco color papel y signo más mostaza sobre fondo petróleo.</desc>
+  <style>
+    @font-face {
+      font-family: "Fraunces Brand";
+      src: url("../../../public/fraunces-brand.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 900;
+    }
+  </style>
+  <rect width="540" height="160" rx="14" fill="#1C4A44"/>
+  <g font-family="'Fraunces Brand', Fraunces, Georgia, serif" font-weight="900">
+    <text x="12" y="118" font-size="118" letter-spacing="-1" fill="#F6F1E7">Kiosco</text>
+    <text x="416" y="91" font-size="78" fill="#E3A23C" transform="rotate(-10 416 91)">+</text>
+  </g>
+</svg>
