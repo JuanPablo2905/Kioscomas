@@ -12,6 +12,7 @@ const CONFLICTS_KEY = "__cloud_sync_conflicts_v1";
 const listeners = new Set();
 let status = { mode: "local", state: "idle", pending: 0, conflicts: 0, lastSyncAt: null, error: null };
 let context = { tenantId: null };
+let contextRevision = 0;
 
 const readJson = async (key, fallback) => {
   const result = await storage.get(key);
@@ -44,6 +45,26 @@ const updateConflicts = async (updater) => {
 };
 const publish = (patch) => { status = { ...status, ...patch }; listeners.forEach((fn) => fn(status)); };
 const belongsToTenant = (item, tenantId) => String(item?.localOperation?.tenantId || item?.tenantId || "") === String(tenantId || "");
+const operationTargetKey = (item) => {
+  if (!item) return "";
+  const tenant = String(item.tenantId || "");
+  if (["entity_upsert", "entity_delete"].includes(item.type)) return `${tenant}:entity:${item.entity}:${String(item.entityId)}`;
+  if (["section_set", "section_delete"].includes(item.type)) return `${tenant}:section:${item.section}`;
+  if (["set", "delete", "system_set"].includes(item.type)) return `${tenant}:key:${item.key}`;
+  return "";
+};
+const compactPendingQueue = (queue = []) => {
+  const seen = new Set();
+  const compacted = [];
+  for (let index = queue.length - 1; index >= 0; index -= 1) {
+    const item = queue[index];
+    const key = operationTargetKey(item);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    compacted.push(item);
+  }
+  return compacted.reverse();
+};
 
 export const syncEngine = {
   getStatus: () => status,
@@ -54,24 +75,33 @@ export const syncEngine = {
     ]);
     const tenantId = String(context.tenantId || "");
     return {
-      conflicts: tenantId ? conflicts.filter((item) => String(item.localOperation?.tenantId || item.tenantId || "") === tenantId) : conflicts,
-      pending: tenantId ? queue.filter((item) => String(item.tenantId || "") === tenantId) : queue,
+      conflicts: tenantId ? conflicts.filter((item) => belongsToTenant(item, tenantId)) : [],
+      pending: tenantId ? queue.filter((item) => belongsToTenant(item, tenantId)) : [],
     };
   },
   setContext(value) {
     context = { ...context, ...value };
     const tenantId = String(context.tenantId || "");
-    if (tenantId) Promise.all([readJson(QUEUE_KEY, []), readJson(CONFLICTS_KEY, [])]).then(([queue, conflicts]) => {
-      publish({ pending: queue.filter((item) => belongsToTenant(item, tenantId)).length, conflicts: conflicts.filter((item) => belongsToTenant(item, tenantId)).length });
+    const revision = ++contextRevision;
+    publish({ pending: 0, conflicts: 0, state: status.mode === "cloud" ? "idle" : status.state });
+    if (!tenantId) return;
+    Promise.all([readJson(QUEUE_KEY, []), readJson(CONFLICTS_KEY, [])]).then(([queue, conflicts]) => {
+      if (revision !== contextRevision || tenantId !== String(context.tenantId || "")) return;
+      const pending = queue.filter((item) => belongsToTenant(item, tenantId)).length;
+      const visibleConflicts = conflicts.filter((item) => belongsToTenant(item, tenantId)).length;
+      publish({ pending, conflicts: visibleConflicts, state: visibleConflicts ? "conflict" : pending ? "idle" : status.state === "syncing" ? "syncing" : "synced" });
     });
   },
   subscribe(fn) { listeners.add(fn); fn(status); return () => listeners.delete(fn); },
   async initialize() {
     const config = loadCloudConfig();
-    const queue = await readJson(QUEUE_KEY, []);
+    const queue = await updateQueue(compactPendingQueue);
     const meta = await readJson(META_KEY, {});
     const conflicts = await readJson(CONFLICTS_KEY, []);
-    publish({ mode: config.enabled && config.apiUrl ? "cloud" : "local", pending: queue.length, conflicts: conflicts.length, lastSyncAt: meta.lastSyncAt || null });
+    const tenantId = String(context.tenantId || "");
+    const pending = tenantId ? queue.filter((item) => belongsToTenant(item, tenantId)).length : 0;
+    const visibleConflicts = tenantId ? conflicts.filter((item) => belongsToTenant(item, tenantId)).length : 0;
+    publish({ mode: config.enabled && config.apiUrl ? "cloud" : "local", state: visibleConflicts ? "conflict" : "idle", pending, conflicts: visibleConflicts, lastSyncAt: meta.lastSyncAt || null });
   },
   async enqueue(operation) {
     const config = loadCloudConfig();
@@ -82,6 +112,8 @@ export const syncEngine = {
       && item.tenantId === normalized.tenantId
       && item.entity === normalized.entity
       && String(item.entityId) === String(normalized.entityId);
+    const targetKey = operationTargetKey(normalized);
+    const sameTarget = (item) => targetKey && operationTargetKey(item) === targetKey;
     await conflictMutation;
     const storedConflicts = ["entity_upsert", "entity_delete"].includes(normalized.type)
       ? await readJson(CONFLICTS_KEY, [])
@@ -93,7 +125,7 @@ export const syncEngine = {
       const merged = foundation
         ? { ...normalized, baseVersion: foundation.baseVersion, baseValue: foundation.baseValue ?? normalized.baseValue }
         : normalized;
-      return [...queue.filter((item) => !sameEntity(item)), merged].slice(-5000);
+      return [...queue.filter((item) => !sameTarget(item)), merged].slice(-5000);
     });
     // A newer local value already contains the unresolved local change. Keep a
     // single causal operation instead of sending an old conflict and a new sale
@@ -103,7 +135,8 @@ export const syncEngine = {
         item.localOperation && sameEntity(item.localOperation)
       )));
     }
-    publish({ mode: "cloud", pending: next.length });
+    const activeTenantId = String(context.tenantId || normalized.tenantId || "");
+    publish({ mode: "cloud", pending: next.filter((item) => belongsToTenant(item, activeTenantId)).length });
   },
   async enqueueMany(operations) { for (const operation of operations) await this.enqueue(operation); },
   async flush() {
@@ -119,7 +152,7 @@ export const syncEngine = {
     publish({ state: "syncing", error: null });
     await queueMutation;
     const queue = await readJson(QUEUE_KEY, []);
-    if (!navigator.onLine) { publish({ state: "offline", pending: queue.length }); return status; }
+    if (!navigator.onLine) { publish({ state: "offline", pending: queue.filter((item) => belongsToTenant(item, tenantId)).length }); return status; }
     const activeQueue = queue.filter((item) => belongsToTenant(item, tenantId));
     await conflictMutation;
     const storedConflicts = await readJson(CONFLICTS_KEY, []);
@@ -143,7 +176,11 @@ export const syncEngine = {
       const headers = { "content-type": "application/json", "x-device-id": config.deviceId, "x-tenant-id": tenantId };
       if (operationsToPush.length) {
         const response = await cloudFetch(config.apiUrl, "/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: operationsToPush }) });
-        if (!response.ok) throw new Error(`Servidor respondió ${response.status}`);
+        if (!response.ok) {
+          if (response.status === 401) throw new Error("La sesión de nube venció. Volvé a conectarla desde Configuración.");
+          if (response.status === 403) throw new Error("Este dispositivo ya no tiene permiso para sincronizar.");
+          throw new Error(`El servidor no aceptó los cambios (${response.status}).`);
+        }
         const result = await response.json();
         const accepted = new Set(result.acceptedIds || operationsToPush.map((item) => item.id));
         const conflictIds = new Set((result.conflicts || []).map((item)=>item.operationId));
@@ -213,7 +250,11 @@ export const syncEngine = {
       const meta = await readJson(META_KEY, {});
       const tenantCursor = Number(meta.cursors?.[tenantId] || 0);
       const pull = await cloudFetch(config.apiUrl, `/v1/sync/pull?since=${tenantCursor}`, { headers });
-      if (!pull.ok) throw new Error(`No se pudieron descargar cambios (${pull.status})`);
+      if (!pull.ok) {
+        if (pull.status === 401) throw new Error("La sesión de nube venció. Volvé a conectarla desde Configuración.");
+        if (pull.status === 403) throw new Error("Este dispositivo ya no tiene permiso para sincronizar.");
+        throw new Error(`No se pudieron descargar cambios (${pull.status}).`);
+      }
       const remote = await pull.json();
       for (const operation of remote.operations || []) {
         const normalized = normalizeOperation(operation); if (!normalized || normalized.tenantId !== tenantId) continue;
@@ -299,7 +340,10 @@ export const syncEngine = {
     }
     const remaining = await readJson(CONFLICTS_KEY, []);
     const queue = await readJson(QUEUE_KEY, []);
-    publish({ conflicts: remaining.length, pending: queue.length, state: remaining.length ? "conflict" : queue.length ? "idle" : "synced" });
+    const tenantId = String(context.tenantId || conflict.localOperation?.tenantId || "");
+    const visibleConflicts = tenantId ? remaining.filter((item) => belongsToTenant(item, tenantId)).length : 0;
+    const visiblePending = tenantId ? queue.filter((item) => belongsToTenant(item, tenantId)).length : 0;
+    publish({ conflicts: visibleConflicts, pending: visiblePending, state: visibleConflicts ? "conflict" : visiblePending ? "idle" : "synced" });
     return status;
   },
   async discardPending(operationId) {

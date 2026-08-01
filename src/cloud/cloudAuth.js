@@ -1,15 +1,26 @@
 const SESSION_KEY = "kiosco_cloud_session";
+let refreshPromise = null;
 const isLocalApi = (value) => /^(http:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+):8787|https:\/\/[a-z0-9.-]+\.ts\.net:8443)\/?$/i.test(String(value || ""));
 
+const durableSession = (value) => value?.refreshToken ? { ...value, accessToken: undefined } : null;
+
 const read = () => {
-  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY) || "null"); }
-  catch { return null; }
+  try {
+    const volatile = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
+    if (volatile) {
+      const durable = durableSession(volatile);
+      if (durable) localStorage.setItem(SESSION_KEY, JSON.stringify(durable));
+      return volatile;
+    }
+    return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+  } catch { return null; }
 };
 
 const save = (value) => {
   const serialized = JSON.stringify(value);
   sessionStorage.setItem(SESSION_KEY, serialized);
-  if (isLocalApi(value?.apiUrl)) localStorage.setItem(SESSION_KEY, serialized);
+  const durable = isLocalApi(value?.apiUrl) ? value : durableSession(value);
+  if (durable) localStorage.setItem(SESSION_KEY, JSON.stringify(durable));
 };
 
 export const cloudSession = () => read();
@@ -81,6 +92,10 @@ async function refreshCloud(apiUrl) {
     body: JSON.stringify({ refreshToken: current.refreshToken }),
   });
   if (!response.ok) {
+    // Otra solicitud puede haber renovado la sesión mientras esta respuesta
+    // viajaba. En ese caso nunca debemos borrar las credenciales nuevas.
+    const latest = read();
+    if (latest?.refreshToken && latest.refreshToken !== current.refreshToken) return latest;
     sessionStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(SESSION_KEY);
     return null;
@@ -91,8 +106,20 @@ async function refreshCloud(apiUrl) {
   return session;
 }
 
+const refreshCloudOnce = (apiUrl) => {
+  if (!refreshPromise) {
+    refreshPromise = refreshCloud(apiUrl).finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+};
+
 export async function cloudFetch(apiUrl, url, options = {}) {
   let session = read();
+  // Las sesiones remotas persisten solamente el token de renovación. Al
+  // reabrir la app obtenemos un access token antes de enviar la primera cola.
+  if (!session?.accessToken && session?.refreshToken) {
+    session = await refreshCloudOnce(apiUrl);
+  }
   const request = () => fetch(`${apiUrl.replace(/\/$/, "")}${url}`, {
     ...options,
     headers: {
@@ -102,7 +129,11 @@ export async function cloudFetch(apiUrl, url, options = {}) {
   });
   let response = await request();
   if (response.status === 401 && session?.refreshToken) {
-    session = await refreshCloud(apiUrl);
+    const failedAccessToken = session.accessToken;
+    const latest = read();
+    session = latest?.accessToken && latest.accessToken !== failedAccessToken
+      ? latest
+      : await refreshCloudOnce(apiUrl);
     if (session) response = await request();
   }
   return response;

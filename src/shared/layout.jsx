@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Package, Store, ShoppingCart, BarChart3, Shield, LogOut, ScanLine, Search,
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
@@ -22,6 +22,11 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
   const [syncReviewOpen, setSyncReviewOpen] = useState(false);
   const [syncReview, setSyncReview] = useState({ conflicts: [], pending: [] });
   const [pendingDiscardId, setPendingDiscardId] = useState(null);
+  useEffect(() => {
+    if (syncStatus?.conflicts || syncStatus?.pending) return;
+    setSyncReviewOpen(false);
+    setSyncReview({ conflicts: [], pending: [] });
+  }, [syncStatus?.conflicts, syncStatus?.pending]);
   const reposicionPendiente = (products || []).filter(
     (p) => p.vitrina <= p.alertaVitrina
   ).length;
@@ -42,28 +47,55 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
   };
   const notificationCount = data ? buildNotifications(data).length : 0;
   const entityLabel = (entity) => ({ products: "Producto", proveedores: "Proveedor", auditoria: "Auditoría", tutorialProgress: "Tutorial" }[entity] || "Registro");
+  const sectionLabel = (section) => ({
+    caja: "Caja y movimientos",
+    tickets: "Ventas y tickets",
+    clientes: "Clientes y fiado",
+    comprasItems: "Lista de compras",
+    pedidos: "Pedidos a proveedores",
+    gastos: "Gastos",
+    ventasSuspendidas: "Ventas suspendidas",
+    inventarios: "Conteos de stock",
+    perdidas: "Vencimientos y pérdidas",
+    cart: "Carrito de venta",
+    cajaAbierta: "Estado de la caja",
+    promociones: "Promociones",
+    comprobantes: "Comprobantes",
+    movimientosStock: "Movimientos de stock",
+  }[section] || section || null);
+  const pendingTitle = (operation) => operation?.value?.nombre
+    || (operation?.entity ? entityLabel(operation.entity) : null)
+    || sectionLabel(operation?.section)
+    || (operation?.key === "cuentas" ? "Cuentas y negocios" : operation?.key)
+    || "Datos del negocio";
   const conflictTitle = (conflict) => {
     const value = conflict?.localOperation?.value || conflict?.serverValue || {};
     return value.nombre || value.descripcion || `${entityLabel(conflict?.entity)} #${conflict?.entityId || ""}`;
+  };
+  const refreshSyncReview = async (closeWhenEmpty = false) => {
+    const review = await syncEngine.getPendingReview();
+    setSyncReview(review);
+    if (closeWhenEmpty && !review.conflicts.length && !review.pending.length) setSyncReviewOpen(false);
+    return review;
   };
   const openSyncReview = async () => {
     if (!syncStatus?.conflicts && !syncStatus?.pending) {
       onSyncNow?.();
       return;
     }
-    setSyncReview(await syncEngine.getPendingReview());
+    await refreshSyncReview();
     setSyncReviewOpen((value) => !value);
   };
   const resolveSyncConflict = async (operationId, strategy) => {
     await syncEngine.resolveConflict(operationId, strategy);
     if (strategy === "local") await onSyncNow?.();
-    setSyncReview(await syncEngine.getPendingReview());
+    await refreshSyncReview(true);
   };
   const discardPendingSync = async () => {
     if (!pendingDiscardId) return;
     await syncEngine.discardPending(pendingDiscardId);
     setPendingDiscardId(null);
-    setSyncReview(await syncEngine.getPendingReview());
+    await refreshSyncReview(true);
   };
 
   return (
@@ -162,7 +194,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
       </nav>
 
       <div className="sidebar-footer relative px-4 py-4 border-t border-gray-100 text-sm">
-        {syncReviewOpen && <div className="absolute bottom-[calc(100%-8px)] left-3 right-3 z-40 max-h-80 overflow-y-auto rounded-xl border bg-white p-3 text-gray-900 shadow-xl"><div className="mb-2 flex items-start justify-between gap-2"><div><b className="text-sm">Pendiente de sincronización</b><p className="mt-0.5 text-[11px] text-gray-500">Revisá solamente los cambios que todavía no llegaron a la nube.</p></div><button onClick={()=>setSyncReviewOpen(false)} aria-label="Cerrar" className="rounded p-1 hover:bg-gray-100"><X size={15}/></button></div><div className="space-y-2">{syncReview.conflicts.map((conflict)=><div key={conflict.operationId} className="rounded-lg border border-purple-200 bg-purple-50 p-2"><div className="flex items-center gap-1.5 text-xs font-semibold text-purple-900"><span className="h-2 w-2 rounded-full bg-purple-500"/>{entityLabel(conflict.entity)} en conflicto</div><p className="mt-1 break-words text-xs font-medium">{conflictTitle(conflict)}</p><p className="mt-1 text-[10px] leading-4 text-gray-600">Se modificó también desde otro dispositivo. Elegí la versión de la nube o reenviá la de este equipo.</p>{conflict.detectedAt&&<p className="mt-1 text-[10px] text-gray-500">Detectado: {new Date(conflict.detectedAt).toLocaleString("es-AR")}</p>}<div className="mt-2 grid grid-cols-2 gap-1"><button onClick={()=>resolveSyncConflict(conflict.operationId,"cloud")} className="rounded-md border bg-white px-2 py-1.5 text-[10px] font-semibold">Usar la nube</button><button onClick={()=>resolveSyncConflict(conflict.operationId,"local")} className="rounded-md bg-purple-700 px-2 py-1.5 text-[10px] font-semibold text-white">Conservar este equipo</button></div></div>)}{syncReview.pending.map((operation)=><div key={operation.id} className="rounded-lg border border-amber-200 bg-amber-50 p-2"><div className="text-xs font-semibold text-amber-900">Cambio esperando conexión</div><p className="mt-1 break-words text-xs">{operation.value?.nombre || entityLabel(operation.entity) || operation.section || "Datos del negocio"}</p><button onClick={()=>setPendingDiscardId(operation.id)} className="mt-2 w-full rounded-md border border-amber-300 bg-white px-2 py-1.5 text-[10px] font-semibold text-amber-900">Descartar este cambio trabado</button></div>)}{!syncReview.conflicts.length&&!syncReview.pending.length&&<p className="rounded-lg bg-green-50 p-2 text-xs text-green-800">Ya no quedan cambios pendientes.</p>}</div><button onClick={async()=>{await onSyncNow?.();setSyncReview(await syncEngine.getPendingReview());}} className="mt-3 w-full rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white">Volver a sincronizar</button></div>}
+        {syncReviewOpen && <div className="absolute bottom-[calc(100%-8px)] left-3 right-3 z-40 max-h-80 overflow-y-auto rounded-xl border bg-white p-3 text-gray-900 shadow-xl"><div className="mb-2 flex items-start justify-between gap-2"><div><b className="text-sm">Pendiente de sincronización</b><p className="mt-0.5 text-[11px] text-gray-500">Revisá solamente los cambios que todavía no llegaron a la nube.</p></div><button onClick={()=>setSyncReviewOpen(false)} aria-label="Cerrar" className="rounded p-1 hover:bg-gray-100"><X size={15}/></button></div>{syncStatus?.error&&<div className="mb-2 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] leading-4 text-red-800"><b>No se pudieron enviar todavía.</b><p className="mt-0.5">{syncStatus.error}</p>{/sesión|permiso/i.test(syncStatus.error)&&<button onClick={()=>{setSyncReviewOpen(false);onOpenSettings?.();}} className="mt-2 rounded-md bg-red-700 px-2 py-1.5 font-semibold text-white">Abrir configuración</button>}</div>}<div className="space-y-2">{syncReview.conflicts.map((conflict)=><div key={conflict.operationId} className="rounded-lg border border-purple-200 bg-purple-50 p-2"><div className="flex items-center gap-1.5 text-xs font-semibold text-purple-900"><span className="h-2 w-2 rounded-full bg-purple-500"/>{entityLabel(conflict.entity)} en conflicto</div><p className="mt-1 break-words text-xs font-medium">{conflictTitle(conflict)}</p><p className="mt-1 text-[10px] leading-4 text-gray-600">Se modificó también desde otro dispositivo. Elegí la versión de la nube o reenviá la de este equipo.</p>{conflict.detectedAt&&<p className="mt-1 text-[10px] text-gray-500">Detectado: {new Date(conflict.detectedAt).toLocaleString("es-AR")}</p>}<div className="mt-2 grid grid-cols-2 gap-1"><button onClick={()=>resolveSyncConflict(conflict.operationId,"cloud")} className="rounded-md border bg-white px-2 py-1.5 text-[10px] font-semibold">Usar la nube</button><button onClick={()=>resolveSyncConflict(conflict.operationId,"local")} className="rounded-md bg-purple-700 px-2 py-1.5 text-[10px] font-semibold text-white">Conservar este equipo</button></div></div>)}{syncReview.pending.map((operation)=><div key={operation.id} className="rounded-lg border border-amber-200 bg-amber-50 p-2"><div className="text-xs font-semibold text-amber-900">Cambio esperando conexión</div><p className="mt-1 break-words text-xs">{pendingTitle(operation)}</p><button onClick={()=>setPendingDiscardId(operation.id)} className="mt-2 w-full rounded-md border border-amber-300 bg-white px-2 py-1.5 text-[10px] font-semibold text-amber-900">Descartar este cambio trabado</button></div>)}{!syncReview.conflicts.length&&!syncReview.pending.length&&<p className="rounded-lg bg-green-50 p-2 text-xs text-green-800">Ya no quedan cambios pendientes.</p>}</div><button onClick={async()=>{await onSyncNow?.();await refreshSyncReview(true);}} className="mt-3 w-full rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white">Volver a sincronizar</button></div>}
         <button onClick={openSyncReview} aria-expanded={syncReviewOpen} title={syncStatus?.error || "Estado de sincronización"} className="mb-3 flex w-full min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs"><span className={`h-2 w-2 shrink-0 rounded-full ${syncStatus?.state === "error" ? "bg-red-500" : syncStatus?.state === "conflict" ? "bg-purple-500" : syncStatus?.state === "offline" ? "bg-amber-500" : syncStatus?.state === "syncing" ? "animate-pulse bg-blue-500" : "bg-green-500"}`}/><span className="min-w-0 flex-1 truncate">{syncStatus?.mode === "cloud" ? syncStatus.state === "syncing" ? "Sincronizando..." : syncStatus.conflicts ? `${syncStatus.conflicts} conflicto(s) para revisar` : syncStatus.pending ? `${syncStatus.pending} cambio(s) pendiente(s)` : "Nube sincronizada" : "Datos locales"}</span>{(syncStatus?.conflicts||syncStatus?.pending)>0&&<ChevronRight size={13} className={`shrink-0 transition-transform ${syncReviewOpen?"-rotate-90":"rotate-90"}`}/>}</button>
         <p className="text-gray-500 truncate">
           {identidad?.nombre} · @{cuenta?.usuario}
