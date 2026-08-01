@@ -46,7 +46,11 @@ export const repository = {
     const persist = async () => {
       const previousResult = await storage.get(key);
       let previous = null; try { previous = previousResult?.value ? JSON.parse(previousResult.value) : null; } catch {}
-      await storage.set(key, JSON.stringify(value));
+      const serializedValue = JSON.stringify(value);
+      // Los efectos de arranque vuelven a entregar el estado recién leído. Si
+      // no cambió, no hay nada que guardar ni que agregar a la cola de nube.
+      if (previousResult?.value === serializedValue) return;
+      await storage.set(key, serializedValue);
       if (context.tenantId && key === "datos") {
       const tenantId=String(context.tenantId), config=loadCloudConfig();
       const before=extractTenantValue(key,previous||{},tenantId)||{}, after=extractTenantValue(key,value,tenantId)||{};
