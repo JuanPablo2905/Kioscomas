@@ -79,6 +79,9 @@ try {
 
   const migratedAccounts = dataModule.migrarCuentasDemo([{ id: 99, nombre: "Real", usuario: "real", estado: "pendiente", roles: dataModule.rolesPorDefecto() }]);
   test("migración conserva cuentas reales", migratedAccounts.some((account) => account.id === 99 && account.estado === "pendiente"));
+  const storedAdmin = { id: 1, nombre: "Juan", usuario: "demo", passwordHash: "hash-existente", passwordSalt: "sal-existente", superAdmin: true, roles: [], empleados: [] };
+  const migratedStoredAdmin = dataModule.migrarCuentasDemo([storedAdmin]).find((account) => account.id === 1);
+  test("abrir la app conserva la credencial cifrada del administrador", migratedStoredAdmin?.passwordHash === "hash-existente" && migratedStoredAdmin?.passwordSalt === "sal-existente" && !migratedStoredAdmin?.password);
   const migratedSprite = dataModule.migrarDatosDemo({
     2: {
       products: [{ id: 212, nombre: "Sprite 2,25 l", codigo: "7790895008478" }],

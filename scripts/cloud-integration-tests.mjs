@@ -180,10 +180,14 @@ try {
     body: JSON.stringify({ username: "owner-b", password: "1234", deviceId: "pc-b" }),
   });
   const ownerHeaders = {
+    "content-type": "application/json",
     "x-device-id": "pc-b",
     "x-tenant-id": "business-b",
     authorization: `Bearer ${ownerB.value.accessToken}`,
   };
+  const forbiddenSystemChange = { id: "owner-system-1", deviceId: "pc-b", tenantId: "business-b", type: "system_set", key: "cuentas", value: [] };
+  const ownerSystemPush = await request("/v1/sync/push", { method: "POST", headers: ownerHeaders, body: JSON.stringify({ operations: [forbiddenSystemChange] }) });
+  test("un cambio global sin permiso se rechaza explícitamente", ownerSystemPush.value.rejected?.some((item) => item.operationId === "owner-system-1" && item.reason === "system_admin_required"));
   const ownerPull = await request("/v1/sync/pull?since=0", { headers: ownerHeaders });
   test("dueño recibe el cambio hecho por el administrador", ownerPull.value.operations?.some((item) => item.type === "section_set" && item.section === "ventas"));
   const sharedCatalog = await request("/v1/catalog/barcodes/7791234567890", { headers: ownerHeaders });

@@ -2,7 +2,7 @@ import { storage } from "../shared/storage";
 import { loadCloudConfig } from "./config";
 import { mergeTenantDataset, normalizeOperation } from "./protocol";
 import { applyAcceptedEntityVersions, applyEntityOperations, applySectionOperations, rebasePendingEntityOperations } from "./entitySync";
-import { cloudFetch } from "./cloudAuth";
+import { cloudFetch, cloudSession } from "./cloudAuth";
 import { withDataStorageLock } from "./dataStorageLock";
 import { isSameEntity, mergeConcurrentEntity } from "./conflictMerge";
 
@@ -65,13 +65,18 @@ const compactPendingQueue = (queue = []) => {
   }
   return compacted.reverse();
 };
+const removeUnsyncableSystemOperations = (queue = []) => {
+  const session = cloudSession();
+  if (session?.user?.role === "superAdmin") return queue;
+  return queue.filter((item) => item.type !== "system_set");
+};
 
 export const syncEngine = {
   getStatus: () => status,
   async getPendingReview() {
     const [conflicts, queue] = await Promise.all([
       readJson(CONFLICTS_KEY, []),
-      readJson(QUEUE_KEY, []),
+      updateQueue((items) => removeUnsyncableSystemOperations(compactPendingQueue(items))),
     ]);
     const tenantId = String(context.tenantId || "");
     return {
@@ -85,7 +90,10 @@ export const syncEngine = {
     const revision = ++contextRevision;
     publish({ pending: 0, conflicts: 0, state: status.mode === "cloud" ? "idle" : status.state });
     if (!tenantId) return;
-    Promise.all([readJson(QUEUE_KEY, []), readJson(CONFLICTS_KEY, [])]).then(([queue, conflicts]) => {
+    Promise.all([
+      updateQueue((items) => removeUnsyncableSystemOperations(compactPendingQueue(items))),
+      readJson(CONFLICTS_KEY, []),
+    ]).then(([queue, conflicts]) => {
       if (revision !== contextRevision || tenantId !== String(context.tenantId || "")) return;
       const pending = queue.filter((item) => belongsToTenant(item, tenantId)).length;
       const visibleConflicts = conflicts.filter((item) => belongsToTenant(item, tenantId)).length;
@@ -95,7 +103,7 @@ export const syncEngine = {
   subscribe(fn) { listeners.add(fn); fn(status); return () => listeners.delete(fn); },
   async initialize() {
     const config = loadCloudConfig();
-    const queue = await updateQueue(compactPendingQueue);
+    const queue = await updateQueue((items) => removeUnsyncableSystemOperations(compactPendingQueue(items)));
     const meta = await readJson(META_KEY, {});
     const conflicts = await readJson(CONFLICTS_KEY, []);
     const tenantId = String(context.tenantId || "");
@@ -150,8 +158,7 @@ export const syncEngine = {
     // Mark synchronously, before the first await. Otherwise two timers can both
     // pass the guard and send overlapping versions of the same product.
     publish({ state: "syncing", error: null });
-    await queueMutation;
-    const queue = await readJson(QUEUE_KEY, []);
+    const queue = await updateQueue((items) => removeUnsyncableSystemOperations(compactPendingQueue(items)));
     if (!navigator.onLine) { publish({ state: "offline", pending: queue.filter((item) => belongsToTenant(item, tenantId)).length }); return status; }
     const activeQueue = queue.filter((item) => belongsToTenant(item, tenantId));
     await conflictMutation;
@@ -184,6 +191,7 @@ export const syncEngine = {
         const result = await response.json();
         const accepted = new Set(result.acceptedIds || operationsToPush.map((item) => item.id));
         const conflictIds = new Set((result.conflicts || []).map((item)=>item.operationId));
+        const rejectedIds = new Set((result.rejected || []).map((item) => item.operationId));
         // New sales can enter the queue while this request is travelling.
         // Snapshot it before storing conflicts so an obsolete response cannot
         // resurrect a conflict already superseded by a newer local operation.
@@ -243,7 +251,7 @@ export const syncEngine = {
           }));
         }
         await updateQueue((currentQueue) => rebasePendingEntityOperations(
-          currentQueue.filter((item) => !accepted.has(item.id) && !conflictIds.has(item.id)),
+          currentQueue.filter((item) => !accepted.has(item.id) && !conflictIds.has(item.id) && !rejectedIds.has(item.id)),
           acceptedVersions,
         ));
       }

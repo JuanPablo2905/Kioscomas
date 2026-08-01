@@ -128,6 +128,7 @@ export const migrarCuentasDemo = (cuentasGuardadas) => {
   const sur = seeds.find((cuenta) => cuenta.id === 2);
   const pruebas = seeds.find((cuenta) => cuenta.id === 3);
   const anteriores = cuentas.filter((cuenta) => ![1, 2, 3].includes(cuenta.id));
+  const adminGuardada = cuentas.find((cuenta) => cuenta.id === 1);
   const surGuardada = cuentas.find((cuenta) => cuenta.id === 2);
   const pruebasGuardada = cuentas.find((cuenta) => cuenta.id === 3);
   const normalizar = (cuenta) => ({
@@ -140,8 +141,14 @@ export const migrarCuentasDemo = (cuentasGuardadas) => {
         : rol
     ),
   });
+  const adminNormalizada = { ...admin, ...adminGuardada, superAdmin: true, tipo: "administrador_app" };
+  if (adminNormalizada.passwordHash) delete adminNormalizada.password;
   return [
-    admin,
+    // La cuenta administradora también debe conservarse. Reemplazarla por la
+    // semilla en cada arranque volvía a introducir la contraseña en texto
+    // plano; secureAccounts la cifraba con una sal nueva y la nube interpretaba
+    // ese hash aleatorio como una edición real en cada apertura.
+    normalizar(adminNormalizada),
     normalizar({ ...sur, ...surGuardada, ...((surGuardada?.demoAccountVersion || 0) < sur.demoAccountVersion ? sur : {}), superAdmin: false }),
     normalizar({ ...pruebas, ...pruebasGuardada, superAdmin: false }),
     ...anteriores.map(normalizar),

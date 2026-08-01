@@ -3,6 +3,7 @@ import { syncEngine } from "./syncEngine";
 import { extractTenantValue, SYNCABLE_KEYS } from "./protocol";
 import { diffTenantEntities, diffTenantSections } from "./entitySync";
 import { loadCloudConfig } from "./config";
+import { cloudSession } from "./cloudAuth";
 import { withDataStorageLock } from "./dataStorageLock";
 
 let context = { tenantId: null, isSystemAdmin: false };
@@ -11,6 +12,7 @@ const scheduleSync = () => {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => syncEngine.flush().catch(() => {}), 120);
 };
+const canSyncSystemData = () => cloudSession()?.user?.role === "superAdmin";
 
 // Único acceso a persistencia. En la migración se reemplaza esta implementación
 // por una API HTTPS sin cambiar las pantallas ni las reglas de negocio.
@@ -31,7 +33,7 @@ export const repository = {
       ...diffTenantSections({}, dataset, tenantId, config.deviceId),
     ].map((operation) => ({ ...operation, seedOnly: true }));
     if (operations.length) await syncEngine.enqueueMany(operations);
-    if (context.isSystemAdmin) {
+    if (context.isSystemAdmin && canSyncSystemData()) {
       const accounts = await this.get("cuentas", []);
       await syncEngine.enqueue({ type: "system_set", key: "cuentas", tenantId, value: accounts });
     }
@@ -59,7 +61,7 @@ export const repository = {
         ...diffTenantSections(before,after,tenantId,config.deviceId),
       ];
       if(operations.length) { await syncEngine.enqueueMany(operations); scheduleSync(); }
-      } else if (context.tenantId && key === "cuentas" && context.isSystemAdmin) {
+      } else if (context.tenantId && key === "cuentas" && context.isSystemAdmin && canSyncSystemData()) {
       await syncEngine.enqueue({ type: "system_set", key: "cuentas", tenantId: String(context.tenantId), value });
       scheduleSync();
       } else if (context.tenantId && SYNCABLE_KEYS.has(key)) {

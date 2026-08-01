@@ -485,6 +485,7 @@ const handleRequest = async (req, res) => {
       const acceptedIds = [];
       const acceptedEntityVersions = [];
       const conflicts = [];
+      const rejected = [];
       for (const incomingOperation of payload.operations || []) {
         let operation = incomingOperation;
         if (!operation.id || db.accepted[operation.id] || String(operation.tenantId) !== tenantId) {
@@ -492,7 +493,10 @@ const handleRequest = async (req, res) => {
           continue;
         }
         if (operation.type === "system_set") {
-          if (session?.role !== "superAdmin") continue;
+          if (session?.role !== "superAdmin") {
+            rejected.push({ operationId: operation.id, reason: "system_admin_required" });
+            continue;
+          }
           db.cursor += 1;
           db.system[operation.key] = operation.value;
           db.accepted[operation.id] = db.cursor;
@@ -568,7 +572,7 @@ const handleRequest = async (req, res) => {
       }
       db.changes = db.changes.slice(-10000);
       await writeDb(db);
-      return send(res, 200, { acceptedIds, acceptedEntityVersions, conflicts, cursor: db.cursor });
+      return send(res, 200, { acceptedIds, acceptedEntityVersions, conflicts, rejected, cursor: db.cursor });
     }
     if (req.method === "GET" && req.url?.startsWith("/v1/sync/pull")) {
       const since = Number(new URL(req.url, "http://localhost").searchParams.get("since") || 0);
