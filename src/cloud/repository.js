@@ -3,6 +3,7 @@ import { syncEngine } from "./syncEngine";
 import { extractTenantValue, SYNCABLE_KEYS } from "./protocol";
 import { diffTenantEntities, diffTenantSections } from "./entitySync";
 import { loadCloudConfig } from "./config";
+import { withDataStorageLock } from "./dataStorageLock";
 
 let context = { tenantId: null, isSystemAdmin: false };
 let syncTimer = null;
@@ -42,10 +43,11 @@ export const repository = {
     try { return JSON.parse(result.value); } catch { return fallback; }
   },
   async set(key, value) {
-    const previousResult = await storage.get(key);
-    let previous = null; try { previous = previousResult?.value ? JSON.parse(previousResult.value) : null; } catch {}
-    await storage.set(key, JSON.stringify(value));
-    if (context.tenantId && key === "datos") {
+    const persist = async () => {
+      const previousResult = await storage.get(key);
+      let previous = null; try { previous = previousResult?.value ? JSON.parse(previousResult.value) : null; } catch {}
+      await storage.set(key, JSON.stringify(value));
+      if (context.tenantId && key === "datos") {
       const tenantId=String(context.tenantId), config=loadCloudConfig();
       const before=extractTenantValue(key,previous||{},tenantId)||{}, after=extractTenantValue(key,value,tenantId)||{};
       const operations=[
@@ -53,13 +55,15 @@ export const repository = {
         ...diffTenantSections(before,after,tenantId,config.deviceId),
       ];
       if(operations.length) { await syncEngine.enqueueMany(operations); scheduleSync(); }
-    } else if (context.tenantId && key === "cuentas" && context.isSystemAdmin) {
+      } else if (context.tenantId && key === "cuentas" && context.isSystemAdmin) {
       await syncEngine.enqueue({ type: "system_set", key: "cuentas", tenantId: String(context.tenantId), value });
       scheduleSync();
-    } else if (context.tenantId && SYNCABLE_KEYS.has(key)) {
+      } else if (context.tenantId && SYNCABLE_KEYS.has(key)) {
       await syncEngine.enqueue({ type: "set", key, tenantId: String(context.tenantId), value: extractTenantValue(key, value, String(context.tenantId)) });
       scheduleSync();
-    }
+      }
+    };
+    return key === "datos" ? withDataStorageLock(persist) : persist();
   },
   async delete(key) {
     await storage.delete(key);

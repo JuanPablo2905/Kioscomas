@@ -28,6 +28,7 @@ try {
   const productLookup = await vite.ssrLoadModule("/src/shared/productLookup.js");
   const archive = await vite.ssrLoadModule("/src/shared/archive.js");
   const share = await vite.ssrLoadModule("/src/shared/share.js");
+  const dataStorageLock = await vite.ssrLoadModule("/src/cloud/dataStorageLock.js");
 
   test("redondeo de gramos", domain.roundQuantity(4.1000000000000005) === 4.1);
   test("precio sugerido por margen", pricing.calcularPrecioSugerido(1000, 1, 50) === 1500);
@@ -152,6 +153,13 @@ try {
   test("una venta nueva se conserva aunque todavía no aparezca en la cola", queueRaceConfirmed.products[0].deposito === 25);
   const rebasedBurst = entitySync.rebasePendingEntityOperations(burstQueue, burstAck);
   test("la ráfaga pendiente se rebasa sobre la última versión confirmada", rebasedBurst[0].baseVersion === 4 && rebasedBurst[0].baseValue.deposito === 29);
+  const serializedOrder = [];
+  await Promise.all([
+    dataStorageLock.withDataStorageLock(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); serializedOrder.push("venta-1"); }),
+    dataStorageLock.withDataStorageLock(async () => { serializedOrder.push("venta-2"); }),
+    dataStorageLock.withDataStorageLock(async () => { serializedOrder.push("venta-3"); }),
+  ]);
+  test("los guardados de una ráfaga mantienen el orden", serializedOrder.join(",") === "venta-1,venta-2,venta-3");
   const cleanup = archive.cleanOperationalDataset({
     tickets: [{ id: 1, fecha: "2020-01-01" }],
     comprobantes: [{ id: 2, fecha: "2020-01-01" }],

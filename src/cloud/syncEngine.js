@@ -3,6 +3,7 @@ import { loadCloudConfig } from "./config";
 import { mergeTenantDataset, normalizeOperation } from "./protocol";
 import { applyAcceptedEntityVersions, applyEntityOperations, applySectionOperations, rebasePendingEntityOperations } from "./entitySync";
 import { cloudFetch } from "./cloudAuth";
+import { withDataStorageLock } from "./dataStorageLock";
 
 const QUEUE_KEY = "__cloud_sync_queue_v1";
 const META_KEY = "__cloud_sync_meta_v1";
@@ -124,10 +125,12 @@ export const syncEngine = {
         // the request was travelling to the server.
         const latestQueue = await readJson(QUEUE_KEY, []);
         if (acceptedVersions.length) {
-          const allData = await readJson("datos", {});
-          const dataset = allData[tenantId] || allData[Number(tenantId)] || {};
-          const confirmedDataset = applyAcceptedEntityVersions(dataset, latestQueue, acceptedVersions, [...accepted], tenantId, operationsToPush);
-          await writeJson("datos", mergeTenantDataset(allData, tenantId, confirmedDataset));
+          await withDataStorageLock(async () => {
+            const allData = await readJson("datos", {});
+            const dataset = allData[tenantId] || allData[Number(tenantId)] || {};
+            const confirmedDataset = applyAcceptedEntityVersions(dataset, latestQueue, acceptedVersions, [...accepted], tenantId, operationsToPush);
+            await writeJson("datos", mergeTenantDataset(allData, tenantId, confirmedDataset));
+          });
           window.dispatchEvent(new CustomEvent("kiosco-cloud-update", {
             detail: {
               tenantId,
@@ -150,13 +153,13 @@ export const syncEngine = {
       for (const operation of remote.operations || []) {
         const normalized = normalizeOperation(operation); if (!normalized || normalized.tenantId !== tenantId) continue;
         if (["entity_upsert","entity_delete"].includes(normalized.type)) {
-          const allData=await readJson("datos",{}); const dataset=allData[tenantId]||allData[Number(tenantId)]||{}; await writeJson("datos",mergeTenantDataset(allData,tenantId,applyEntityOperations(dataset,[normalized])));
+          await withDataStorageLock(async () => { const allData=await readJson("datos",{}); const dataset=allData[tenantId]||allData[Number(tenantId)]||{}; await writeJson("datos",mergeTenantDataset(allData,tenantId,applyEntityOperations(dataset,[normalized]))); });
         } else if (["section_set","section_delete"].includes(normalized.type)) {
-          const allData=await readJson("datos",{}); const dataset=allData[tenantId]||allData[Number(tenantId)]||{}; await writeJson("datos",mergeTenantDataset(allData,tenantId,applySectionOperations(dataset,[normalized])));
+          await withDataStorageLock(async () => { const allData=await readJson("datos",{}); const dataset=allData[tenantId]||allData[Number(tenantId)]||{}; await writeJson("datos",mergeTenantDataset(allData,tenantId,applySectionOperations(dataset,[normalized]))); });
         } else if (normalized.type === "system_set" && normalized.key === "cuentas") {
           await writeJson("cuentas", normalized.value);
         } else if (normalized.key === "datos" && normalized.type === "set") {
-          const allData = await readJson("datos", {}); await writeJson("datos", mergeTenantDataset(allData, tenantId, normalized.value));
+          await withDataStorageLock(async () => { const allData = await readJson("datos", {}); await writeJson("datos", mergeTenantDataset(allData, tenantId, normalized.value)); });
         } else if (normalized.type === "delete") await storage.delete(normalized.key); else await writeJson(normalized.key, normalized.value);
       }
       if ((remote.operations || []).length) window.dispatchEvent(new CustomEvent("kiosco-cloud-update", { detail: { tenantId, count: remote.operations.length } }));
@@ -183,10 +186,12 @@ export const syncEngine = {
     await writeJson(CONFLICTS_KEY, conflicts.filter((item) => item.operationId !== operationId));
     if (strategy === "cloud" && conflict.entity && conflict.serverValue) {
       const tenantId = String(context.tenantId || conflict.localOperation?.tenantId || "");
-      const allData = await readJson("datos", {});
-      const dataset = allData[tenantId] || allData[Number(tenantId)] || {};
-      const next = applyEntityOperations(dataset, [{ type: "entity_upsert", entity: conflict.entity, entityId: conflict.entityId, value: conflict.serverValue, version: conflict.serverVersion }]);
-      await writeJson("datos", mergeTenantDataset(allData, tenantId, next));
+      await withDataStorageLock(async () => {
+        const allData = await readJson("datos", {});
+        const dataset = allData[tenantId] || allData[Number(tenantId)] || {};
+        const next = applyEntityOperations(dataset, [{ type: "entity_upsert", entity: conflict.entity, entityId: conflict.entityId, value: conflict.serverValue, version: conflict.serverVersion }]);
+        await writeJson("datos", mergeTenantDataset(allData, tenantId, next));
+      });
       window.dispatchEvent(new CustomEvent("kiosco-cloud-update", { detail: { tenantId, count: 1, resolvedConflict: true } }));
     } else if (strategy === "local" && conflict.localOperation) {
       await this.enqueue({
