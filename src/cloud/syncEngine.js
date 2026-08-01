@@ -72,21 +72,37 @@ export const syncEngine = {
     const queue = await readJson(QUEUE_KEY, []);
     if (!navigator.onLine) { publish({ state: "offline", pending: queue.length }); return status; }
     const activeQueue = queue.filter((item) => belongsToTenant(item, context.tenantId));
+    const storedConflicts = await readJson(CONFLICTS_KEY, []);
+    const retryableConflicts = storedConflicts.filter((item) => belongsToTenant(item, context.tenantId) && item.localOperation);
+    const operationsToPush = [
+      ...activeQueue,
+      ...retryableConflicts.map((item) => item.localOperation).filter((operation) => !activeQueue.some((queued) => queued.id === operation.id)),
+    ];
     publish({ state: "syncing", error: null, pending: activeQueue.length });
     try {
       const tenantId = String(context.tenantId || "");
       if (!tenantId) throw new Error("No hay un negocio activo para sincronizar");
       const headers = { "content-type": "application/json", "x-device-id": config.deviceId, "x-tenant-id": tenantId };
-      if (queue.length) {
-        const response = await cloudFetch(config.apiUrl, "/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: activeQueue }) });
+      if (operationsToPush.length) {
+        const response = await cloudFetch(config.apiUrl, "/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: operationsToPush }) });
         if (!response.ok) throw new Error(`Servidor respondió ${response.status}`);
         const result = await response.json();
-        const accepted = new Set(result.acceptedIds || activeQueue.map((item) => item.id));
+        const accepted = new Set(result.acceptedIds || operationsToPush.map((item) => item.id));
         const conflictIds = new Set((result.conflicts || []).map((item)=>item.operationId));
-        if(conflictIds.size){const existing=await readJson(CONFLICTS_KEY,[]);await writeJson(CONFLICTS_KEY,[...existing,...result.conflicts.map((conflict)=>({...conflict,localOperation:queue.find((item)=>item.id===conflict.operationId),detectedAt:new Date().toISOString()}))].slice(-500));}
+        const unresolvedConflicts = storedConflicts.filter((item) => !accepted.has(item.operationId));
+        const refreshedConflicts = result.conflicts.map((conflict) => ({
+          ...conflict,
+          localOperation: operationsToPush.find((item) => item.id === conflict.operationId),
+          detectedAt: new Date().toISOString(),
+        }));
+        const refreshedIds = new Set(refreshedConflicts.map((item) => item.operationId));
+        await writeJson(CONFLICTS_KEY, [
+          ...unresolvedConflicts.filter((item) => !refreshedIds.has(item.operationId)),
+          ...refreshedConflicts,
+        ].slice(-500));
         const acceptedVersions = result.acceptedEntityVersions?.length
           ? result.acceptedEntityVersions
-          : activeQueue.filter((item) => accepted.has(item.id) && !item.seedOnly && ["entity_upsert", "entity_delete"].includes(item.type)).map((item) => ({
+          : operationsToPush.filter((item) => accepted.has(item.id) && !item.seedOnly && ["entity_upsert", "entity_delete"].includes(item.type)).map((item) => ({
               operationId: item.id,
               entity: item.entity,
               entityId: item.entityId,
@@ -104,9 +120,14 @@ export const syncEngine = {
             dataset[ack.entity] = items;
           }
           await writeJson("datos", mergeTenantDataset(allData, tenantId, dataset));
-          if (acceptedVersions.some((ack) => ack.autoMerged)) {
-            window.dispatchEvent(new CustomEvent("kiosco-cloud-update", { detail: { tenantId, count: acceptedVersions.length, autoMerged: true } }));
-          }
+          window.dispatchEvent(new CustomEvent("kiosco-cloud-update", {
+            detail: {
+              tenantId,
+              count: acceptedVersions.length,
+              autoMerged: acceptedVersions.some((ack) => ack.autoMerged),
+              confirmedVersions: true,
+            },
+          }));
         }
         const latestQueue = await readJson(QUEUE_KEY, []);
         const remainingQueue = latestQueue

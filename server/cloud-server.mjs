@@ -19,13 +19,14 @@ const finiteNumber = (value) => value !== "" && value != null && Number.isFinite
 const additiveProductFields = new Set(["deposito", "vitrina"]);
 const mergeAppendOnlyArray = (base, local, remote) => {
   if (![base, local, remote].every(Array.isArray)) return null;
-  if (!sameValue(local.slice(0, base.length), base) || !sameValue(remote.slice(0, base.length), base)) return null;
+  if (!sameValue(local.slice(0, base.length), base)) return null;
   const merged = [...remote];
-  const known = new Set(remote.map((item) => JSON.stringify(item)));
+  const signature = (item) => item?.id != null ? `id:${item.id}` : JSON.stringify(item);
+  const known = new Set(remote.map(signature));
   for (const item of local.slice(base.length)) {
-    const signature = JSON.stringify(item);
-    if (!known.has(signature)) {
-      known.add(signature);
+    const itemSignature = signature(item);
+    if (!known.has(itemSignature)) {
+      known.add(itemSignature);
       merged.push(item);
     }
   }
