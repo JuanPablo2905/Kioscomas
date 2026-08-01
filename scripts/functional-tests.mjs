@@ -142,6 +142,16 @@ try {
   test("cambio incremental conserva base para resolver conflictos", entityOps.find((x)=>x.entity==="products"&&x.entityId==="1")?.baseVersion===2 && entityOps.find((x)=>x.entity==="products"&&x.entityId==="1")?.baseValue?.nombre==="A");
   const remoteApplied=entitySync.applyEntityOperations({products:[{id:1,nombre:"A"}]},[{type:"entity_upsert",entity:"products",entityId:"1",value:{id:1,nombre:"B"},version:3}]);
   test("cambio remoto conserva versión del registro", remoteApplied.products[0].nombre==="B" && remoteApplied.products[0]._syncVersion===3);
+  const burstDataset = { products: [{ id: 1, nombre: "Alfajor", deposito: 25, _syncVersion: 4 }] };
+  const burstQueue = [{ id: "venta-nueva", tenantId: "2", entity: "products", entityId: "1", baseVersion: 3, baseValue: { id: 1, deposito: 30 }, value: { id: 1, deposito: 25 } }];
+  const burstAck = [{ operationId: "venta-anterior", entity: "products", entityId: "1", version: 4, value: { id: 1, nombre: "Alfajor", deposito: 29 } }];
+  const burstSent = [{ id: "venta-anterior", tenantId: "2", type: "entity_upsert", entity: "products", entityId: "1", value: { id: 1, nombre: "Alfajor", deposito: 29 } }];
+  const burstConfirmed = entitySync.applyAcceptedEntityVersions(burstDataset, burstQueue, burstAck, ["venta-anterior"], "2", burstSent);
+  test("una confirmación atrasada no pisa una venta más nueva", burstConfirmed.products[0].deposito === 25 && burstConfirmed.products[0]._syncVersion === 4);
+  const queueRaceConfirmed = entitySync.applyAcceptedEntityVersions(burstDataset, [], burstAck, ["venta-anterior"], "2", burstSent);
+  test("una venta nueva se conserva aunque todavía no aparezca en la cola", queueRaceConfirmed.products[0].deposito === 25);
+  const rebasedBurst = entitySync.rebasePendingEntityOperations(burstQueue, burstAck);
+  test("la ráfaga pendiente se rebasa sobre la última versión confirmada", rebasedBurst[0].baseVersion === 4 && rebasedBurst[0].baseValue.deposito === 29);
   const cleanup = archive.cleanOperationalDataset({
     tickets: [{ id: 1, fecha: "2020-01-01" }],
     comprobantes: [{ id: 2, fecha: "2020-01-01" }],

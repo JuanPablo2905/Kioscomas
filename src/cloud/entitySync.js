@@ -28,6 +28,50 @@ export function applyEntityOperations(dataset = {}, operations = []) {
   return next;
 }
 
+const sameEntity = (left, right) => left?.entity === right?.entity
+  && String(left?.entityId) === String(right?.entityId);
+
+// A server response may arrive after the user already changed the same product
+// again. In that case only confirm the version: never replace the newer local
+// value with the older value contained in the acknowledgement.
+export function applyAcceptedEntityVersions(dataset = {}, pendingQueue = [], acceptedVersions = [], acceptedIds = [], tenantId = null, pushedOperations = []) {
+  const accepted = new Set(acceptedIds);
+  const next = { ...dataset };
+  for (const ack of acceptedVersions) {
+    const items = [...(next[ack.entity] || [])];
+    const index = items.findIndex((item) => String(item.id) === String(ack.entityId));
+    const pushed = pushedOperations.find((item) => item.id === ack.operationId);
+    const hasNewerLocalValue = index >= 0 && pushed?.type === "entity_upsert"
+      && JSON.stringify(comparable(items[index])) !== JSON.stringify(pushed.value);
+    const hasNewerPending = pendingQueue.some((item) => (
+      (!tenantId || String(item.tenantId) === String(tenantId))
+      && sameEntity(item, ack)
+      && item.id !== ack.operationId
+      && !accepted.has(item.id)
+    ));
+    if (index >= 0) {
+      items[index] = hasNewerPending || hasNewerLocalValue || !ack.value
+        ? { ...items[index], _syncVersion: Number(ack.version || 0) }
+        : { ...ack.value, _syncVersion: Number(ack.version || 0) };
+    } else if (!hasNewerPending && ack.value) {
+      items.push({ ...ack.value, _syncVersion: Number(ack.version || 0) });
+    }
+    next[ack.entity] = items;
+  }
+  return next;
+}
+
+export function rebasePendingEntityOperations(queue = [], acceptedVersions = []) {
+  return queue.map((item) => {
+    const ack = acceptedVersions.find((entry) => sameEntity(entry, item));
+    return ack ? {
+      ...item,
+      baseVersion: Number(ack.version || 0),
+      baseValue: ack.value ?? item.baseValue,
+    } : item;
+  });
+}
+
 export function diffTenantSections(previous = {}, next = {}, tenantId, deviceId, now = () => new Date().toISOString()) {
   const operations = [];
   const entitySections = new Set(SYNC_ENTITIES);

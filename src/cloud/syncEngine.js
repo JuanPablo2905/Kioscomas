@@ -1,7 +1,7 @@
 import { storage } from "../shared/storage";
 import { loadCloudConfig } from "./config";
 import { mergeTenantDataset, normalizeOperation } from "./protocol";
-import { applyEntityOperations, applySectionOperations } from "./entitySync";
+import { applyAcceptedEntityVersions, applyEntityOperations, applySectionOperations, rebasePendingEntityOperations } from "./entitySync";
 import { cloudFetch } from "./cloudAuth";
 
 const QUEUE_KEY = "__cloud_sync_queue_v1";
@@ -16,6 +16,18 @@ const readJson = async (key, fallback) => {
   try { return result?.value ? JSON.parse(result.value) : fallback; } catch { return fallback; }
 };
 const writeJson = (key, value) => storage.set(key, JSON.stringify(value));
+let queueMutation = Promise.resolve();
+const updateQueue = async (updater) => {
+  let next;
+  const run = async () => {
+    const current = await readJson(QUEUE_KEY, []);
+    next = updater(current);
+    await writeJson(QUEUE_KEY, next);
+  };
+  queueMutation = queueMutation.then(run, run);
+  await queueMutation;
+  return next;
+};
 const publish = (patch) => { status = { ...status, ...patch }; listeners.forEach((fn) => fn(status)); };
 const belongsToTenant = (item, tenantId) => String(item?.localOperation?.tenantId || item?.tenantId || "") === String(tenantId || "");
 
@@ -50,19 +62,19 @@ export const syncEngine = {
   async enqueue(operation) {
     const config = loadCloudConfig();
     if (!config.enabled || !config.apiUrl) return;
-    const queue = await readJson(QUEUE_KEY, []);
     const normalized = normalizeOperation({ id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`, deviceId: config.deviceId, createdAt: new Date().toISOString(), schemaVersion: 1, ...operation });
     if (!normalized) return;
     const sameEntity = (item) => ["entity_upsert", "entity_delete"].includes(item.type)
       && item.tenantId === normalized.tenantId
       && item.entity === normalized.entity
       && String(item.entityId) === String(normalized.entityId);
-    const previousEntityOperation = ["entity_upsert", "entity_delete"].includes(normalized.type) ? queue.find(sameEntity) : null;
-    const merged = previousEntityOperation
-      ? { ...normalized, baseVersion: previousEntityOperation.baseVersion, baseValue: previousEntityOperation.baseValue ?? normalized.baseValue }
-      : normalized;
-    const next = [...queue.filter((item) => !sameEntity(item)), merged].slice(-5000);
-    await writeJson(QUEUE_KEY, next);
+    const next = await updateQueue((queue) => {
+      const previousEntityOperation = ["entity_upsert", "entity_delete"].includes(normalized.type) ? queue.find(sameEntity) : null;
+      const merged = previousEntityOperation
+        ? { ...normalized, baseVersion: previousEntityOperation.baseVersion, baseValue: previousEntityOperation.baseValue ?? normalized.baseValue }
+        : normalized;
+      return [...queue.filter((item) => !sameEntity(item)), merged].slice(-5000);
+    });
     publish({ mode: "cloud", pending: next.length });
   },
   async enqueueMany(operations) { for (const operation of operations) await this.enqueue(operation); },
@@ -108,18 +120,14 @@ export const syncEngine = {
               entityId: item.entityId,
               version: Number(item.baseVersion || 0) + 1,
             }));
+        // Read the queue again because more sales may have been enqueued while
+        // the request was travelling to the server.
+        const latestQueue = await readJson(QUEUE_KEY, []);
         if (acceptedVersions.length) {
           const allData = await readJson("datos", {});
           const dataset = allData[tenantId] || allData[Number(tenantId)] || {};
-          for (const ack of acceptedVersions) {
-            const items = [...(dataset[ack.entity] || [])];
-            const index = items.findIndex((item) => String(item.id) === String(ack.entityId));
-            if (index >= 0) items[index] = ack.value
-              ? { ...ack.value, _syncVersion: Number(ack.version || 0) }
-              : { ...items[index], _syncVersion: Number(ack.version || 0) };
-            dataset[ack.entity] = items;
-          }
-          await writeJson("datos", mergeTenantDataset(allData, tenantId, dataset));
+          const confirmedDataset = applyAcceptedEntityVersions(dataset, latestQueue, acceptedVersions, [...accepted], tenantId, operationsToPush);
+          await writeJson("datos", mergeTenantDataset(allData, tenantId, confirmedDataset));
           window.dispatchEvent(new CustomEvent("kiosco-cloud-update", {
             detail: {
               tenantId,
@@ -129,14 +137,10 @@ export const syncEngine = {
             },
           }));
         }
-        const latestQueue = await readJson(QUEUE_KEY, []);
-        const remainingQueue = latestQueue
-          .filter((item) => !accepted.has(item.id) && !conflictIds.has(item.id))
-          .map((item) => {
-            const ack = acceptedVersions.find((entry) => entry.entity === item.entity && String(entry.entityId) === String(item.entityId));
-            return ack ? { ...item, baseVersion: Number(ack.version || 0) } : item;
-          });
-        await writeJson(QUEUE_KEY, remainingQueue);
+        await updateQueue((currentQueue) => rebasePendingEntityOperations(
+          currentQueue.filter((item) => !accepted.has(item.id) && !conflictIds.has(item.id)),
+          acceptedVersions,
+        ));
       }
       const meta = await readJson(META_KEY, {});
       const tenantCursor = Number(meta.cursors?.[tenantId] || 0);
@@ -198,9 +202,7 @@ export const syncEngine = {
     return status;
   },
   async discardPending(operationId) {
-    const queue = await readJson(QUEUE_KEY, []);
-    const next = queue.filter((item) => item.id !== operationId);
-    await writeJson(QUEUE_KEY, next);
+    const next = await updateQueue((queue) => queue.filter((item) => item.id !== operationId));
     const tenantId = String(context.tenantId || "");
     const pending = tenantId ? next.filter((item) => String(item.tenantId || "") === tenantId).length : next.length;
     const conflicts = await readJson(CONFLICTS_KEY, []);
