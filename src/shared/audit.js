@@ -43,6 +43,8 @@ const DATA_LABELS = {
   autoconsumos: "autoconsumo",
   turnos: "turnos",
   recordatoriosProveedor: "recordatorios",
+  movimientosStock: "movimientos de stock",
+  historialLimpiezas: "limpiezas de historial",
 };
 
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);

@@ -1,3 +1,29 @@
+# Actualización de arquitectura cloud — 31 de julio de 2026
+
+## Despliegue actual
+
+- Frontend público: https://kiosco-plus.onrender.com
+- API Node: https://kiosco-plus-api.onrender.com
+- Health check: https://kiosco-plus-api.onrender.com/v1/health
+- Repositorio: https://github.com/JuanPablo2905/Kioscomas
+
+La API ya está desplegada con `KIOSCO_LOCAL_MODE=0`, escucha el puerto de Render y fue probada desde escritorio e iPhone. La sincronización incremental, la idempotencia, los conflictos por versión, las sesiones y el aislamiento por negocio tienen cobertura automática; las 16 pruebas cloud pasan.
+
+## Riesgo actual
+
+La persistencia continúa basada en JSON. En Render ese disco es efímero, por lo que el despliegue es una demostración funcional y no una nube de producción. El próximo cambio de arquitectura debe reemplazar el adaptador de archivos por PostgreSQL sin modificar el contrato de sincronización.
+
+## Próxima etapa
+
+1. PostgreSQL administrado y `DATABASE_URL` secreta.
+2. Esquema con `tenant_id`, claves únicas y migraciones versionadas.
+3. Importación inicial de los JSON existentes.
+4. Copias automáticas y restauración ensayada.
+5. Pruebas de reinicio, reconexión, concurrencia y separación entre negocios.
+6. Monitoreo, alertas y política de retención.
+
+---
+
 # Base de nube de KioscoApp
 
 ## Estado actual

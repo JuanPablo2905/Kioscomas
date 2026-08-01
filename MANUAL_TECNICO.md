@@ -1,3 +1,31 @@
+# Registro de despliegue y nube — 31 de julio de 2026
+
+## Enlaces activos
+
+- Aplicación pública: https://kiosco-plus.onrender.com
+- API: https://kiosco-plus-api.onrender.com
+- Salud del servidor: https://kiosco-plus-api.onrender.com/v1/health
+- Código fuente: https://github.com/JuanPablo2905/Kioscomas
+- Acceso móvil privado: https://compu-juampa.tailfb630f.ts.net
+
+## Hito alcanzado
+
+La web y la API quedaron publicadas en Render. Se conectó la aplicación de escritorio al servidor HTTPS y se abrió la interfaz desde un iPhone mediante Tailscale. Un cambio realizado desde el teléfono se reflejó rápidamente en la computadora, validando el circuito completo de autenticación y sincronización entre dispositivos.
+
+## Implementación relevante
+
+- `server/cloud-server.mjs` usa el puerto asignado por Render y escucha en `0.0.0.0`.
+- `render.yaml` define el sitio estático y el servicio Node `kiosco-plus-api`.
+- El modo demo público depende de `VITE_PUBLIC_DEMO=true`; no está fijo en el código.
+- La compilación pública se genera en `dist-public-source` y luego prepara `public-build`, sin sobrescribir `dist`.
+- El ejecutable de desarrollo vigente es `dev-launcher/KioscoPlus-Desarrollo.exe`.
+
+## Pendiente crítico
+
+La API funciona, pero sus archivos JSON viven en almacenamiento efímero de Render. Antes de usar datos reales hay que migrar a PostgreSQL persistente, agregar migraciones y copias, probar restauración y repetir las pruebas multiempresa y de reconexión. El servicio gratuito también puede dormir y tardar alrededor de 50 segundos en despertar.
+
+---
+
 # Manual integral de Kiosco+
 
 Actualizado: 29 de julio de 2026  

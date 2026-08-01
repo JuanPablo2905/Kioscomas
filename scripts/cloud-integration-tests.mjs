@@ -58,6 +58,7 @@ try {
   const operation = { id: "op-1", deviceId: "pc-1", tenantId: "business-a", type: "entity_upsert", entity: "products", entityId: "1", value: { id: 1, nombre: "Coca de prueba", codigo: "7791234567890", categoria: "Bebidas", venta: 2500, costo: 1000, deposito: 8 }, baseVersion: null };
   const first = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [operation] }) });
   test("alta incremental aceptada", first.value.acceptedIds?.includes("op-1"));
+  test("servidor confirma la versión aceptada", first.value.acceptedEntityVersions?.[0]?.operationId === "op-1" && first.value.acceptedEntityVersions?.[0]?.version === 1);
   const duplicate = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [operation] }) });
   test("reintento idempotente no duplica", duplicate.value.acceptedIds?.includes("op-1"));
   const catalog = await request("/v1/catalog/barcodes/7791234567890", { headers });

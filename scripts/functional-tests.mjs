@@ -26,6 +26,8 @@ try {
   const autoContrast = await vite.ssrLoadModule("/src/shared/useAutoContrast.js");
   const audit = await vite.ssrLoadModule("/src/shared/audit.js");
   const productLookup = await vite.ssrLoadModule("/src/shared/productLookup.js");
+  const archive = await vite.ssrLoadModule("/src/shared/archive.js");
+  const share = await vite.ssrLoadModule("/src/shared/share.js");
 
   test("redondeo de gramos", domain.roundQuantity(4.1000000000000005) === 4.1);
   test("precio sugerido por margen", pricing.calcularPrecioSugerido(1000, 1, 50) === 1500);
@@ -137,8 +139,18 @@ try {
   test("comparación de versiones para actualizaciones", updates.isNewerVersion("0.2.0","0.1.9") && !updates.isNewerVersion("0.1.0","0.1.0"));
   const entityOps=entitySync.diffTenantEntities({products:[{id:1,nombre:"A",_syncVersion:2}],proveedores:[{id:5,nombre:"P"}]},{products:[{id:1,nombre:"B",_syncVersion:2},{id:2,nombre:"C"}],proveedores:[]},"negocio-1","pc-1",()=>"2026-01-01");
   test("sincronización incremental detecta altas, cambios y bajas", entityOps.filter((x)=>x.type==="entity_upsert").length===2 && entityOps.filter((x)=>x.type==="entity_delete").length===1);
+  test("cambio incremental conserva base para resolver conflictos", entityOps.find((x)=>x.entity==="products"&&x.entityId==="1")?.baseVersion===2 && entityOps.find((x)=>x.entity==="products"&&x.entityId==="1")?.baseValue?.nombre==="A");
   const remoteApplied=entitySync.applyEntityOperations({products:[{id:1,nombre:"A"}]},[{type:"entity_upsert",entity:"products",entityId:"1",value:{id:1,nombre:"B"},version:3}]);
   test("cambio remoto conserva versión del registro", remoteApplied.products[0].nombre==="B" && remoteApplied.products[0]._syncVersion===3);
+  const cleanup = archive.cleanOperationalDataset({
+    tickets: [{ id: 1, fecha: "2020-01-01" }],
+    comprobantes: [{ id: 2, fecha: "2020-01-01" }],
+    auditoria: [{ id: 3, fecha: "2020-01-01" }],
+    comprasItems: [{ id: 4, estado: "recibido", recibidoFecha: "2020-01-01" }],
+  }, 12);
+  test("limpieza operativa protege ventas, comprobantes y auditoría", cleanup.total === 1 && cleanup.dataset.tickets.length === 1 && cleanup.dataset.comprobantes.length === 1 && cleanup.dataset.auditoria.length === 1);
+  test("WhatsApp normaliza números argentinos", share.normalizeWhatsAppPhone("011 15-5555-1234") === "541155551234");
+  test("mensaje de pedido incluye negocio, proveedor y cantidades", share.purchaseMessage({ businessName: "Kiosco+", providerName: "Distribuidora", items: [{ nombre: "Yerba", cantidad: 3 }] }).includes("3 x Yerba"));
 
   console.log(`\n${passed} pruebas funcionales superadas.`);
 } finally {

@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Eye, Mail, Printer, ReceiptText, Save, XCircle } from "lucide-react";
+import { AlertTriangle, Archive, CheckCircle2, Download, Eye, Mail, MessageCircle, Printer, ReceiptText, Search, Save, XCircle } from "lucide-react";
 import { money } from "../../shared/domain";
 import { CustomSelect } from "../../shared/CustomSelect";
 import { ConfirmDialog } from "../../shared/controls";
 import { TicketBarcode } from "../../shared/TicketBarcodeView";
+import { exportCommercialArchive } from "../../shared/archive";
+import { openEmailDraft, openWhatsApp } from "../../shared/share";
 import {
   allowedDocumentTypes,
   buildCommercialDocument,
@@ -145,9 +147,20 @@ export function InvoiceTicketManager({ data, setters, identidad }) {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [voidTarget, setVoidTarget] = useState(null);
+  const [archiveQuery, setArchiveQuery] = useState("");
+  const [archiveYear, setArchiveYear] = useState("todos");
   const generating = useRef(false);
   const ticket = useMemo(() => data.tickets?.find((item) => String(item.id) === String(draft.ticketId)), [data.tickets, draft.ticketId]);
   const documentTypes = allowedDocumentTypes(config.condicionFiscal);
+  const archiveYears = useMemo(() => [...new Set((data.comprobantes || []).map((item) => new Date(item.fecha).getFullYear()).filter(Number.isFinite))].sort((a, b) => b - a), [data.comprobantes]);
+  const archivedDocuments = useMemo(() => {
+    const query = archiveQuery.trim().toLocaleLowerCase("es");
+    return (data.comprobantes || []).filter((document) => {
+      const matchesYear = archiveYear === "todos" || String(new Date(document.fecha).getFullYear()) === archiveYear;
+      const searchable = `${document.tipo} ${document.numero} ${document.ticketId} ${document.receptor?.nombre || document.receptor || ""} ${document.receptor?.documento || ""} ${document.codigoInterno || ""}`.toLocaleLowerCase("es");
+      return matchesYear && (!query || searchable.includes(query));
+    });
+  }, [data.comprobantes, archiveQuery, archiveYear]);
 
   useEffect(() => {
     const suggested = suggestedDocumentType(config.condicionFiscal, draft.condicionReceptor);
@@ -198,12 +211,12 @@ export function InvoiceTicketManager({ data, setters, identidad }) {
     setVoidTarget(null);
   };
 
+  const documentMessage = (document) => `Comprobante comercial NO FISCAL ${document.tipo} ${document.numero}\n${document.emisor?.razonSocial || "Mi negocio"}\nTotal: ${money(document.total)}\nVenta #${document.ticketId}\nCódigo interno: ${document.codigoInterno}\n\nNo posee CAE y no es una factura fiscal autorizada por ARCA.`;
+
   const openEmail = (document = previewDocument) => {
     const recipient = document?.receptor?.email || draft.email;
-    if (!document || !recipient) return;
-    const subject = encodeURIComponent(`Comprobante comercial ${document.tipo} ${document.numero} - ${document.emisor?.razonSocial || "Mi negocio"}`);
-    const body = encodeURIComponent(`Hola ${document.receptor?.nombre || ""},\n\nComprobante comercial NO FISCAL ${document.tipo} ${document.numero} por ${money(document.total)}.\nCódigo interno: ${document.codigoInterno}.\n\nEste documento no posee CAE y no es una factura fiscal autorizada por ARCA.\n\n${document.emisor?.razonSocial || "Mi negocio"}`);
-    window.location.href = `mailto:${recipient}?subject=${subject}&body=${body}`;
+    if (!document) return;
+    openEmailDraft({ to: recipient, subject: `Comprobante comercial ${document.tipo} ${document.numero} - ${document.emisor?.razonSocial || "Mi negocio"}`, body: documentMessage(document) });
   };
 
   return (
@@ -272,7 +285,7 @@ export function InvoiceTicketManager({ data, setters, identidad }) {
               <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap">
                 <button disabled={!ticket} onClick={openDraftPreview} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm disabled:opacity-40 sm:w-auto"><Eye size={15}/>Vista previa</button>
                 <button disabled={errors.length > 0} onClick={generateDocument} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm text-white disabled:opacity-40 sm:w-auto"><Save size={15}/>Generar comprobante</button>
-                <button disabled={!previewDocument || !draft.email} onClick={() => openEmail()} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm disabled:opacity-40 sm:w-auto"><Mail size={15}/>Abrir correo</button>
+                <button disabled={!previewDocument} onClick={() => openEmail()} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm disabled:opacity-40 sm:w-auto"><Mail size={15}/>Abrir correo</button>
               </div>
             </section>
           </div>
@@ -281,19 +294,21 @@ export function InvoiceTicketManager({ data, setters, identidad }) {
             <DocumentPreview document={previewDocument}/>
             <div className="mt-3 flex flex-col justify-end gap-2 print:hidden sm:flex-row">
               <p className="mr-auto self-center text-xs text-gray-500">Para obtener un PDF elegí “Guardar como PDF” en la ventana de impresión.</p>
-              <button onClick={() => openEmail(previewDocument)} disabled={!previewDocument.receptor?.email} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm disabled:opacity-40"><Mail size={15}/>Correo</button>
+              <button onClick={() => openWhatsApp({ text: documentMessage(previewDocument) })} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm"><MessageCircle size={15}/>WhatsApp</button>
+              <button onClick={() => openEmail(previewDocument)} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm"><Mail size={15}/>Correo</button>
               <button onClick={() => window.print()} className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm text-white"><Printer size={15}/>Imprimir / PDF</button>
             </div>
           </section>}
 
-          {(data.comprobantes || []).length > 0 && <section className="rounded-xl border bg-white p-4">
-            <h3 className="font-semibold">Historial de comprobantes</h3>
-            <p className="mt-1 text-xs text-gray-500">Los números utilizados se conservan aunque un comprobante sea anulado.</p>
-            <div className="mt-3 space-y-2">{data.comprobantes.map((document) => <div key={document.id} className={`flex min-w-0 flex-col items-start gap-3 rounded-lg border p-3 text-sm sm:flex-row sm:items-center sm:justify-between ${document.estado === "anulado" ? "border-red-200 bg-red-50" : ""}`}>
+          <section className="rounded-xl border bg-white p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><h3 className="flex items-center gap-2 font-semibold"><Archive size={17}/>Archivo comercial protegido</h3><p className="mt-1 text-xs text-gray-500">Conserva comprobantes y numeración. Las limpiezas operativas nunca borran este archivo.</p></div><button disabled={(data.comprobantes || []).length === 0} onClick={() => exportCommercialArchive({ businessName: config.razonSocial || "Kiosco+", comprobantes: data.comprobantes || [], year: archiveYear })} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm disabled:opacity-40"><Download size={15}/>Exportar {archiveYear === "todos" ? "archivo" : archiveYear}</button></div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_180px]"><label className="flex min-w-0 items-center gap-2 rounded-lg border px-3"><Search size={16} className="shrink-0 text-gray-400"/><input value={archiveQuery} onChange={(event) => setArchiveQuery(event.target.value)} placeholder="Buscar número, cliente, CUIT o ticket" className="min-h-10 w-full min-w-0 bg-transparent text-sm outline-none"/></label><CustomSelect value={archiveYear} onChange={setArchiveYear} options={[{value:"todos",label:"Todos los años"}, ...archiveYears.map((year) => ({value:String(year),label:String(year)}))]}/></div>
+            <p className="mt-2 text-xs text-gray-500">{archivedDocuments.length} comprobante(s). Los números utilizados se conservan aunque uno sea anulado.</p>
+            <div className="mt-3 space-y-2">{archivedDocuments.map((document) => <div key={document.id} className={`flex min-w-0 flex-col items-start gap-3 rounded-lg border p-3 text-sm sm:flex-row sm:items-center sm:justify-between ${document.estado === "anulado" ? "border-red-200 bg-red-50" : ""}`}>
               <span className="min-w-0 break-words"><b>{document.tipo} {document.numero}</b> · {document.receptor?.nombre || document.receptor || "Consumidor final"}<small className="mt-1 block text-gray-500">{new Date(document.fecha).toLocaleString("es-AR")} · Venta #{document.ticketId}</small></span>
-              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end"><b className="mr-auto sm:mr-1">{money(document.total)}</b><span className={`rounded-full px-2 py-1 text-xs font-semibold ${document.estado === "anulado" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>{document.estado === "anulado" ? "ANULADO" : "NO FISCAL"}</span><button onClick={() => openSavedDocument(document)} className="min-h-9 rounded-lg border px-3 text-xs">Ver</button>{document.estado !== "anulado" && <button onClick={() => setVoidTarget(document)} className="flex min-h-9 items-center gap-1 rounded-lg border border-red-200 px-3 text-xs text-red-600"><XCircle size={13}/>Anular</button>}</div>
-            </div>)}</div>
-          </section>}
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end"><b className="mr-auto sm:mr-1">{money(document.total)}</b><span className={`rounded-full px-2 py-1 text-xs font-semibold ${document.estado === "anulado" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>{document.estado === "anulado" ? "ANULADO" : "NO FISCAL"}</span><button title="Compartir por WhatsApp" onClick={() => openWhatsApp({ text: documentMessage(document) })} className="flex min-h-9 items-center gap-1 rounded-lg border px-3 text-xs"><MessageCircle size={13}/>Enviar</button><button onClick={() => openSavedDocument(document)} className="min-h-9 rounded-lg border px-3 text-xs">Ver</button>{document.estado !== "anulado" && <button onClick={() => setVoidTarget(document)} className="flex min-h-9 items-center gap-1 rounded-lg border border-red-200 px-3 text-xs text-red-600"><XCircle size={13}/>Anular</button>}</div>
+            </div>)}{archivedDocuments.length === 0 && <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">No hay comprobantes que coincidan con este filtro.</div>}</div>
+          </section>
         </div>
       )}
 

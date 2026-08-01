@@ -20,6 +20,13 @@ const publish = (patch) => { status = { ...status, ...patch }; listeners.forEach
 
 export const syncEngine = {
   getStatus: () => status,
+  async getPendingReview() {
+    const [conflicts, queue] = await Promise.all([
+      readJson(CONFLICTS_KEY, []),
+      readJson(QUEUE_KEY, []),
+    ]);
+    return { conflicts, pending: queue };
+  },
   setContext(value) { context = { ...context, ...value }; },
   subscribe(fn) { listeners.add(fn); fn(status); return () => listeners.delete(fn); },
   async initialize() {
@@ -35,7 +42,15 @@ export const syncEngine = {
     const queue = await readJson(QUEUE_KEY, []);
     const normalized = normalizeOperation({ id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`, deviceId: config.deviceId, createdAt: new Date().toISOString(), schemaVersion: 1, ...operation });
     if (!normalized) return;
-    const next = [...queue, normalized].slice(-5000);
+    const sameEntity = (item) => ["entity_upsert", "entity_delete"].includes(item.type)
+      && item.tenantId === normalized.tenantId
+      && item.entity === normalized.entity
+      && String(item.entityId) === String(normalized.entityId);
+    const previousEntityOperation = ["entity_upsert", "entity_delete"].includes(normalized.type) ? queue.find(sameEntity) : null;
+    const merged = previousEntityOperation
+      ? { ...normalized, baseVersion: previousEntityOperation.baseVersion, baseValue: previousEntityOperation.baseValue ?? normalized.baseValue }
+      : normalized;
+    const next = [...queue.filter((item) => !sameEntity(item)), merged].slice(-5000);
     await writeJson(QUEUE_KEY, next);
     publish({ mode: "cloud", pending: next.length });
   },
@@ -57,7 +72,33 @@ export const syncEngine = {
         const accepted = new Set(result.acceptedIds || queue.map((item) => item.id));
         const conflictIds = new Set((result.conflicts || []).map((item)=>item.operationId));
         if(conflictIds.size){const existing=await readJson(CONFLICTS_KEY,[]);await writeJson(CONFLICTS_KEY,[...existing,...result.conflicts.map((conflict)=>({...conflict,localOperation:queue.find((item)=>item.id===conflict.operationId),detectedAt:new Date().toISOString()}))].slice(-500));}
-        await writeJson(QUEUE_KEY, queue.filter((item) => !accepted.has(item.id) && !conflictIds.has(item.id)));
+        const acceptedVersions = result.acceptedEntityVersions?.length
+          ? result.acceptedEntityVersions
+          : queue.filter((item) => accepted.has(item.id) && !item.seedOnly && ["entity_upsert", "entity_delete"].includes(item.type)).map((item) => ({
+              operationId: item.id,
+              entity: item.entity,
+              entityId: item.entityId,
+              version: Number(item.baseVersion || 0) + 1,
+            }));
+        if (acceptedVersions.length) {
+          const allData = await readJson("datos", {});
+          const dataset = allData[tenantId] || allData[Number(tenantId)] || {};
+          for (const ack of acceptedVersions) {
+            const items = [...(dataset[ack.entity] || [])];
+            const index = items.findIndex((item) => String(item.id) === String(ack.entityId));
+            if (index >= 0) items[index] = { ...items[index], _syncVersion: Number(ack.version || 0) };
+            dataset[ack.entity] = items;
+          }
+          await writeJson("datos", mergeTenantDataset(allData, tenantId, dataset));
+        }
+        const latestQueue = await readJson(QUEUE_KEY, []);
+        const remainingQueue = latestQueue
+          .filter((item) => !accepted.has(item.id) && !conflictIds.has(item.id))
+          .map((item) => {
+            const ack = acceptedVersions.find((entry) => entry.entity === item.entity && String(entry.entityId) === String(item.entityId));
+            return ack ? { ...item, baseVersion: Number(ack.version || 0) } : item;
+          });
+        await writeJson(QUEUE_KEY, remainingQueue);
       }
       const meta = await readJson(META_KEY, {});
       const tenantCursor = Number(meta.cursors?.[tenantId] || 0);
@@ -89,6 +130,31 @@ export const syncEngine = {
     } catch (error) {
       publish({ state: navigator.onLine ? "error" : "offline", error: error.message, pending: queue.length });
     }
+    return status;
+  },
+  async resolveConflict(operationId, strategy = "cloud") {
+    const conflicts = await readJson(CONFLICTS_KEY, []);
+    const conflict = conflicts.find((item) => item.operationId === operationId);
+    if (!conflict) return status;
+    await writeJson(CONFLICTS_KEY, conflicts.filter((item) => item.operationId !== operationId));
+    if (strategy === "cloud" && conflict.entity && conflict.serverValue) {
+      const tenantId = String(context.tenantId || conflict.localOperation?.tenantId || "");
+      const allData = await readJson("datos", {});
+      const dataset = allData[tenantId] || allData[Number(tenantId)] || {};
+      const next = applyEntityOperations(dataset, [{ type: "entity_upsert", entity: conflict.entity, entityId: conflict.entityId, value: conflict.serverValue, version: conflict.serverVersion }]);
+      await writeJson("datos", mergeTenantDataset(allData, tenantId, next));
+      window.dispatchEvent(new CustomEvent("kiosco-cloud-update", { detail: { tenantId, count: 1, resolvedConflict: true } }));
+    } else if (strategy === "local" && conflict.localOperation) {
+      await this.enqueue({
+        ...conflict.localOperation,
+        id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+        baseVersion: Number(conflict.serverVersion || 0),
+        createdAt: new Date().toISOString(),
+      });
+    }
+    const remaining = await readJson(CONFLICTS_KEY, []);
+    const queue = await readJson(QUEUE_KEY, []);
+    publish({ conflicts: remaining.length, pending: queue.length, state: remaining.length ? "conflict" : queue.length ? "idle" : "synced" });
     return status;
   },
 };

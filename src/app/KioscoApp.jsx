@@ -36,6 +36,7 @@ import { unidadInfo } from "../shared/domain";
 import { auditActor, createAuditEvent, enrichEntityHistory, hasMeaningfulChange } from "../shared/audit";
 import { captureAppScreenshot } from "../shared/captureScreenshot";
 import { lookupBarcode } from "../shared/productLookup";
+import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
 import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, rolesPorDefecto, seedCuentas, seedDatos } from "./data";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
@@ -384,6 +385,29 @@ export default function KioscoApp() {
       : [...new Set(localPreferences.tutorialsCompleted || [])],
   };
   const currentPreferences = tutorialOpen && tutorialPreferences ? tutorialPreferences : savedPreferences;
+  const cleanOperationalHistory = (months = currentPreferences.operationalHistoryRetentionMonths || 12) => {
+    if (!currentUserId || tutorialOpen) return { total: 0 };
+    let summary = { total: 0 };
+    setDatos((previous) => {
+      const current = previous[currentUserId];
+      if (!current) return previous;
+      const result = cleanOperationalDataset(current, months);
+      summary = result;
+      if (!result.total) return previous;
+      const event = createAuditEvent({ key: "historialLimpiezas", previousValue: current.historialLimpiezas || [], nextValue: [...(current.historialLimpiezas || []), result], identity: identidad, tenantId: currentUserId, view: "configuracion", deviceId: loadCloudConfig().deviceId, detail: `Limpieza segura: ${result.total} registros operativos anteriores a ${new Date(result.cutoff).toLocaleDateString("es-AR")}. Ventas, caja, auditoría y comprobantes preservados.` });
+      return { ...previous, [currentUserId]: { ...result.dataset, historialLimpiezas: [...(current.historialLimpiezas || []), { id: event.id, fecha: event.fecha, meses: Number(months), eliminados: result.removed, total: result.total }], auditoria: [...(current.auditoria || []), event] } };
+    });
+    return summary;
+  };
+  const exportCurrentCommercialArchive = () => exportCommercialArchive({ businessName: cuentaActual?.nombreNegocio || "Kiosco+", comprobantes: data?.comprobantes || [] });
+  useEffect(() => {
+    if (!currentUserId || cargando || tutorialOpen || !currentPreferences.automaticOperationalCleanup) return;
+    const key = `kiosco-cleanup-${preferenceKey}`;
+    const today = new Date().toISOString().slice(0, 10);
+    if (localStorage.getItem(key) === today) return;
+    cleanOperationalHistory(currentPreferences.operationalHistoryRetentionMonths);
+    localStorage.setItem(key, today);
+  }, [currentUserId, cargando, tutorialOpen, currentPreferences.automaticOperationalCleanup, currentPreferences.operationalHistoryRetentionMonths, preferenceKey]);
   const hasEmployees = cuentaActual?.modoNegocio === "equipo";
   const stockTutorialActive = tutorialOpen && view === "stock";
   const ventasTutorialActive = tutorialOpen && view === "ventas";
@@ -612,6 +636,7 @@ export default function KioscoApp() {
   const setAutoconsumos = makeSetter("autoconsumos");
   const setTurnos = makeSetter("turnos");
   const setRecordatoriosProveedor = makeSetter("recordatoriosProveedor");
+  const setMovimientosStock = makeSetter("movimientosStock");
 
   const resolveScannedCode = (rawCode) => {
     const code = String(rawCode || "").trim();
@@ -875,7 +900,7 @@ export default function KioscoApp() {
         syncStatus={syncStatus}
         onSyncNow={() => repository.syncNow()}
       />
-      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness onClose={() => setSettingsOpen(false)}/>}
+      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} onClose={() => setSettingsOpen(false)}/>}
       </>
     );
   }
@@ -898,7 +923,7 @@ export default function KioscoApp() {
       case "stock":
         return <StockArea products={data.products} setProducts={setProducts} proveedores={data.proveedores || []} puedeEditarPrecios={puede("editar_precios")} puedeEliminar={puede("eliminar_productos")} puedeCrearDirecto={esDueno} sugerencias={data.sugerencias || []} setSugerencias={setSugerencias} identidad={identidad} perdidas={data.perdidas || []} setPerdidas={setPerdidas} inventarios={data.inventarios || []} setInventarios={setInventarios} preferences={currentPreferences} autoconsumos={data.autoconsumos || []} setAutoconsumos={setAutoconsumos} tutorialMode={stockTutorialActive} initialProduct={pendingStockProduct} onInitialProductHandled={() => setPendingStockProduct(null)} />;
       case "vitrina":
-        return <VitrinaView products={data.products} setProducts={setProducts} />;
+        return <VitrinaView products={data.products} setProducts={setProducts} movimientosStock={data.movimientosStock || []} setMovimientosStock={setMovimientosStock} identidad={identidad} />;
       case "ventas":
         return (
           <VentasView
@@ -946,6 +971,7 @@ export default function KioscoApp() {
             recordatoriosProveedor={data.recordatoriosProveedor || []}
             setRecordatoriosProveedor={setRecordatoriosProveedor}
             tutorialMode={comprasTutorialActive}
+            businessName={cuentaActual?.nombreNegocio || "Kiosco+"}
           />
         );
       case "gastos":
@@ -1050,7 +1076,7 @@ export default function KioscoApp() {
           <div key={view} className="view-stage">{renderView()}</div>
         </ViewErrorBoundary>
       </div>
-      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness={esDueno} onClose={() => setSettingsOpen(false)}/>} 
+      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness={esDueno} onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} onClose={() => setSettingsOpen(false)}/>} 
       {PUBLIC_DEMO_MODE && tutorialPrompt && <DemoTutorialPrompt view={tutorialPrompt.view} declined={tutorialPrompt.declined} onStart={startDemoTutorial} onDecline={declineDemoTutorial} onClose={() => setTutorialPrompt(null)}/>} 
       {PUBLIC_DEMO_MODE && helpSpotlightOpen && <HelpButtonSpotlight onClose={() => setHelpSpotlightOpen(false)}/>} 
       <TutorialOverlay open={tutorialOpen} view={view} hasEmployees={hasEmployees} showCatalog={tutorialCatalog} onClose={() => { autoTutorialRef.current = false; setTutorialOpen(false); }} onComplete={completeTutorial}/>

@@ -1,3 +1,36 @@
+# Actualización operativa — 31 de julio de 2026
+
+> Este bloque describe el estado real actual. El documento histórico que sigue conserva el contexto de la etapa inicial en Claude y ya no representa la arquitectura vigente.
+
+## Enlaces activos
+
+- Aplicación web pública / demo: https://kiosco-plus.onrender.com
+- API de sincronización: https://kiosco-plus-api.onrender.com
+- Estado de la API: https://kiosco-plus-api.onrender.com/v1/health
+- Repositorio: https://github.com/JuanPablo2905/Kioscomas
+- Acceso privado por Tailscale: https://compu-juampa.tailfb630f.ts.net
+
+## Estado real del proyecto
+
+- La aplicación ya es un proyecto React/Vite organizado en carpetas, con versión web, Electron para Windows y adaptación móvil.
+- La web pública está desplegada como sitio estático en Render y sigue disponible aunque la computadora de desarrollo esté apagada.
+- La API Node está desplegada como Web Service gratuito en Render. El plan gratuito puede dormir por inactividad y la primera conexión puede demorar unos 50 segundos.
+- Se comprobó una sincronización real entre iPhone y la aplicación de escritorio: un cambio hecho desde el teléfono apareció rápidamente en la computadora.
+- El escritorio usa el ejecutable `dev-launcher/KioscoPlus-Desarrollo.exe`. El antiguo `KioscoApp-Desarrollo.exe` no debe usarse.
+- La demo pública se activa sólo con `VITE_PUBLIC_DEMO=true`; la compilación normal de escritorio ya no queda atrapada en la cuenta demo.
+- La compilación pública usa `dist-public-source` y no pisa la versión local de escritorio.
+
+## Lo que falta antes de producción
+
+1. Migrar la persistencia del servidor desde archivos JSON efímeros de Render a PostgreSQL administrado.
+2. Crear migraciones, copias automáticas y un procedimiento de restauración probado.
+3. Repetir pruebas de aislamiento entre negocios, reinicios, reconexión y cambios simultáneos con la base persistente.
+4. Verificar qué sitio estático de Render es el vigente (`Kioscomas` o `kiosco-plus`) y eliminar el duplicado sin afectar la URL pública.
+5. Confirmar y subir los últimos cambios locales pendientes al repositorio.
+6. Recién después, habilitar el uso con datos reales de clientes.
+
+---
+
 # Documentación Técnica Completa — KioscoApp
 
 **Versión del documento:** 1.0
@@ -1932,4 +1965,3 @@ Antes de seguir sumando funcionalidades nuevas, en este orden:
 ---
 
 *Fin del documento. Generado íntegramente a partir del código fuente real (`KioscoApp.jsx`) y del historial completo de decisiones tomadas durante el desarrollo de KioscoApp, para servir como fuente de verdad ante la migración a otro asistente o desarrollador.*
-

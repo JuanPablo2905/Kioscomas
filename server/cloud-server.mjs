@@ -481,6 +481,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/v1/sync/push") {
       const payload = await body(req);
       const acceptedIds = [];
+      const acceptedEntityVersions = [];
       const conflicts = [];
       for (const operation of payload.operations || []) {
         if (!operation.id || db.accepted[operation.id] || String(operation.tenantId) !== tenantId) {
@@ -504,6 +505,7 @@ const server = http.createServer(async (req, res) => {
           if (operation.seedOnly && current) {
             db.accepted[operation.id] = db.cursor;
             acceptedIds.push(operation.id);
+            acceptedEntityVersions.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, version: current.version || 0 });
             continue;
           }
           if (operation.baseVersion != null && Number(operation.baseVersion) !== Number(current?.version || 0)) {
@@ -526,6 +528,7 @@ const server = http.createServer(async (req, res) => {
           const change = { ...operation, value: stored.value, version, cursor: db.cursor, serverAt: stored.updatedAt };
           db.accepted[operation.id] = db.cursor;
           acceptedIds.push(operation.id);
+          acceptedEntityVersions.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, version });
           db.changes.push(change);
           continue;
         }
@@ -555,7 +558,7 @@ const server = http.createServer(async (req, res) => {
       }
       db.changes = db.changes.slice(-10000);
       await writeDb(db);
-      return send(res, 200, { acceptedIds, conflicts, cursor: db.cursor });
+      return send(res, 200, { acceptedIds, acceptedEntityVersions, conflicts, cursor: db.cursor });
     }
     if (req.method === "GET" && req.url?.startsWith("/v1/sync/pull")) {
       const since = Number(new URL(req.url, "http://localhost").searchParams.get("since") || 0);

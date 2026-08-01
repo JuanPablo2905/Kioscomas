@@ -9,7 +9,7 @@ export function diffTenantEntities(previous = {}, next = {}, tenantId, deviceId,
     const before = byId(previous[entity]); const after = byId(next[entity]);
     for (const [id, value] of after) {
       const old = before.get(id);
-      if (!old || JSON.stringify(comparable(old)) !== JSON.stringify(comparable(value))) operations.push({ type:"entity_upsert", entity, entityId:id, tenantId:String(tenantId), deviceId, baseVersion:old?._syncVersion ?? null, value:comparable(value), createdAt:now() });
+      if (!old || JSON.stringify(comparable(old)) !== JSON.stringify(comparable(value))) operations.push({ type:"entity_upsert", entity, entityId:id, tenantId:String(tenantId), deviceId, baseVersion:old?._syncVersion ?? null, baseValue:old ? comparable(old) : null, value:comparable(value), createdAt:now() });
     }
     for (const [id, old] of before) if (!after.has(id)) operations.push({ type:"entity_delete", entity, entityId:id, tenantId:String(tenantId), deviceId, baseVersion:old?._syncVersion ?? null, createdAt:now() });
   }

@@ -3,7 +3,7 @@ import {
   Package, Store, ShoppingCart, BarChart3, Shield, LogOut, ScanLine, Search,
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
-  MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
+  MessageCircle, Mail, Copy, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
   ChevronRight, Star, Zap,
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money, formatQuantity, roundQuantity } from "../../shared/domain";
@@ -15,6 +15,7 @@ import { groupProductFamilies, productVariant } from "../../shared/productFamili
 import { openCashDrawer, printTicket } from "../../shared/ticketPrint";
 import { SmallBusinessTools } from "../gestion/SmallBusinessTools";
 import { Budgets, CustomerOrders } from "./SalesSupportTools";
+import { copyText, openEmailDraft, openWhatsApp, ticketMessage } from "../../shared/share";
 
 const DENOMINACIONES = [20000, 10000, 2000, 1000, 500, 200, 100, 50, 20, 10];
 const UMBRAL_DIFERENCIA_INUSUAL = 1000;
@@ -488,7 +489,7 @@ function MovimientosModal({ movimientos, onClose }) {
                 )}
                 <div>
                   <p className="text-sm font-medium text-gray-900">
-                    {m.nota || (m.tipo === "ingreso" ? "Ingreso" : "Retiro")}
+                    {m.nota || (m.tipo === "ingreso" ? "Ingreso de caja" : "Retiro de caja")}
                   </p>
                   <p className="text-xs text-gray-500">{m.fecha}</p>
                 </div>
@@ -822,7 +823,11 @@ export function VentasView({
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [ventaARecuperar, setVentaARecuperar] = useState(null);
   const [ticketParaImprimir, setTicketParaImprimir] = useState(null);
+  const [sharePhone, setSharePhone] = useState("");
+  const [shareEmail, setShareEmail] = useState("");
+  const [ticketCopied, setTicketCopied] = useState(false);
   const lastEnterRef = useRef(0);
+  const lastAutoPrintedRef = useRef(null);
   const salesTabs = [["venta","Venta"],["pedidos","Pedidos de clientes"],["presupuestos","Presupuestos"],["cambio","Cambio"],["turnos","Turnos"],["resumen","Resumen diario"]].filter(([id]) => hasEmployees || id !== "turnos");
   const salesNavigation = <><div data-tour="sales-tabs" className="desktop-section-tabs mb-5 flex flex-wrap gap-2">{salesTabs.map(([id,label]) => <button data-tour={`sales-tab-${id}`} key={id} type="button" onClick={() => setSalesArea(id)} className={`rounded-lg border px-3 py-2 text-sm font-medium ${salesArea === id ? "bg-gray-900 text-white" : "bg-white"}`}>{label}</button>)}</div><div data-tour="sales-tabs" className="mobile-section-select mobile-section-select--content sales-mobile-navigation"><span>Área de Ventas</span><AppSelect value={salesArea} onChange={setSalesArea} options={salesTabs.map(([value,label])=>({value,label}))}/></div></>;
   useEffect(() => {
@@ -830,11 +835,20 @@ export function VentasView({
   }, [hasEmployees, salesArea]);
   useEffect(() => {
     if (!ticketParaImprimir) return;
+    const linkedCustomer = clientes.find((customer) => String(customer.id) === String(ticketParaImprimir.clienteId));
+    setSharePhone(ticketParaImprimir.clienteTelefono || linkedCustomer?.telefono || "");
+    setShareEmail(ticketParaImprimir.clienteEmail || linkedCustomer?.email || linkedCustomer?.correo || "");
+    setTicketCopied(false);
     const efectivo = ticketParaImprimir.medio === "Efectivo" || ticketParaImprimir.pagos?.some((pago) => pago.metodo === "Efectivo" && Number(pago.monto) > 0);
     if (efectivo && preferences.hasCashDrawer && preferences.drawerOpenOnCash) openCashDrawer(preferences);
-    if (preferences.ticketPrintMode === "automatica") { printTicket(ticketParaImprimir, { businessName, paper: preferences.ticketPaper, template: ticketConfig.ticket }); setTicketParaImprimir(null); }
-    if (preferences.ticketPrintMode === "nunca") setTicketParaImprimir(null);
-  }, [ticketParaImprimir, preferences, ticketConfig, businessName]);
+    if (preferences.ticketPrintMode === "automatica" && lastAutoPrintedRef.current !== ticketParaImprimir.id) {
+      lastAutoPrintedRef.current = ticketParaImprimir.id;
+      printTicket(ticketParaImprimir, { businessName, paper: preferences.ticketPaper, template: ticketConfig.ticket });
+      queueMicrotask(() => setTicketParaImprimir(null));
+    } else if (preferences.ticketPrintMode === "nunca") {
+      queueMicrotask(() => setTicketParaImprimir(null));
+    }
+  }, [ticketParaImprimir, clientes, preferences, ticketConfig, businessName]);
 
   const ventaRapida = useMemo(() => {
     const cantidades = new Map();
@@ -1015,6 +1029,7 @@ export function VentasView({
 
   const handleCobrar = ({ medio, clienteId, pagos = [] }) => {
     if (cartItems.length === 0) return;
+    const selectedCustomer = medio === "Cuenta corriente" ? clientes.find((customer) => String(customer.id) === String(clienteId)) : null;
     setProducts((prev) =>
       prev.map((p) => {
         const item = cart.find((c) => c.productId === p.id);
@@ -1043,6 +1058,9 @@ export function VentasView({
         medio,
         pagos: medio === "Pago combinado" ? pagos : [{ metodo: medio, monto: total }],
         clienteId: medio === "Cuenta corriente" ? clienteId : null,
+        clienteNombre: selectedCustomer?.nombre || null,
+        clienteTelefono: selectedCustomer?.telefono || "",
+        clienteEmail: selectedCustomer?.email || selectedCustomer?.correo || "",
         quien: identidad?.nombre || identidad?.rol || "Sin identificar",
         items: cartItems.map((c) => {
           const info = unidadInfo(c.product.unidad);
@@ -1117,6 +1135,9 @@ export function VentasView({
 
   const handleMovimiento = ({ tipo, monto, nota }) => {
     if (tipo === "retiro" && monto > caja.saldo) return;
+    const base = tipo === "ingreso" ? "Ingreso de caja" : "Retiro de caja";
+    const motivo = String(nota || "").trim();
+    const notaFinal = motivo ? `${base} — ${motivo}` : base;
     setCaja((prev) => {
       if (tipo === "retiro" && monto > prev.saldo) return prev;
       return {
@@ -1128,7 +1149,7 @@ export function VentasView({
             id: prev.movimientos.length + 1,
             tipo,
             monto,
-            nota,
+            nota: notaFinal,
             fecha: new Date().toLocaleString("es-AR"),
           },
         ],
@@ -1446,7 +1467,7 @@ export function VentasView({
           }}
         />
       )}
-      {ticketParaImprimir && preferences.ticketPrintMode !== "automatica" && preferences.ticketPrintMode !== "nunca" && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-2 sm:p-4"><div className="mobile-dialog max-h-[calc(100dvh-1rem)] w-full max-w-sm overflow-y-auto rounded-xl bg-white p-4 sm:p-6"><h2 className="text-lg font-bold">Venta registrada</h2><p className="mt-1 text-sm opacity-65">Ticket #{ticketParaImprimir.id} · {money(ticketParaImprimir.total)}</p><p className="mt-4 text-sm">¿Querés imprimir el ticket?</p><div className="mt-5 grid grid-cols-2 gap-2"><button onClick={()=>setTicketParaImprimir(null)} className="rounded-lg border px-4 py-2 text-sm">Ahora no</button><button onClick={()=>{printTicket(ticketParaImprimir,{businessName,paper:preferences.ticketPaper,template:ticketConfig.ticket});setTicketParaImprimir(null);}} className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white">Imprimir</button></div></div></div>}
+      {ticketParaImprimir && !["automatica","nunca"].includes(preferences.ticketPrintMode) && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-2 sm:p-4"><div className="mobile-dialog max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 sm:p-6"><h2 className="text-lg font-bold">Venta registrada</h2><p className="mt-1 text-sm opacity-65">Ticket #{ticketParaImprimir.id} · {money(ticketParaImprimir.total)}</p><p className="mt-4 text-sm font-semibold">¿Qué querés hacer con el ticket?</p><p className="mt-1 text-xs opacity-60">Podés enviarlo, imprimirlo o terminar la venta sin hacer nada.</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><input value={sharePhone} onChange={(event)=>setSharePhone(event.target.value)} placeholder="WhatsApp del cliente" className="rounded-lg border px-3 py-2 text-sm"/><input type="email" value={shareEmail} onChange={(event)=>setShareEmail(event.target.value)} placeholder="Correo del cliente" className="rounded-lg border px-3 py-2 text-sm"/></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><button onClick={()=>setTicketParaImprimir(null)} className="rounded-lg border px-3 py-2 text-sm">No hacer nada</button><button onClick={()=>openWhatsApp({phone:sharePhone,text:ticketMessage(ticketParaImprimir,businessName)})} className="flex items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white"><MessageCircle size={15}/>WhatsApp</button><button onClick={()=>openEmailDraft({to:shareEmail,subject:`Ticket #${ticketParaImprimir.id} - ${businessName}`,body:ticketMessage(ticketParaImprimir,businessName)})} className="flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-sm"><Mail size={15}/>Correo</button><button onClick={()=>printTicket(ticketParaImprimir,{businessName,paper:preferences.ticketPaper,template:ticketConfig.ticket})} className="rounded-lg bg-gray-900 px-3 py-2 text-sm text-white">Imprimir</button></div><button onClick={async()=>{try{await copyText(ticketMessage(ticketParaImprimir,businessName));setTicketCopied(true);}catch{}}} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs"><Copy size={14}/>{ticketCopied?"Ticket copiado":"Copiar texto del ticket"}</button></div></div>}
 
       {scanOpen && (
         <ScanModal continuous products={products} preferences={preferences} onClose={() => setScanOpen(false)} onDetected={handleScanned} />

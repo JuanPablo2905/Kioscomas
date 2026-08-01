@@ -1,3 +1,38 @@
+# Estado publicado — 31 de julio de 2026
+
+## Enlaces
+
+- Web pública / demo: https://kiosco-plus.onrender.com
+- API cloud de prueba: https://kiosco-plus-api.onrender.com
+- Verificación de salud: https://kiosco-plus-api.onrender.com/v1/health
+- GitHub: https://github.com/JuanPablo2905/Kioscomas
+- Acceso privado Tailscale: https://compu-juampa.tailfb630f.ts.net
+
+## Qué ya está funcionando
+
+- Sitio estático publicado en Render.
+- API Node publicada en Render y respondiendo correctamente.
+- Inicio de sesión, sesiones cortas y renovación.
+- Sincronización incremental e idempotente.
+- Catálogo compartido de códigos de barras.
+- Conflictos por versión y aislamiento por negocio.
+- Prueba real iPhone ↔ computadora completada correctamente.
+- Dieciséis pruebas automáticas del servidor aprobadas.
+
+## Advertencia importante
+
+El servidor de prueba todavía guarda sus datos en archivos JSON dentro del disco efímero de Render. Puede perderlos al reiniciarse, reemplazarse o desplegarse nuevamente. No debe usarse todavía como almacenamiento definitivo de negocios reales.
+
+## Próximo paquete obligatorio
+
+1. Crear PostgreSQL administrado.
+2. Migrar cuentas, negocios, productos, proveedores, ventas, caja, gastos, auditoría y sincronización.
+3. Agregar migraciones, copias y restauración.
+4. Probar reinicios, trabajo sin conexión, conflictos y aislamiento multiempresa.
+5. Revisar los dos servicios estáticos visibles en Render (`Kioscomas` y `kiosco-plus`) y conservar sólo el correcto.
+
+---
+
 # Manual de publicación web y nube para KioscoApp
 
 ## 1. Objetivo
@@ -544,4 +579,3 @@ La combinación elegida es suficiente:
 - Supabase Storage o GitHub Releases: descarga del instalador.
 
 No hacen falta Firebase ni Vercel mientras se mantenga esta arquitectura.
-

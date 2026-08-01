@@ -30,6 +30,8 @@ export const defaultDataset = (seed) => ({
   autoconsumos: [],
   turnos: [],
   recordatoriosProveedor: [],
+  movimientosStock: [],
+  historialLimpiezas: [],
 });
 
 const CATEGORIA_TECNICA = [
@@ -308,6 +310,8 @@ const datosSurDemo = () => ({
   autoconsumos: [{ id: 1, fecha: fechaDemo(0, 13), productId: 203, producto: "Alfajor triple", cantidad: 1, usuario: "Sofía Ramírez", nota: "Colación de turno" }],
   turnos: [{ id: 1, persona: "Sofía Ramírez", inicio: fechaDemo(1, 8), fin: fechaDemo(1, 16), ventasInicio: 0, ventas: 146800 }, { id: 2, persona: "Diego Luna", inicio: fechaDemo(2, 8), fin: fechaDemo(2, 15), ventasInicio: 0, ventas: 119400 }],
   recordatoriosProveedor: [{ id: 1, texto: "Confirmar pedido de bebidas", para: fechaSoloDemo(1), hora: "09:30", completo: false }, { id: 2, texto: "Pedir lácteos", para: fechaSoloDemo(-1), hora: "08:00", completo: true }],
+  movimientosStock: [],
+  historialLimpiezas: [],
 });
 
 export const seedDatos = () => ({

@@ -3,53 +3,46 @@ import {
   Package, Store, ShoppingCart, BarChart3, Shield, LogOut, ScanLine, Search,
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
-  MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
+  MessageCircle, Mail, Copy, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
   ChevronRight,
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
 import { AppSelect } from "../../shared/controls";
 import { buildReplenishmentSuggestions } from "./replenishmentRules";
+import { copyText, openEmailDraft, openWhatsApp, purchaseMessage } from "../../shared/share";
 
-function CopiarTextoModal({ texto, onClose }) {
+function CompartirPedidoModal({ pedido, onClose }) {
+  const [phone, setPhone] = useState(pedido.phone || "");
+  const [email, setEmail] = useState(pedido.email || "");
+  const [copied, setCopied] = useState(false);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-bold text-gray-900">Copiar pedido</h2>
+          <h2 className="text-lg font-bold text-gray-900">Compartir pedido</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
             <X size={20} />
           </button>
         </div>
-        <p className="text-xs text-gray-500 mb-2">
-          El copiado automático no anduvo. Seleccioná el texto de acá abajo y
-          copialo a mano (Ctrl+C / Cmd+C).
-        </p>
+        <p className="mb-3 text-xs text-gray-500">La app prepara el mensaje; vos revisás y confirmás el envío.</p>
+        <div className="mb-3 grid gap-2 sm:grid-cols-2"><input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="WhatsApp" className="rounded-lg border px-3 py-2 text-sm"/><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Correo" className="rounded-lg border px-3 py-2 text-sm"/></div>
         <textarea
           readOnly
-          value={texto}
+          value={pedido.text}
           onFocus={(e) => e.target.select()}
           className="w-full h-40 border border-gray-300 rounded-lg px-3 py-2 text-sm mb-4"
         />
-        <a
-          href={`https://wa.me/?text=${encodeURIComponent(texto)}`}
-          target="_blank"
-          rel="noreferrer"
-          className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800"
-        >
-          <MessageCircle size={16} />
-          Abrir en WhatsApp
-        </a>
+        <div className="grid gap-2 sm:grid-cols-3"><button onClick={() => openWhatsApp({ phone, text: pedido.text })} className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-green-600 px-3 text-sm font-semibold text-white"><MessageCircle size={16}/>WhatsApp</button><button onClick={() => openEmailDraft({ to: email, subject: `Pedido para ${pedido.providerName}`, body: pedido.text })} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold"><Mail size={16}/>Correo</button><button onClick={async () => { try { await copyText(pedido.text); setCopied(true); } catch {} }} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold"><Copy size={16}/>{copied ? "Copiado" : "Copiar"}</button></div>
       </div>
     </div>
   );
 }
 
-export function ComprasView({ products, setProducts, comprasItems, setComprasItems, proveedores = [], pedidos = [], setPedidos, tickets = [], tutorialMode = false }) {
+export function ComprasView({ products, setProducts, comprasItems, setComprasItems, proveedores = [], pedidos = [], setPedidos, tickets = [], tutorialMode = false, businessName = "Kiosco+" }) {
   const [manualNombre, setManualNombre] = useState("");
   const [buscarProducto, setBuscarProducto] = useState("");
-  const [copiado, setCopiado] = useState(false);
-  const [textoFallback, setTextoFallback] = useState(null);
+  const [pedidoParaCompartir, setPedidoParaCompartir] = useState(null);
   const [nuevoProductoOpen, setNuevoProductoOpen] = useState(false);
   const tieneCompraActiva = (productId, items = comprasItems) =>
     items.some((item) => item.productId === productId && item.estado !== "recibido");
@@ -227,7 +220,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
       );
     }
     setComprasItems((prev) =>
-      prev.map((i) => (i.id === item.id ? { ...i, estado: "recibido" } : i))
+      prev.map((i) => (i.id === item.id ? { ...i, estado: "recibido", recibidoFecha: new Date().toISOString() } : i))
     );
     if (item.pedidoId && setPedidos) {
       const quedan = comprasItems.some((other) => other.pedidoId === item.pedidoId && other.id !== item.id && other.estado !== "recibido");
@@ -246,27 +239,12 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
     return [...groups.values()];
   }, [activos, products, proveedores]);
 
-  const copiarGrupo = async (grupo) => {
-    const texto = `Pedido para ${grupo.proveedor?.nombre || "proveedor a definir"}:\n${grupo.items.map((item) => `- ${item.cantidad} x ${item.nombre}`).join("\n")}`;
-    try { await navigator.clipboard.writeText(texto); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch { setTextoFallback(texto); }
+  const compartirGrupo = (grupo) => {
+    const providerName = grupo.proveedor?.nombre || "proveedor a definir";
+    setPedidoParaCompartir({ providerName, phone: grupo.proveedor?.telefono || "", email: grupo.proveedor?.email || "", text: purchaseMessage({ businessName, providerName, items: grupo.items }) });
   };
 
-  const copiarWhatsapp = async () => {
-    const texto = activos.map((i) => {
-      const product = products.find((p) => p.id === i.productId);
-      const proveedor = proveedores.find((p) => p.id === product?.proveedorId);
-      return `- ${i.cantidad} x ${i.nombre}${proveedor ? ` (${proveedor.nombre})` : ""}`;
-    }).join("\n");
-    const full = `Pedido Kiosco+:\n${texto}`;
-    try {
-      if (!navigator.clipboard) throw new Error("sin clipboard");
-      await navigator.clipboard.writeText(full);
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 2000);
-    } catch {
-      setTextoFallback(full);
-    }
-  };
+  const compartirTodo = () => setPedidoParaCompartir({ providerName: "proveedores", phone: "", email: "", text: purchaseMessage({ businessName, providerName: "", items: activos }) });
 
   return (
     <div className="min-w-0 p-4 sm:p-6 md:p-8">
@@ -276,7 +254,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
         actions={
           activos.length > 0 && (
             <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-              <button onClick={copiarWhatsapp} className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50"><MessageCircle size={16} className="shrink-0"/><span className="truncate">{copiado ? "¡Copiado!" : "Copiar todo"}</span></button>
+              <button onClick={compartirTodo} className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50"><MessageCircle size={16} className="shrink-0"/><span className="truncate">Compartir todo</span></button>
               {activos.some((item) => item.estado === "pendiente") && <button data-tour="purchase-generate" onClick={generarPedidosPorProveedor} className="flex min-w-0 items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white"><PackageCheck size={16} className="shrink-0"/><span className="truncate">Generar pedidos</span></button>}
             </div>
           )
@@ -384,7 +362,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
 
       {gruposActivos.length > 0 && (
         <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {gruposActivos.map((grupo) => <div key={grupo.proveedor?.id || "sin"} className="min-w-0 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-medium uppercase text-blue-600">Proveedor</p><p className="break-words font-semibold">{grupo.proveedor?.nombre || "Sin proveedor asignado"}</p><p className="text-xs text-gray-500">{grupo.items.length} producto(s)</p></div><button onClick={() => copiarGrupo(grupo)} className="shrink-0 rounded-lg border border-blue-200 bg-white p-2 text-blue-700" title="Copiar pedido de este proveedor"><MessageCircle size={15}/></button></div>{grupo.proveedor?.telefono && <p className="mt-3 break-all text-xs text-gray-500">{grupo.proveedor.telefono}</p>}</div>)}
+          {gruposActivos.map((grupo) => <div key={grupo.proveedor?.id || "sin"} className="min-w-0 rounded-xl border border-blue-100 bg-blue-50/40 p-3 sm:p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-medium uppercase text-blue-600">Proveedor</p><p className="break-words font-semibold">{grupo.proveedor?.nombre || "Sin proveedor asignado"}</p><p className="text-xs text-gray-500">{grupo.items.length} producto(s)</p></div><button onClick={() => compartirGrupo(grupo)} className="shrink-0 rounded-lg border border-blue-200 bg-white p-2 text-blue-700" title="Compartir pedido con este proveedor"><MessageCircle size={15}/></button></div>{grupo.proveedor?.telefono && <p className="mt-3 break-all text-xs text-gray-500">{grupo.proveedor.telefono}</p>}</div>)}
         </div>
       )}
 
@@ -514,10 +492,10 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
         />
       )}
 
-      {textoFallback && (
-        <CopiarTextoModal
-          texto={textoFallback}
-          onClose={() => setTextoFallback(null)}
+      {pedidoParaCompartir && (
+        <CompartirPedidoModal
+          pedido={pedidoParaCompartir}
+          onClose={() => setPedidoParaCompartir(null)}
         />
       )}
     </div>

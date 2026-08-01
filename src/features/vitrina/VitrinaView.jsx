@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Bell, ChevronRight, FolderPlus, Save, Search, Store, X } from "lucide-react";
-import { formatQuantity, roundQuantity, unidadInfo } from "../../shared/domain";
+import { formatQuantity, historialEntry, roundQuantity, unidadInfo } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
 import { groupProductFamilies, productVariant } from "../../shared/productFamilies";
 
@@ -50,7 +50,7 @@ function VitrinaRow({ product, onSave, nested = false }) {
   );
 }
 
-export function VitrinaView({ products, setProducts }) {
+export function VitrinaView({ products, setProducts, movimientosStock = [], setMovimientosStock, identidad }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const [query, setQuery] = useState("");
   const [groupEditorOpen, setGroupEditorOpen] = useState(false);
@@ -67,7 +67,32 @@ export function VitrinaView({ products, setProducts }) {
     return value ? products.filter((product) => [product.nombre, product.codigo, product.familia, product.variante, product.vitrinaGrupo].some((field) => String(field || "").toLocaleLowerCase("es").includes(value))) : products;
   }, [products, groupProductQuery]);
   const toggle = (key) => setExpanded((previous) => { const next = new Set(previous); next.has(key) ? next.delete(key) : next.add(key); return next; });
-  const saveRow = (id, updates) => setProducts((previous) => previous.map((product) => product.id === id ? { ...product, ...updates } : product));
+  const saveRow = (id, updates) => {
+    const previousProduct = products.find((product) => product.id === id);
+    if (!previousProduct) return;
+    const difference = roundQuantity(Number(updates.vitrina || 0) - Number(previousProduct.vitrina || 0));
+    const unit = unidadInfo(previousProduct.unidad).baseAbbr;
+    const direction = difference > 0 ? "Depósito → vitrina" : difference < 0 ? "Vitrina → depósito" : "Sin traslado";
+    const detail = difference === 0 ? `Alerta de vitrina actualizada a ${updates.alertaVitrina}` : `${direction}: ${formatQuantity(Math.abs(difference))} ${unit}`;
+    setProducts((previous) => previous.map((product) => product.id === id ? { ...product, ...updates, historial: [...(product.historial || []), historialEntry("movimiento_vitrina", detail)] } : product));
+    if (difference !== 0 && setMovimientosStock) setMovimientosStock((previous) => [{
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      fecha: new Date().toISOString(),
+      tipo: "transferencia_interna",
+      productId: id,
+      producto: previousProduct.nombre,
+      origen: difference > 0 ? "depósito" : "vitrina",
+      destino: difference > 0 ? "vitrina" : "depósito",
+      cantidad: Math.abs(difference),
+      unidad: previousProduct.unidad,
+      depositoAntes: Number(previousProduct.deposito || 0),
+      depositoDespues: Number(updates.deposito || 0),
+      vitrinaAntes: Number(previousProduct.vitrina || 0),
+      vitrinaDespues: Number(updates.vitrina || 0),
+      usuario: identidad?.nombre || "Sin identificar",
+      rol: identidad?.rol || "Sin identificar",
+    }, ...(previous || movimientosStock || [])]);
+  };
   const saveGroup = () => {
     const name = groupName.trim();
     if (!name || groupSelection.size === 0) return;
