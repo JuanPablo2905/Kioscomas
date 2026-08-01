@@ -91,12 +91,55 @@ try {
     deviceId: "pc-2",
     value: { ...productBase, deposito: 7, historial: [...productBase.historial, { id: "sale-2", tipo: "venta" }] },
   };
-  const firstSale = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [saleFromFirstDevice] }) });
-  const secondSale = await request("/v1/sync/push", { method: "POST", headers: secondDeviceHeaders, body: JSON.stringify({ operations: [saleFromSecondDevice] }) });
-  test("primera venta actualiza el stock", firstSale.value.acceptedEntityVersions?.[0]?.value?.deposito === 7);
-  test("dos ventas simultáneas no generan un conflicto falso", secondSale.value.conflicts?.length === 0 && secondSale.value.acceptedIds?.includes("sale-pc-2"));
-  test("se acumula el descuento de stock de ambos equipos", secondSale.value.acceptedEntityVersions?.[0]?.value?.deposito === 6 && secondSale.value.acceptedEntityVersions?.[0]?.autoMerged === true);
-  test("se conservan los historiales de ambas ventas", secondSale.value.acceptedEntityVersions?.[0]?.value?.historial?.length === 3);
+  const [firstSale, secondSale] = await Promise.all([
+    request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [saleFromFirstDevice] }) }),
+    request("/v1/sync/push", { method: "POST", headers: secondDeviceHeaders, body: JSON.stringify({ operations: [saleFromSecondDevice] }) }),
+  ]);
+  const simultaneousSales = [firstSale, secondSale];
+  const simultaneousVersions = simultaneousSales.map((result) => result.value.acceptedEntityVersions?.[0]).sort((left, right) => left.version - right.version);
+  test("primera venta actualiza el stock", simultaneousVersions[0]?.value?.deposito === 7);
+  test("dos ventas realmente simultáneas no generan un conflicto falso", simultaneousSales.every((result) => result.value.conflicts?.length === 0));
+  test("se acumula el descuento de stock de ambos equipos", simultaneousVersions[1]?.value?.deposito === 6 && simultaneousVersions[1]?.autoMerged === true);
+  test("se conservan los historiales de ambas ventas", simultaneousVersions[1]?.value?.historial?.length === 3);
+  const burstSale = {
+    ...saleFromFirstDevice,
+    id: "sale-burst-pc-1",
+    baseVersion: simultaneousVersions[0].version,
+    baseValue: simultaneousVersions[0].value,
+    value: {
+      ...simultaneousVersions[0].value,
+      deposito: 2,
+      // Simulate a temporarily stale UI history while five rapid sales are
+      // compacted into one operation.
+      historial: [
+        productBase.historial[0],
+        ...Array.from({ length: 5 }, (_, index) => ({ id: `burst-${index + 1}`, tipo: "venta" })),
+      ],
+    },
+  };
+  const burstResult = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [burstSale] }) });
+  test("una ráfaga de cinco ventas no genera conflictos", burstResult.value.conflicts?.length === 0 && burstResult.value.acceptedIds?.includes("sale-burst-pc-1"));
+  test("la ráfaga aplica las cinco unidades sobre el stock más nuevo", burstResult.value.acceptedEntityVersions?.[0]?.value?.deposito === 1);
+  test("la ráfaga conserva eventos locales y remotos aunque el historial local esté atrasado", burstResult.value.acceptedEntityVersions?.[0]?.value?.historial?.length === 8);
+  const stressBase = { id: 2, nombre: "Producto de estrés", deposito: 100, vitrina: 0, historial: [{ id: "stress-base", tipo: "creacion" }] };
+  const stressSeed = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [{ ...operation, id: "stress-seed", entityId: "2", value: stressBase }] }) });
+  const stressVersion = stressSeed.value.acceptedEntityVersions?.[0]?.version;
+  const stressResults = await Promise.all(Array.from({ length: 20 }, (_, index) => request("/v1/sync/push", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ operations: [{
+      ...operation,
+      id: `stress-sale-${index + 1}`,
+      entityId: "2",
+      baseVersion: stressVersion,
+      baseValue: stressBase,
+      value: { ...stressBase, deposito: 99, historial: [...stressBase.historial, { id: `stress-history-${index + 1}`, tipo: "venta" }] },
+    }] }),
+  })));
+  const stressVersions = stressResults.map((result) => result.value.acceptedEntityVersions?.[0]).filter(Boolean).sort((left, right) => left.version - right.version);
+  test("veinte envíos simultáneos no pierden escrituras ni generan conflictos", stressVersions.length === 20 && stressResults.every((result) => result.value.conflicts?.length === 0));
+  test("la prueba de estrés acumula las veinte ventas", stressVersions.at(-1)?.value?.deposito === 80);
+  test("la prueba de estrés conserva los veinte eventos", stressVersions.at(-1)?.value?.historial?.length === 21);
   const wrong = await request("/v1/sync/pull?since=0", { headers: { ...headers, "x-tenant-id": "business-b" } });
   test("una sesión no accede a otro negocio", wrong.response.status === 401);
   const refresh = await request("/v1/auth/refresh", {

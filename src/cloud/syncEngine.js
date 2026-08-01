@@ -4,6 +4,7 @@ import { mergeTenantDataset, normalizeOperation } from "./protocol";
 import { applyAcceptedEntityVersions, applyEntityOperations, applySectionOperations, rebasePendingEntityOperations } from "./entitySync";
 import { cloudFetch } from "./cloudAuth";
 import { withDataStorageLock } from "./dataStorageLock";
+import { isSameEntity, mergeConcurrentEntity } from "./conflictMerge";
 
 const QUEUE_KEY = "__cloud_sync_queue_v1";
 const META_KEY = "__cloud_sync_meta_v1";
@@ -27,6 +28,18 @@ const updateQueue = async (updater) => {
   };
   queueMutation = queueMutation.then(run, run);
   await queueMutation;
+  return next;
+};
+let conflictMutation = Promise.resolve();
+const updateConflicts = async (updater) => {
+  let next;
+  const run = async () => {
+    const current = await readJson(CONFLICTS_KEY, []);
+    next = await updater(current);
+    await writeJson(CONFLICTS_KEY, next);
+  };
+  conflictMutation = conflictMutation.then(run, run);
+  await conflictMutation;
   return next;
 };
 const publish = (patch) => { status = { ...status, ...patch }; listeners.forEach((fn) => fn(status)); };
@@ -69,32 +82,64 @@ export const syncEngine = {
       && item.tenantId === normalized.tenantId
       && item.entity === normalized.entity
       && String(item.entityId) === String(normalized.entityId);
+    await conflictMutation;
+    const storedConflicts = ["entity_upsert", "entity_delete"].includes(normalized.type)
+      ? await readJson(CONFLICTS_KEY, [])
+      : [];
+    const previousConflict = storedConflicts.find((item) => item.localOperation && sameEntity(item.localOperation));
     const next = await updateQueue((queue) => {
       const previousEntityOperation = ["entity_upsert", "entity_delete"].includes(normalized.type) ? queue.find(sameEntity) : null;
-      const merged = previousEntityOperation
-        ? { ...normalized, baseVersion: previousEntityOperation.baseVersion, baseValue: previousEntityOperation.baseValue ?? normalized.baseValue }
+      const foundation = previousEntityOperation || previousConflict?.localOperation;
+      const merged = foundation
+        ? { ...normalized, baseVersion: foundation.baseVersion, baseValue: foundation.baseValue ?? normalized.baseValue }
         : normalized;
       return [...queue.filter((item) => !sameEntity(item)), merged].slice(-5000);
     });
+    // A newer local value already contains the unresolved local change. Keep a
+    // single causal operation instead of sending an old conflict and a new sale
+    // for the same product against each other.
+    if (previousConflict) {
+      await updateConflicts((conflicts) => conflicts.filter((item) => !(
+        item.localOperation && sameEntity(item.localOperation)
+      )));
+    }
     publish({ mode: "cloud", pending: next.length });
   },
   async enqueueMany(operations) { for (const operation of operations) await this.enqueue(operation); },
   async flush() {
     const config = loadCloudConfig();
     if (!config.enabled || !config.apiUrl || status.state === "syncing") return status;
+    const tenantId = String(context.tenantId || "");
+    if (!tenantId) {
+      publish({ state: "error", error: "No hay un negocio activo para sincronizar" });
+      return status;
+    }
+    // Mark synchronously, before the first await. Otherwise two timers can both
+    // pass the guard and send overlapping versions of the same product.
+    publish({ state: "syncing", error: null });
+    await queueMutation;
     const queue = await readJson(QUEUE_KEY, []);
     if (!navigator.onLine) { publish({ state: "offline", pending: queue.length }); return status; }
-    const activeQueue = queue.filter((item) => belongsToTenant(item, context.tenantId));
+    const activeQueue = queue.filter((item) => belongsToTenant(item, tenantId));
+    await conflictMutation;
     const storedConflicts = await readJson(CONFLICTS_KEY, []);
-    const retryableConflicts = storedConflicts.filter((item) => belongsToTenant(item, context.tenantId) && item.localOperation);
+    const activeEntities = new Set(activeQueue
+      .filter((item) => ["entity_upsert", "entity_delete"].includes(item.type))
+      .map((item) => `${item.entity}:${String(item.entityId)}`));
+    const retryEntities = new Set();
+    const retryableConflicts = storedConflicts.filter((item) => {
+      if (!belongsToTenant(item, tenantId) || !item.localOperation) return false;
+      const key = `${item.localOperation.entity}:${String(item.localOperation.entityId)}`;
+      if (activeEntities.has(key) || retryEntities.has(key)) return false;
+      retryEntities.add(key);
+      return true;
+    });
     const operationsToPush = [
       ...activeQueue,
       ...retryableConflicts.map((item) => item.localOperation).filter((operation) => !activeQueue.some((queued) => queued.id === operation.id)),
     ];
     publish({ state: "syncing", error: null, pending: activeQueue.length });
     try {
-      const tenantId = String(context.tenantId || "");
-      if (!tenantId) throw new Error("No hay un negocio activo para sincronizar");
       const headers = { "content-type": "application/json", "x-device-id": config.deviceId, "x-tenant-id": tenantId };
       if (operationsToPush.length) {
         const response = await cloudFetch(config.apiUrl, "/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: operationsToPush }) });
@@ -102,17 +147,38 @@ export const syncEngine = {
         const result = await response.json();
         const accepted = new Set(result.acceptedIds || operationsToPush.map((item) => item.id));
         const conflictIds = new Set((result.conflicts || []).map((item)=>item.operationId));
-        const unresolvedConflicts = storedConflicts.filter((item) => !accepted.has(item.operationId));
-        const refreshedConflicts = result.conflicts.map((conflict) => ({
-          ...conflict,
-          localOperation: operationsToPush.find((item) => item.id === conflict.operationId),
-          detectedAt: new Date().toISOString(),
-        }));
+        // New sales can enter the queue while this request is travelling.
+        // Snapshot it before storing conflicts so an obsolete response cannot
+        // resurrect a conflict already superseded by a newer local operation.
+        await queueMutation;
+        const latestQueue = await readJson(QUEUE_KEY, []);
+        const refreshedConflicts = result.conflicts.map((conflict) => {
+          const previousConflict = storedConflicts.find((item) => item.operationId === conflict.operationId);
+          return {
+            ...conflict,
+            localOperation: operationsToPush.find((item) => item.id === conflict.operationId),
+            detectedAt: previousConflict?.detectedAt
+              || operationsToPush.find((item) => item.id === conflict.operationId)?.createdAt
+              || new Date().toISOString(),
+            lastAttemptAt: new Date().toISOString(),
+            attempts: Number(previousConflict?.attempts || 0) + 1,
+          };
+        });
         const refreshedIds = new Set(refreshedConflicts.map((item) => item.operationId));
-        await writeJson(CONFLICTS_KEY, [
-          ...unresolvedConflicts.filter((item) => !refreshedIds.has(item.operationId)),
-          ...refreshedConflicts,
-        ].slice(-500));
+        await updateConflicts((currentConflicts) => {
+          const stillRelevant = refreshedConflicts.filter((conflict) => {
+            const wasStored = storedConflicts.some((item) => item.operationId === conflict.operationId);
+            const wasRemovedWhileSyncing = wasStored && !currentConflicts.some((item) => item.operationId === conflict.operationId);
+            const newerQueuedValue = latestQueue.some((item) => item.id !== conflict.operationId
+              && belongsToTenant(item, tenantId) && isSameEntity(item, conflict));
+            return !wasRemovedWhileSyncing && !newerQueuedValue;
+          });
+          const relevantIds = new Set(stillRelevant.map((item) => item.operationId));
+          return [
+            ...currentConflicts.filter((item) => !accepted.has(item.operationId) && !refreshedIds.has(item.operationId) && !relevantIds.has(item.operationId)),
+            ...stillRelevant,
+          ].slice(-500);
+        });
         const acceptedVersions = result.acceptedEntityVersions?.length
           ? result.acceptedEntityVersions
           : operationsToPush.filter((item) => accepted.has(item.id) && !item.seedOnly && ["entity_upsert", "entity_delete"].includes(item.type)).map((item) => ({
@@ -123,7 +189,6 @@ export const syncEngine = {
             }));
         // Read the queue again because more sales may have been enqueued while
         // the request was travelling to the server.
-        const latestQueue = await readJson(QUEUE_KEY, []);
         if (acceptedVersions.length) {
           await withDataStorageLock(async () => {
             const allData = await readJson("datos", {});
@@ -153,7 +218,37 @@ export const syncEngine = {
       for (const operation of remote.operations || []) {
         const normalized = normalizeOperation(operation); if (!normalized || normalized.tenantId !== tenantId) continue;
         if (["entity_upsert","entity_delete"].includes(normalized.type)) {
-          await withDataStorageLock(async () => { const allData=await readJson("datos",{}); const dataset=allData[tenantId]||allData[Number(tenantId)]||{}; await writeJson("datos",mergeTenantDataset(allData,tenantId,applyEntityOperations(dataset,[normalized]))); });
+          await withDataStorageLock(async () => {
+            const conflicts = await readJson(CONFLICTS_KEY, []);
+            const hasUnresolvedLocal = conflicts.some((item) => belongsToTenant(item, tenantId)
+              && item.localOperation && isSameEntity(item.localOperation, normalized));
+            if (hasUnresolvedLocal) return;
+
+            let pendingFound = false;
+            let rebasedValue = null;
+            await updateQueue((currentQueue) => currentQueue.map((item) => {
+              if (!belongsToTenant(item, tenantId) || !isSameEntity(item, normalized)) return item;
+              pendingFound = true;
+              if (normalized.type !== "entity_upsert" || item.type !== "entity_upsert") return item;
+              const merge = mergeConcurrentEntity(item, normalized.value);
+              if (!merge.value) return item;
+              rebasedValue = merge.value;
+              return {
+                ...item,
+                value: merge.value,
+                baseValue: normalized.value,
+                baseVersion: Number(normalized.version || 0),
+              };
+            }));
+
+            const allData = await readJson("datos", {});
+            const dataset = allData[tenantId] || allData[Number(tenantId)] || {};
+            if (pendingFound && !rebasedValue) return;
+            const operationToApply = rebasedValue
+              ? { ...normalized, type: "entity_upsert", value: rebasedValue }
+              : normalized;
+            await writeJson("datos", mergeTenantDataset(allData, tenantId, applyEntityOperations(dataset, [operationToApply])));
+          });
         } else if (["section_set","section_delete"].includes(normalized.type)) {
           await withDataStorageLock(async () => { const allData=await readJson("datos",{}); const dataset=allData[tenantId]||allData[Number(tenantId)]||{}; await writeJson("datos",mergeTenantDataset(allData,tenantId,applySectionOperations(dataset,[normalized]))); });
         } else if (normalized.type === "system_set" && normalized.key === "cuentas") {
@@ -180,10 +275,11 @@ export const syncEngine = {
     return status;
   },
   async resolveConflict(operationId, strategy = "cloud") {
+    await conflictMutation;
     const conflicts = await readJson(CONFLICTS_KEY, []);
     const conflict = conflicts.find((item) => item.operationId === operationId);
     if (!conflict) return status;
-    await writeJson(CONFLICTS_KEY, conflicts.filter((item) => item.operationId !== operationId));
+    await updateConflicts((items) => items.filter((item) => item.operationId !== operationId));
     if (strategy === "cloud" && conflict.entity && conflict.serverValue) {
       const tenantId = String(context.tenantId || conflict.localOperation?.tenantId || "");
       await withDataStorageLock(async () => {

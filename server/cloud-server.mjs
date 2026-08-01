@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { mergeConcurrentEntity } from "../src/cloud/conflictMerge.js";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const databasePath = process.env.KIOSCO_CLOUD_DB || path.join(root, "cloud-dev-data", "database.json");
@@ -14,70 +15,6 @@ const localMode = process.env.KIOSCO_LOCAL_MODE !== "0";
 const emptyDb = () => ({ schemaVersion: 3, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {} });
 const cleanBarcode = (value) => String(value || "").replace(/\D/g, "").slice(0, 18);
 const cleanCatalogText = (value, max = 160) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
-const sameValue = (left, right) => JSON.stringify(left) === JSON.stringify(right);
-const finiteNumber = (value) => value !== "" && value != null && Number.isFinite(Number(value));
-const additiveProductFields = new Set(["deposito", "vitrina"]);
-const mergeAppendOnlyArray = (base, local, remote) => {
-  if (![base, local, remote].every(Array.isArray)) return null;
-  if (!sameValue(local.slice(0, base.length), base)) return null;
-  const merged = [...remote];
-  const signature = (item) => item?.id != null ? `id:${item.id}` : JSON.stringify(item);
-  const known = new Set(remote.map(signature));
-  for (const item of local.slice(base.length)) {
-    const itemSignature = signature(item);
-    if (!known.has(itemSignature)) {
-      known.add(itemSignature);
-      merged.push(item);
-    }
-  }
-  return merged;
-};
-const mergeConcurrentEntity = (operation, serverValue) => {
-  if (operation.type !== "entity_upsert" || !operation.baseValue || !operation.value || !serverValue) return null;
-  const base = operation.baseValue;
-  const local = operation.value;
-  const remote = serverValue;
-  const merged = { ...remote };
-  const keys = new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(remote)]);
-
-  for (const key of keys) {
-    if (key === "_syncVersion") continue;
-    const localChanged = !sameValue(local[key], base[key]);
-    if (!localChanged) continue;
-    const remoteChanged = !sameValue(remote[key], base[key]);
-
-    if (
-      remoteChanged
-      && operation.entity === "products"
-      && additiveProductFields.has(key)
-      && finiteNumber(base[key])
-      && finiteNumber(local[key])
-      && finiteNumber(remote[key])
-    ) {
-      const localDelta = Number(local[key]) - Number(base[key]);
-      merged[key] = Math.max(0, Number(remote[key]) + localDelta);
-      continue;
-    }
-
-    if (remoteChanged && key === "historial") {
-      const mergedHistory = mergeAppendOnlyArray(base[key], local[key], remote[key]);
-      if (mergedHistory) {
-        merged[key] = mergedHistory;
-        continue;
-      }
-    }
-
-    if (!remoteChanged || sameValue(local[key], remote[key])) {
-      if (Object.prototype.hasOwnProperty.call(local, key)) merged[key] = local[key];
-      else delete merged[key];
-      continue;
-    }
-
-    return null;
-  }
-
-  return merged;
-};
 const externalLookupInFlight = new Map();
 const categoryFromCatalog = (product = {}) => {
   const text = `${product.product_type || ""} ${product.category || ""} ${product.categories || ""} ${(product.categories_tags || []).join(" ")}`.toLowerCase();
@@ -383,7 +320,7 @@ const isLoopback = (req) => {
   return address === "127.0.0.1" || address === "::1";
 };
 
-const server = http.createServer(async (req, res) => {
+const handleRequest = async (req, res) => {
   try {
     if (req.method === "OPTIONS") return send(res, 204, {});
     if (req.url === "/v1/health") return send(res, 200, {
@@ -391,6 +328,7 @@ const server = http.createServer(async (req, res) => {
       service: "kiosco-cloud-local",
       schemaVersion: 3,
       localMode,
+      revision: String(process.env.RENDER_GIT_COMMIT || "local").slice(0, 12),
       time: new Date().toISOString(),
     });
     if (req.url?.startsWith("/v1/releases/latest")) {
@@ -573,13 +511,16 @@ const server = http.createServer(async (req, res) => {
             acceptedEntityVersions.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, version: current.version || 0, value: current.value });
             continue;
           }
-          if (operation.baseVersion != null && Number(operation.baseVersion) !== Number(current?.version || 0)) {
-            const mergedValue = mergeConcurrentEntity(operation, current?.value);
-            if (!mergedValue) {
-              conflicts.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, serverVersion: current?.version || 0, serverValue: current?.value || null });
+          const versionMismatch = Number(operation.baseVersion ?? 0) !== Number(current?.version || 0);
+          const baseMismatch = !!(operation.baseValue && current?.value
+            && JSON.stringify(operation.baseValue) !== JSON.stringify(current.value));
+          if (current && (versionMismatch || baseMismatch)) {
+            const merge = mergeConcurrentEntity(operation, current?.value);
+            if (!merge.value) {
+              conflicts.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, serverVersion: current?.version || 0, serverValue: current?.value || null, reason: merge.reason, conflictingFields: merge.conflictingFields });
               continue;
             }
-            operation = { ...operation, value: mergedValue, autoMerged: true };
+            operation = { ...operation, value: merge.value, autoMerged: true };
           }
           db.cursor += 1;
           const version = Number(current?.version || 0) + 1;
@@ -654,6 +595,27 @@ const server = http.createServer(async (req, res) => {
     console.error(error);
     return send(res, 500, { error: "Error interno del servidor local" });
   }
+};
+
+// The current persistence adapter stores the whole database as JSON. Two HTTP
+// requests that read the same snapshot and then write concurrently can lose an
+// accepted sale even if their entity merge is correct. Serialize every request
+// that may read or mutate that database until PostgreSQL replaces this adapter.
+// Public health/metadata endpoints stay outside the queue.
+let databaseRequestMutation = Promise.resolve();
+const bypassDatabaseQueue = (req) => req.method === "OPTIONS"
+  || req.url === "/v1/health"
+  || req.url?.startsWith("/v1/releases/latest")
+  || req.url === "/v1/catalog/providers";
+
+const server = http.createServer((req, res) => {
+  const run = () => handleRequest(req, res);
+  if (bypassDatabaseQueue(req)) {
+    run();
+    return;
+  }
+  const pending = databaseRequestMutation.then(run, run);
+  databaseRequestMutation = pending.catch(() => {});
 });
 
 server.on("error", (error) => {

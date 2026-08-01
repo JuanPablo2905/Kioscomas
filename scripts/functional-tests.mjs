@@ -20,6 +20,7 @@ try {
   const cloudProtocol = await vite.ssrLoadModule("/src/cloud/protocol.js");
   const updates = await vite.ssrLoadModule("/src/updates/updateService.js");
   const entitySync = await vite.ssrLoadModule("/src/cloud/entitySync.js");
+  const conflictMerge = await vite.ssrLoadModule("/src/cloud/conflictMerge.js");
   const replenishment = await vite.ssrLoadModule("/src/features/compras/replenishmentRules.js");
   const ticketBarcode = await vite.ssrLoadModule("/src/shared/ticketBarcode.js");
   const invoices = await vite.ssrLoadModule("/src/features/gestion/invoiceRules.js");
@@ -160,6 +161,21 @@ try {
     dataStorageLock.withDataStorageLock(async () => { serializedOrder.push("venta-3"); }),
   ]);
   test("los guardados de una ráfaga mantienen el orden", serializedOrder.join(",") === "venta-1,venta-2,venta-3");
+  const mergedStressSale = conflictMerge.mergeConcurrentEntity({
+    type: "entity_upsert",
+    entity: "products",
+    baseValue: { id: 1, vitrina: 10, historial: [{ id: "base" }, { id: "confirmada" }] },
+    value: { id: 1, vitrina: 5, historial: [{ id: "base" }, { id: "local" }] },
+  }, { id: 1, vitrina: 7, historial: [{ id: "base" }, { id: "confirmada" }, { id: "remota" }] });
+  test("cinco ventas rápidas se acumulan sobre el stock remoto", mergedStressSale.value?.vitrina === 2);
+  test("el historial desfasado se une sin crear un conflicto falso", mergedStressSale.value?.historial?.map((item) => item.id).join(",") === "base,confirmada,remota,local");
+  const realEditConflict = conflictMerge.mergeConcurrentEntity({
+    type: "entity_upsert",
+    entity: "products",
+    baseValue: { id: 1, venta: 1000 },
+    value: { id: 1, venta: 1200 },
+  }, { id: 1, venta: 1300 });
+  test("dos ediciones reales del mismo precio siguen pidiendo revisión", !realEditConflict.value && realEditConflict.conflictingFields?.includes("venta"));
   const cleanup = archive.cleanOperationalDataset({
     tickets: [{ id: 1, fecha: "2020-01-01" }],
     comprobantes: [{ id: 2, fecha: "2020-01-01" }],
