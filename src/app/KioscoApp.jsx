@@ -37,6 +37,7 @@ import { auditActor, createAuditEvent, enrichEntityHistory, hasMeaningfulChange 
 import { captureAppScreenshot } from "../shared/captureScreenshot";
 import { lookupBarcode } from "../shared/productLookup";
 import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
+import { PromptDialog } from "../shared/controls";
 import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, rolesPorDefecto, seedCuentas, seedDatos } from "./data";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
@@ -248,6 +249,7 @@ export default function KioscoApp() {
   const [bugReportDraft, setBugReportDraft] = useState({ captura: null, detalleTecnico: "", vista: null });
   const [globalScanOpen, setGlobalScanOpen] = useState(false);
   const [globalScanResult, setGlobalScanResult] = useState(null);
+  const [voidTicketPrompt, setVoidTicketPrompt] = useState({ ticket: null, reason: "" });
   const [pendingStockProduct, setPendingStockProduct] = useState(null);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [tutorialCatalog, setTutorialCatalog] = useState(false);
@@ -682,8 +684,13 @@ export default function KioscoApp() {
 
   const voidScannedTicket = (ticket) => {
     if (!ticket || ticket.estado === "anulado") return;
-    const motivo = window.prompt("Motivo de la anulación o devolución:");
-    if (!motivo?.trim()) return;
+    setVoidTicketPrompt({ ticket, reason: "" });
+  };
+
+  const confirmVoidScannedTicket = () => {
+    const ticket = voidTicketPrompt.ticket;
+    const motivo = voidTicketPrompt.reason.trim();
+    if (!ticket || !motivo) return;
     const fecha = new Date();
     const responsable = identidad?.nombre || identidad?.rol || "Sin identificar";
     setTickets((previous = []) => previous.map((item) => item.id === ticket.id ? anularTicket(item, motivo.trim(), responsable, fecha.toISOString()) : item));
@@ -704,6 +711,7 @@ export default function KioscoApp() {
       }));
     }
     setGlobalScanResult((current) => current?.ticket?.id === ticket.id ? { ...current, ticket: anularTicket(ticket, motivo.trim(), responsable, fecha.toISOString()) } : current);
+    setVoidTicketPrompt({ ticket: null, reason: "" });
   };
 
   useEffect(() => {
@@ -1109,6 +1117,7 @@ export default function KioscoApp() {
         onPrint={() => printTicket(globalScanResult.ticket, { businessName: cuentaActual?.nombreNegocio || "Mi negocio", paper: currentPreferences.ticketPaper, template: data.configuracionFiscal?.ticket || {}, reprint: true })}
         onVoid={() => voidScannedTicket(globalScanResult?.ticket)}
       />
+      <PromptDialog open={Boolean(voidTicketPrompt.ticket)} title="Anular o devolver ticket" message={`Indicá el motivo para el ticket #${voidTicketPrompt.ticket?.id || ""}. Quedará registrado en el historial.`} value={voidTicketPrompt.reason} onChange={(reason)=>setVoidTicketPrompt((current)=>({...current,reason}))} placeholder="Ej.: devolución del cliente" confirmLabel="Confirmar anulación" onCancel={()=>setVoidTicketPrompt({ticket:null,reason:""})} onConfirm={confirmVoidScannedTicket}/>
     </div>
   );
 }

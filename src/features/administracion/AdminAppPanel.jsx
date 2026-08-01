@@ -32,17 +32,6 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
     setEditandoId(null);
   };
 
-  const borrarCuenta = (id) => {
-    const cuenta = negocios.find((item) => item.id === id);
-    if (!cuenta || !window.confirm(`¿Eliminar la cuenta de ${cuenta.nombreNegocio}? Esta acción borra también sus datos.`)) return;
-    setCuentas((prev) => prev.filter((item) => item.id !== id));
-    setDatos((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  };
-
   const agregarNota = () => {
     if (!textoNota.trim()) return;
     setNotas((prev) => [{ id: Date.now(), texto: textoNota.trim(), prioridad, categoria, estado: "pendiente", fecha: new Date().toISOString() }, ...prev]);

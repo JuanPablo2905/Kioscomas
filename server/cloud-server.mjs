@@ -14,6 +14,69 @@ const localMode = process.env.KIOSCO_LOCAL_MODE !== "0";
 const emptyDb = () => ({ schemaVersion: 3, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {} });
 const cleanBarcode = (value) => String(value || "").replace(/\D/g, "").slice(0, 18);
 const cleanCatalogText = (value, max = 160) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
+const sameValue = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+const finiteNumber = (value) => value !== "" && value != null && Number.isFinite(Number(value));
+const additiveProductFields = new Set(["deposito", "vitrina"]);
+const mergeAppendOnlyArray = (base, local, remote) => {
+  if (![base, local, remote].every(Array.isArray)) return null;
+  if (!sameValue(local.slice(0, base.length), base) || !sameValue(remote.slice(0, base.length), base)) return null;
+  const merged = [...remote];
+  const known = new Set(remote.map((item) => JSON.stringify(item)));
+  for (const item of local.slice(base.length)) {
+    const signature = JSON.stringify(item);
+    if (!known.has(signature)) {
+      known.add(signature);
+      merged.push(item);
+    }
+  }
+  return merged;
+};
+const mergeConcurrentEntity = (operation, serverValue) => {
+  if (operation.type !== "entity_upsert" || !operation.baseValue || !operation.value || !serverValue) return null;
+  const base = operation.baseValue;
+  const local = operation.value;
+  const remote = serverValue;
+  const merged = { ...remote };
+  const keys = new Set([...Object.keys(base), ...Object.keys(local), ...Object.keys(remote)]);
+
+  for (const key of keys) {
+    if (key === "_syncVersion") continue;
+    const localChanged = !sameValue(local[key], base[key]);
+    if (!localChanged) continue;
+    const remoteChanged = !sameValue(remote[key], base[key]);
+
+    if (
+      remoteChanged
+      && operation.entity === "products"
+      && additiveProductFields.has(key)
+      && finiteNumber(base[key])
+      && finiteNumber(local[key])
+      && finiteNumber(remote[key])
+    ) {
+      const localDelta = Number(local[key]) - Number(base[key]);
+      merged[key] = Math.max(0, Number(remote[key]) + localDelta);
+      continue;
+    }
+
+    if (remoteChanged && key === "historial") {
+      const mergedHistory = mergeAppendOnlyArray(base[key], local[key], remote[key]);
+      if (mergedHistory) {
+        merged[key] = mergedHistory;
+        continue;
+      }
+    }
+
+    if (!remoteChanged || sameValue(local[key], remote[key])) {
+      if (Object.prototype.hasOwnProperty.call(local, key)) merged[key] = local[key];
+      else delete merged[key];
+      continue;
+    }
+
+    return null;
+  }
+
+  return merged;
+};
 const externalLookupInFlight = new Map();
 const categoryFromCatalog = (product = {}) => {
   const text = `${product.product_type || ""} ${product.category || ""} ${product.categories || ""} ${(product.categories_tags || []).join(" ")}`.toLowerCase();
@@ -483,7 +546,8 @@ const server = http.createServer(async (req, res) => {
       const acceptedIds = [];
       const acceptedEntityVersions = [];
       const conflicts = [];
-      for (const operation of payload.operations || []) {
+      for (const incomingOperation of payload.operations || []) {
+        let operation = incomingOperation;
         if (!operation.id || db.accepted[operation.id] || String(operation.tenantId) !== tenantId) {
           if (db.accepted[operation.id]) acceptedIds.push(operation.id);
           continue;
@@ -505,12 +569,16 @@ const server = http.createServer(async (req, res) => {
           if (operation.seedOnly && current) {
             db.accepted[operation.id] = db.cursor;
             acceptedIds.push(operation.id);
-            acceptedEntityVersions.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, version: current.version || 0 });
+            acceptedEntityVersions.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, version: current.version || 0, value: current.value });
             continue;
           }
           if (operation.baseVersion != null && Number(operation.baseVersion) !== Number(current?.version || 0)) {
-            conflicts.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, serverVersion: current?.version || 0, serverValue: current?.value || null });
-            continue;
+            const mergedValue = mergeConcurrentEntity(operation, current?.value);
+            if (!mergedValue) {
+              conflicts.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, serverVersion: current?.version || 0, serverValue: current?.value || null });
+              continue;
+            }
+            operation = { ...operation, value: mergedValue, autoMerged: true };
           }
           db.cursor += 1;
           const version = Number(current?.version || 0) + 1;
@@ -528,7 +596,7 @@ const server = http.createServer(async (req, res) => {
           const change = { ...operation, value: stored.value, version, cursor: db.cursor, serverAt: stored.updatedAt };
           db.accepted[operation.id] = db.cursor;
           acceptedIds.push(operation.id);
-          acceptedEntityVersions.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, version });
+          acceptedEntityVersions.push({ operationId: operation.id, entity: operation.entity, entityId: operation.entityId, version, value: stored.value, autoMerged: !!operation.autoMerged });
           db.changes.push(change);
           continue;
         }

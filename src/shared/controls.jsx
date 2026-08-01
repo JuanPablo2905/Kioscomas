@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, Search, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, Search, X } from "lucide-react";
 
 const join = (...values) => values.filter(Boolean).join(" ");
 
@@ -177,7 +177,12 @@ export function DateInput({ value, onChange, className = "", min, max }) {
 
 export function ConfirmDialog({ open, title = "Confirmar accion", message, confirmLabel = "Confirmar", cancelLabel = "Cancelar", danger = false, onConfirm, onCancel }) {
   if (!open) return null;
-  return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4"><div className="app-confirm w-full max-w-md rounded-2xl border bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><h2 className="font-bold">{title}</h2><p className="mt-2 text-sm text-gray-500">{message}</p></div><button type="button" onClick={onCancel} className="rounded-lg p-1"><X size={18}/></button></div><div className="mt-6 flex justify-end gap-2"><button type="button" onClick={onCancel} className="rounded-lg border px-4 py-2 text-sm">{cancelLabel}</button><button type="button" onClick={onConfirm} className={join("rounded-lg px-4 py-2 text-sm font-semibold text-white", danger ? "bg-red-600" : "bg-gray-900")}>{confirmLabel}</button></div></div></div>;
+  return createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="app-confirm-title" className="app-confirm w-full max-w-md overflow-hidden rounded-2xl border shadow-2xl"><div className="flex items-start gap-3 border-b p-5"><span className={join("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", danger ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800")}><AlertTriangle size={20}/></span><div className="min-w-0 flex-1"><h2 id="app-confirm-title" className="font-bold">{title}</h2><p className="mt-1 text-sm opacity-70">{message}</p></div><button type="button" onClick={onCancel} aria-label="Cerrar" className="rounded-lg p-1.5 hover:bg-black/5"><X size={18}/></button></div><div className="grid grid-cols-2 gap-2 p-4 sm:flex sm:justify-end"><button type="button" onClick={onCancel} className="rounded-xl border px-4 py-2.5 text-sm font-semibold">{cancelLabel}</button><button type="button" onClick={onConfirm} className={join("rounded-xl px-4 py-2.5 text-sm font-semibold text-white", danger ? "bg-red-600" : "bg-[var(--app-primary,#1d564d)]")}>{confirmLabel}</button></div></div></div>, document.body);
+}
+
+export function PromptDialog({ open, title, message, value, onChange, placeholder = "", confirmLabel = "Confirmar", cancelLabel = "Cancelar", readOnly = false, onConfirm, onCancel }) {
+  if (!open) return null;
+  return createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]"><div role="dialog" aria-modal="true" className="app-confirm w-full max-w-md overflow-hidden rounded-2xl border shadow-2xl"><div className="flex items-start justify-between gap-3 border-b p-5"><div><h2 className="font-bold">{title}</h2>{message&&<p className="mt-1 text-sm opacity-70">{message}</p>}</div><button type="button" onClick={onCancel} aria-label="Cerrar" className="rounded-lg p-1.5 hover:bg-black/5"><X size={18}/></button></div><div className="p-4"><textarea autoFocus={!readOnly} readOnly={readOnly} value={value} onChange={(event)=>onChange?.(event.target.value)} placeholder={placeholder} rows={readOnly?8:4} className="w-full resize-y rounded-xl border bg-transparent px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[var(--app-primary,#1d564d)]"/><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={onCancel} className="rounded-xl border px-4 py-2.5 text-sm font-semibold">{cancelLabel}</button><button type="button" onClick={onConfirm} className="rounded-xl bg-[var(--app-primary,#1d564d)] px-4 py-2.5 text-sm font-semibold text-white">{confirmLabel}</button></div></div></div></div>, document.body);
 }
 
 export function NativeSelectBridge() {

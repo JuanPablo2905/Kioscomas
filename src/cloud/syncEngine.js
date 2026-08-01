@@ -98,10 +98,15 @@ export const syncEngine = {
           for (const ack of acceptedVersions) {
             const items = [...(dataset[ack.entity] || [])];
             const index = items.findIndex((item) => String(item.id) === String(ack.entityId));
-            if (index >= 0) items[index] = { ...items[index], _syncVersion: Number(ack.version || 0) };
+            if (index >= 0) items[index] = ack.value
+              ? { ...ack.value, _syncVersion: Number(ack.version || 0) }
+              : { ...items[index], _syncVersion: Number(ack.version || 0) };
             dataset[ack.entity] = items;
           }
           await writeJson("datos", mergeTenantDataset(allData, tenantId, dataset));
+          if (acceptedVersions.some((ack) => ack.autoMerged)) {
+            window.dispatchEvent(new CustomEvent("kiosco-cloud-update", { detail: { tenantId, count: acceptedVersions.length, autoMerged: true } }));
+          }
         }
         const latestQueue = await readJson(QUEUE_KEY, []);
         const remainingQueue = latestQueue

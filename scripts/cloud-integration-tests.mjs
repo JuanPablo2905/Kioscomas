@@ -55,7 +55,7 @@ try {
     "x-tenant-id": "business-a",
     authorization: `Bearer ${login.value.accessToken}`,
   };
-  const operation = { id: "op-1", deviceId: "pc-1", tenantId: "business-a", type: "entity_upsert", entity: "products", entityId: "1", value: { id: 1, nombre: "Coca de prueba", codigo: "7791234567890", categoria: "Bebidas", venta: 2500, costo: 1000, deposito: 8 }, baseVersion: null };
+  const operation = { id: "op-1", deviceId: "pc-1", tenantId: "business-a", type: "entity_upsert", entity: "products", entityId: "1", value: { id: 1, nombre: "Coca de prueba", codigo: "7791234567890", categoria: "Bebidas", venta: 2500, costo: 1000, deposito: 8, historial: [{ id: "base", tipo: "creacion" }] }, baseVersion: null };
   const first = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [operation] }) });
   test("alta incremental aceptada", first.value.acceptedIds?.includes("op-1"));
   test("servidor confirma la versión aceptada", first.value.acceptedEntityVersions?.[0]?.operationId === "op-1" && first.value.acceptedEntityVersions?.[0]?.version === 1);
@@ -67,6 +67,36 @@ try {
   const conflict = { ...operation, id: "op-2", value: { id: 1, nombre: "Pepsi" }, baseVersion: 99 };
   const conflicted = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [conflict] }) });
   test("conflicto de versión detectado", conflicted.value.conflicts?.[0]?.serverVersion === 1);
+  const loginSecondDevice = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "owner", password: "secret", deviceId: "pc-2" }),
+  });
+  const secondDeviceHeaders = {
+    ...headers,
+    "x-device-id": "pc-2",
+    authorization: `Bearer ${loginSecondDevice.value.accessToken}`,
+  };
+  const productBase = operation.value;
+  const saleFromFirstDevice = {
+    ...operation,
+    id: "sale-pc-1",
+    value: { ...productBase, deposito: 7, historial: [...productBase.historial, { id: "sale-1", tipo: "venta" }] },
+    baseValue: productBase,
+    baseVersion: 1,
+  };
+  const saleFromSecondDevice = {
+    ...saleFromFirstDevice,
+    id: "sale-pc-2",
+    deviceId: "pc-2",
+    value: { ...productBase, deposito: 7, historial: [...productBase.historial, { id: "sale-2", tipo: "venta" }] },
+  };
+  const firstSale = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [saleFromFirstDevice] }) });
+  const secondSale = await request("/v1/sync/push", { method: "POST", headers: secondDeviceHeaders, body: JSON.stringify({ operations: [saleFromSecondDevice] }) });
+  test("primera venta actualiza el stock", firstSale.value.acceptedEntityVersions?.[0]?.value?.deposito === 7);
+  test("dos ventas simultáneas no generan un conflicto falso", secondSale.value.conflicts?.length === 0 && secondSale.value.acceptedIds?.includes("sale-pc-2"));
+  test("se acumula el descuento de stock de ambos equipos", secondSale.value.acceptedEntityVersions?.[0]?.value?.deposito === 6 && secondSale.value.acceptedEntityVersions?.[0]?.autoMerged === true);
+  test("se conservan los historiales de ambas ventas", secondSale.value.acceptedEntityVersions?.[0]?.value?.historial?.length === 3);
   const wrong = await request("/v1/sync/pull?since=0", { headers: { ...headers, "x-tenant-id": "business-b" } });
   test("una sesión no accede a otro negocio", wrong.response.status === 401);
   const refresh = await request("/v1/auth/refresh", {

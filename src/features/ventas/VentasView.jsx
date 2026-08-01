@@ -927,21 +927,6 @@ export function VentasView({
     setDescuentoValor(0);
   };
 
-  const recuperarVentaNativa = (venta) => {
-    if (cart.length && !window.confirm("La venta actual será reemplazada. ¿Continuar?")) return;
-    const disponibles = (venta.cart || []).map((item) => {
-      const product = products.find((candidate) => candidate.id === item.productId);
-      if (!product) return null;
-      const max = Number(product.vitrina || 0) * unidadInfo(product.unidad).factor;
-      const cantidad = Math.min(Number(item.cantidad || 0), max);
-      return cantidad > 0 ? { ...item, cantidad } : null;
-    }).filter(Boolean);
-    setCart(disponibles);
-    setDescuentoTipo(venta.descuentoTipo || "porcentaje");
-    setDescuentoValor(Number(venta.descuentoValor || 0));
-    setVentasSuspendidas((prev) => prev.filter((item) => item.id !== venta.id));
-  };
-
   const aplicarVentaSuspendida = (venta) => {
     const disponibles = (venta.cart || []).map((item) => {
       const product = products.find((candidate) => candidate.id === item.productId);
