@@ -17,3 +17,23 @@ export function buildReplenishmentSuggestions(products = [], tickets = [], now =
     return { product, ventas30: roundQuantity(ventas30), ventaDiaria, stock: roundQuantity(stock), coberturaDias, recomendada };
   }).filter((item) => item.stock <= Number(item.product.minimo || 0) || (item.coberturaDias !== null && item.coberturaDias < 3));
 }
+
+export function buildAutomaticLowStockItems(products = [], tickets = [], currentItems = [], now = new Date()) {
+  const activeProductIds = new Set(
+    currentItems
+      .filter((item) => item.estado !== "recibido" && item.productId != null)
+      .map((item) => String(item.productId))
+  );
+  const suggestions = new Map(
+    buildReplenishmentSuggestions(products, tickets, now).map((item) => [String(item.product.id), item])
+  );
+
+  return products
+    .filter((product) => Number(product.deposito || 0) <= Number(product.minimo || 0))
+    .filter((product) => !activeProductIds.has(String(product.id)))
+    .map((product) => ({
+      product,
+      recomendada: suggestions.get(String(product.id))?.recomendada
+        ?? Math.max(1, Number(product.minimo || 0) - Number(product.deposito || 0)),
+    }));
+}

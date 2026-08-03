@@ -10,6 +10,7 @@ import { NAV_ITEMS } from "./domain";
 import { buildNotifications } from "../features/notificaciones/notificationRules";
 import { syncEngine } from "../cloud/syncEngine";
 import { ConfirmDialog } from "./controls";
+import { formatTrialExpiration, trialAccessStatus } from "../security/trialAccess";
 const kioscoPlusMark = `${import.meta.env.BASE_URL}kiosco-plus-mark.svg`;
 
 function NavCountBadge({ count, tone }) {
@@ -56,6 +57,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
   const [pendingDiscardId, setPendingDiscardId] = useState(null);
   const [pendingDetailId, setPendingDetailId] = useState(null);
   const [discardPendingBatchOpen, setDiscardPendingBatchOpen] = useState(false);
+  const trial = trialAccessStatus(cuenta);
   useEffect(() => {
     if (syncStatus?.conflicts || syncStatus?.pending) return;
     setSyncReviewOpen(false);
@@ -96,6 +98,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
     promociones: "Promociones",
     comprobantes: "Comprobantes",
     movimientosStock: "Movimientos de stock",
+    labelTemplates: "Distribuciones de etiquetas",
   }[section] || section || null);
   const pendingTitle = (operation) => operation?.value?.nombre
     || (operation?.entity ? entityLabel(operation.entity) : null)
@@ -247,6 +250,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
         <span className="inline-block text-[10px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full mt-1">
           {demoMode ? "Demostración" : identidad?.rol}
         </span>
+        {trial.active && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold leading-4 text-amber-900">Prueba pendiente de aprobación<br/>Vence {formatTrialExpiration(cuenta)}</p>}
         <div className="mt-3 grid grid-cols-[1fr_auto_auto_auto] gap-1"><button data-tour="settings-button" onClick={onOpenSettings} className="flex min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50"><Settings2 size={14}/><span className="truncate">Configurar</span></button><button data-tour="help-button" onClick={onHelp} title="Ayuda de esta sección" className="rounded-lg border px-2 py-1.5 text-gray-600 hover:bg-gray-50"><HelpCircle size={14}/></button><button data-tour="global-scan" onClick={onGlobalScan} title="Escanear producto o ticket" className="rounded-lg border px-2 py-1.5 text-gray-600 hover:bg-gray-50"><ScanLine size={14}/></button><button onClick={onReportProblem} title="Reportar problema" className="rounded-lg border px-2 py-1.5 text-red-600 hover:bg-red-50"><Bug size={14}/></button></div>
         <button
           onClick={onLogout}

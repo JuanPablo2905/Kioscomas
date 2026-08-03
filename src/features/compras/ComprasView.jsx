@@ -9,7 +9,7 @@ import {
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
 import { AppSelect } from "../../shared/controls";
-import { buildReplenishmentSuggestions } from "./replenishmentRules";
+import { buildAutomaticLowStockItems, buildReplenishmentSuggestions } from "./replenishmentRules";
 import { copyText, openEmailDraft, openWhatsApp, purchaseMessage } from "../../shared/share";
 
 function CompartirPedidoModal({ pedido, onClose }) {
@@ -100,6 +100,27 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
     ]);
     setBuscarProducto("");
   };
+
+  useEffect(() => {
+    if (tutorialMode) return;
+    setComprasItems((prev) => {
+      const automaticos = buildAutomaticLowStockItems(products, tickets, prev);
+      if (!automaticos.length) return prev;
+      return [
+        ...prev,
+        ...automaticos.map(({ product, recomendada }) => ({
+          id: nuevoItemId(),
+          productId: product.id,
+          nombre: product.nombre,
+          cantidad: recomendada,
+          costoCompra: product.costo || 0,
+          proveedorId: product.proveedorId || "",
+          estado: "pendiente",
+          origen: "stock-bajo-automatico",
+        })),
+      ];
+    });
+  }, [products, tickets, tutorialMode]);
 
   const addDesdeBusqueda = (product) => {
     setComprasItems((prev) => {

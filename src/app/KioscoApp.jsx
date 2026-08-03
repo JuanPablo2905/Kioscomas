@@ -3,6 +3,7 @@ import { repository } from "../cloud/repository";
 import { loadCloudConfig } from "../cloud/config";
 import { ensureLocalCloudSession, logoutCloud } from "../cloud/cloudAuth";
 import { clearLoginFailures, createSession, loginGuard, registerLoginFailure, secureAccounts, secureSubject, validSession, verifyPassword } from "../security/auth";
+import { accountAccessMessage, canAccessAccount, grantTrialAccess, trialAccessStatus } from "../security/trialAccess";
 import { Sidebar } from "../shared/layout";
 import { ViewErrorBoundary } from "../shared/ViewErrorBoundary";
 import { Home, ReportarProblemaModal } from "../features/inicio/Home";
@@ -33,7 +34,7 @@ import { parseTicketBarcode } from "../shared/ticketBarcode";
 import { printTicket } from "../shared/ticketPrint";
 import { anularTicket, restaurarStock } from "../features/ventas/salesRules";
 import { unidadInfo } from "../shared/domain";
-import { auditActor, createAuditEvent, enrichEntityHistory, hasMeaningfulChange } from "../shared/audit";
+import { auditActor, createAuditEvent, describeAccountChange, enrichEntityHistory, hasMeaningfulChange } from "../shared/audit";
 import { captureAppScreenshot } from "../shared/captureScreenshot";
 import { lookupBarcode } from "../shared/productLookup";
 import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
@@ -276,7 +277,9 @@ export default function KioscoApp() {
         repository.get("cuentas", []), repository.get("datos", {}), repository.get("sesion", null), repository.get("notasAdmin", []), repository.get("authSecurity", {}), repository.get("reportesProblemas", []), repository.get("menuPreferences", {}), repository.get("userPreferences", {}),
       ]);
       if (!activo) return;
-      try { setCuentas(await secureAccounts(migrarCuentasDemo(cuentasGuardadas))); } catch { setCuentas(await secureAccounts(seedCuentas())); }
+      let loadedAccounts;
+      try { loadedAccounts = await secureAccounts(migrarCuentasDemo(cuentasGuardadas)); } catch { loadedAccounts = await secureAccounts(seedCuentas()); }
+      setCuentas(loadedAccounts);
       if (datosGuardados) {
         try {
           const guardados = datosGuardados;
@@ -291,7 +294,7 @@ export default function KioscoApp() {
         setCurrentUserId(2);
         setIdentidad(PUBLIC_DEMO_IDENTITY);
         setSessionExpiresAt(null);
-      } else if (validSession(sesion)) { setCurrentUserId(sesion.accountId); setIdentidad(sesion.identity); setSessionExpiresAt(sesion.expiresAt); }
+      } else if (validSession(sesion) && (sesion.identity?.superAdmin || sesion.identity?.adminApp || canAccessAccount(loadedAccounts.find((account) => account.id === sesion.accountId)))) { setCurrentUserId(sesion.accountId); setIdentidad(sesion.identity); setSessionExpiresAt(sesion.expiresAt); }
       else await repository.delete("sesion");
       setNotasAdmin(notas || []);
       setAuthSecurity(security || {});
@@ -320,7 +323,11 @@ export default function KioscoApp() {
     if (currentUserId) repository.syncNow().catch(() => {});
   }, [currentUserId, identidad?.superAdmin, identidad?.adminApp]);
   useEffect(() => {
-    const reloadRemote = async () => { const remote = await repository.get("datos", {}); setDatos(migrarDatosDemo(remote)); };
+    const reloadRemote = async () => {
+      const [remoteData, remoteAccounts] = await Promise.all([repository.get("datos", {}), repository.get("cuentas", [])]);
+      setDatos(migrarDatosDemo(remoteData));
+      setCuentas(await secureAccounts(migrarCuentasDemo(remoteAccounts)));
+    };
     window.addEventListener("kiosco-cloud-update", reloadRemote);
     return () => window.removeEventListener("kiosco-cloud-update", reloadRemote);
   }, []);
@@ -366,6 +373,15 @@ export default function KioscoApp() {
     const timer = setInterval(() => { if (Date.now() >= new Date(sessionExpiresAt).getTime()) { setCurrentUserId(null); setIdentidad(null); setSessionExpiresAt(null); setLoginError("La sesión venció. Ingresá nuevamente."); } }, 30000);
     return () => clearInterval(timer);
   }, [sessionExpiresAt]);
+  useEffect(() => {
+    if (cargando || !currentUserId || identidad?.superAdmin || identidad?.adminApp) return;
+    const account = cuentas.find((item) => item.id === currentUserId);
+    if (canAccessAccount(account)) return;
+    setCurrentUserId(null);
+    setIdentidad(null);
+    setSessionExpiresAt(null);
+    setLoginError(accountAccessMessage(account));
+  }, [cuentas, cargando, currentUserId, identidad?.superAdmin, identidad?.adminApp]);
   useEffect(() => {
     if (identidad?.adminApp && identidad?.operandoNegocio && identidad.rol !== "Administrador de la app") {
       setIdentidad((previous) => ({ ...previous, rol: "Administrador de la app" }));
@@ -576,7 +592,7 @@ export default function KioscoApp() {
       key: "negocio",
       previousValue: previousAccount,
       nextValue: nextAccount,
-      detail: `Configuración del negocio modificada: ${Object.keys(patch).join(", ")}`,
+      detail: describeAccountChange(patch, previousAccount),
       section: "configuracion",
     });
   };
@@ -639,6 +655,7 @@ export default function KioscoApp() {
   const setTurnos = makeSetter("turnos");
   const setRecordatoriosProveedor = makeSetter("recordatoriosProveedor");
   const setMovimientosStock = makeSetter("movimientosStock");
+  const setLabelTemplates = makeSetter("labelTemplates");
 
   const resolveScannedCode = (rawCode) => {
     const code = String(rawCode || "").trim();
@@ -761,8 +778,8 @@ export default function KioscoApp() {
     const cuentaCandidate = cuentas.find((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase());
     const cuenta = cuentaCandidate && await verifyPassword(normalizedPassword, cuentaCandidate) ? cuentaCandidate : null;
     if (cuenta) {
-      if (!cuenta.superAdmin && cuenta.estado !== "aprobada") {
-        setLoginError(cuenta.estado === "bloqueada" ? "Esta cuenta está bloqueada." : "Esta cuenta todavía está pendiente de aprobación.");
+      if (!cuenta.superAdmin && !canAccessAccount(cuenta)) {
+        setLoginError(accountAccessMessage(cuenta));
         return;
       }
       setLoginError("");
@@ -771,9 +788,11 @@ export default function KioscoApp() {
       const identity = { usuarioId: `cuenta:${cuenta.id}`, tenantId: String(cuenta.id), rol: cuenta.superAdmin ? "Administrador de la app" : "Dueño", nombre: cuenta.nombre, superAdmin: !!cuenta.superAdmin, adminId: cuenta.superAdmin ? cuenta.id : null };
       setIdentidad(identity);
       connectLocalCloud({ businessId: cuenta.id, username: normalizedUser, password: normalizedPassword, name: cuenta.nombre, superAdmin: !!cuenta.superAdmin });
-      setSessionExpiresAt(createSession(cuenta.id, identity).expiresAt);
+      const session = createSession(cuenta.id, identity);
+      const trial = trialAccessStatus(cuenta);
+      setSessionExpiresAt(trial.active && new Date(trial.expiresAt) < new Date(session.expiresAt) ? trial.expiresAt : session.expiresAt);
       setAuthSecurity((prev) => clearLoginFailures(prev, normalizedUser));
-      setDatos((prev) => ({ ...prev, [cuenta.id]: { ...prev[cuenta.id], auditoria: [...(prev[cuenta.id]?.auditoria || []), { id: Date.now(), fecha: new Date().toISOString(), tenantId: String(cuenta.id), usuario: cuenta.nombre, accion: "inicio_sesion", resultado: "exitoso" }] } }));
+      setDatos((prev) => ({ ...prev, [cuenta.id]: { ...prev[cuenta.id], auditoria: [...(prev[cuenta.id]?.auditoria || []), { id: Date.now(), fecha: new Date().toISOString(), tenantId: String(cuenta.id), usuario: cuenta.nombre, usuarioId: identity.usuarioId, rol: identity.rol, origen: cuenta.superAdmin ? "administracion_app" : "dueno", seccion: "seguridad", accion: "inicio_sesion", detalle: "Inicio de sesión", resultado: "exitoso" }] } }));
       return;
     }
 
@@ -782,8 +801,8 @@ export default function KioscoApp() {
       const candidate = (negocio.empleados || []).find((e) => String(e.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase());
       const empleado = candidate && await verifyPassword(normalizedPassword, candidate) ? candidate : null;
       if (empleado) {
-        if (negocio.estado !== "aprobada") {
-          setLoginError("La cuenta de este negocio no está habilitada.");
+        if (!canAccessAccount(negocio)) {
+          setLoginError(accountAccessMessage(negocio));
           return;
         }
         setLoginError("");
@@ -792,7 +811,9 @@ export default function KioscoApp() {
         const identity = { usuarioId: `empleado:${empleado.id}`, tenantId: String(negocio.id), rol: empleado.rol, nombre: empleado.nombre, superAdmin: false };
         setIdentidad(identity);
         connectLocalCloud({ businessId: negocio.id, username: normalizedUser, password: normalizedPassword, name: empleado.nombre });
-        setSessionExpiresAt(createSession(negocio.id, identity).expiresAt);
+        const session = createSession(negocio.id, identity);
+        const trial = trialAccessStatus(negocio);
+        setSessionExpiresAt(trial.active && new Date(trial.expiresAt) < new Date(session.expiresAt) ? trial.expiresAt : session.expiresAt);
         setAuthSecurity((prev) => clearLoginFailures(prev, normalizedUser));
         return;
       }
@@ -810,7 +831,7 @@ export default function KioscoApp() {
       return;
     }
     const id = Date.now();
-    const secured = await secureSubject({
+    const secured = grantTrialAccess(await secureSubject({
         id,
         tenantId: String(id),
         nombre,
@@ -822,13 +843,20 @@ export default function KioscoApp() {
         estado: "pendiente",
         roles: rolesPorDefecto(),
         empleados: [],
-      });
+      }), 1);
     setCuentas((prev) => [
       ...prev,
       secured,
     ]);
     setDatos((prev) => ({ ...prev, [id]: { ...defaultDataset(false), tenantId: String(id) } }));
-    setLoginError("Cuenta creada. Debe ser aprobada por el administrador antes de ingresar.");
+    const identity = { usuarioId: `cuenta:${id}`, tenantId: String(id), rol: "Dueño", nombre, superAdmin: false, trial: true };
+    setLoginError("");
+    setCurrentUserId(id);
+    setIdentidad(identity);
+    setView("home");
+    connectLocalCloud({ businessId: id, username: normalizedUser, password: normalizedPassword, name: nombre });
+    const session = createSession(id, identity);
+    setSessionExpiresAt(new Date(secured.trialExpiresAt) < new Date(session.expiresAt) ? secured.trialExpiresAt : session.expiresAt);
   };
 
   const handleLogout = () => {
@@ -898,7 +926,7 @@ export default function KioscoApp() {
         setReportes={setReportesProblemas}
         onOpenNegocio={(id) => {
           const negocio = cuentas.find((item) => item.id === id);
-          if (!negocio || negocio.estado !== "aprobada") return;
+          if (!negocio || !canAccessAccount(negocio)) return;
           setCurrentUserId(id);
           setIdentidad((prev) => ({ ...prev, tenantId: String(id), operandoNegocio: true, adminApp: true, superAdmin: false, rol: "Administrador de la app" }));
           setView("home");
@@ -1017,7 +1045,7 @@ export default function KioscoApp() {
           />
         );
       case "gestion":
-        return <GestionView data={data} identidad={identidad} preferences={currentPreferences} hasEmployees={hasEmployees} setters={{ setTareas, setMetas, setPromociones, setReservas, setPresupuestos, setArqueos, setConfiguracionFiscal, setComprobantes, setListaCompras, setRetornables, setCambioCaja, setAutoconsumos, setTurnos, setRecordatoriosProveedor, setProducts, devolverTicket: (ticket) => {
+        return <GestionView data={data} identidad={identidad} preferences={currentPreferences} hasEmployees={hasEmployees} setters={{ setTareas, setMetas, setPromociones, setReservas, setPresupuestos, setArqueos, setConfiguracionFiscal, setComprobantes, setListaCompras, setRetornables, setCambioCaja, setAutoconsumos, setTurnos, setRecordatoriosProveedor, setProducts, setLabelTemplates, devolverTicket: (ticket) => {
           setProducts((prev) => prev.map((product) => { const item = ticket.items?.find((line) => line.productId === product.id); if (!item) return product; const factor = product.unidad === "unidad" ? 1 : 1000; return { ...product, vitrina: Number(product.vitrina || 0) + Number(item.cantidad || 0) / factor }; }));
           setTickets((prev) => prev.map((item) => item.id === ticket.id ? { ...item, devuelto: true, devolucionFecha: new Date().toISOString(), devolucionPor: identidad?.nombre } : item));
           const efectivoDevuelto = ticket.medio === "Efectivo" ? Number(ticket.total || 0) : Number(ticket.pagos?.find((pago) => pago.metodo === "Efectivo")?.monto || 0);

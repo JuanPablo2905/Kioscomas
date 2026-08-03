@@ -14,6 +14,7 @@ try {
   const expenseRules = await vite.ssrLoadModule("/src/features/gastos/expenseRules.js");
   const salesRules = await vite.ssrLoadModule("/src/features/ventas/salesRules.js");
   const auth = await vite.ssrLoadModule("/src/security/auth.js");
+  const trialAccess = await vite.ssrLoadModule("/src/security/trialAccess.js");
   const inventory = await vite.ssrLoadModule("/src/features/stock/inventoryRules.js");
   const transfer = await vite.ssrLoadModule("/src/features/stock/productTransfer.js");
   const ean = await vite.ssrLoadModule("/src/shared/eanDecoder.js");
@@ -56,6 +57,15 @@ try {
   test("historial de producto conserva autor y rol", enrichedProducts[0].historial[0].usuario === "Juan" && enrichedProducts[0].historial[0].rol === "Administrador de la app");
   const auditEvent = audit.createAuditEvent({ key: "products", previousValue: [oldProduct], nextValue: enrichedProducts, identity: adminIdentity, tenantId: 2, view: "stock", deviceId: "equipo-prueba" });
   test("evento central describe el cambio y su origen", auditEvent.detalle.includes("Precio de costo: 520 → 1000") && auditEvent.seccion === "stock" && auditEvent.dispositivoId === "equipo-prueba");
+  const goalCreated = audit.describeDataChange("metas", [], [{ id: 15, tipo: "diaria", objetivo: 50000 }]);
+  const goalUpdated = audit.describeDataChange("metas", [{ id: 15, tipo: "diaria", objetivo: 50000 }], [{ id: 15, tipo: "diaria", objetivo: 75000 }]);
+  test("auditoría de metas muestra el objetivo y no el identificador", goalCreated.includes("$50.000") && !goalCreated.includes("#15") && goalUpdated.includes("$75.000"));
+  const oldLoginEvent = { usuario: "Juan", accion: "inicio_sesion" };
+  test("inicio de sesión antiguo se muestra con un nombre legible", audit.auditDisplayDetail(oldLoginEvent) === "Inicio de sesión");
+  test("auditoría antigua reconoce al dueño por su cuenta", audit.auditDisplayRole(oldLoginEvent, { nombre: "Juan" }) === "Dueño");
+  const oldWorkModeEvent = { detalle: "Configuración del negocio modificada: modoNegocio" };
+  test("auditoría antigua traduce el modo del negocio", audit.auditDisplayDetail(oldWorkModeEvent, { modoNegocio: "equipo" }) === "Forma de trabajo: Tengo empleados");
+  test("cambio de modalidad explica el valor anterior y nuevo", audit.describeAccountChange({ modoNegocio: "equipo" }, { modoNegocio: "solo" }).includes("Trabajo solo → Tengo empleados"));
 
   const tickets = [
     { id: 1, fecha: "2026-07-18T23:00:00Z", medio: "Efectivo", clienteId: null, total: 200, items: [{ productId: 7, cantidad: 2, precioUnitario: 100, subtotal: 200, costoTotal: 120 }] },
@@ -82,6 +92,14 @@ try {
   const storedAdmin = { id: 1, nombre: "Juan", usuario: "demo", passwordHash: "hash-existente", passwordSalt: "sal-existente", superAdmin: true, roles: [], empleados: [] };
   const migratedStoredAdmin = dataModule.migrarCuentasDemo([storedAdmin]).find((account) => account.id === 1);
   test("abrir la app conserva la credencial cifrada del administrador", migratedStoredAdmin?.passwordHash === "hash-existente" && migratedStoredAdmin?.passwordSalt === "sal-existente" && !migratedStoredAdmin?.password);
+  const trialNow = Date.parse("2026-08-02T12:00:00.000Z");
+  const oneDayTrial = trialAccess.grantTrialAccess({ id: 50, estado: "pendiente" }, 1, trialNow);
+  const weekTrial = trialAccess.grantTrialAccess({ id: 51, estado: "pendiente" }, 7, trialNow);
+  test("cuenta pendiente entra durante su día de prueba", trialAccess.canAccessAccount(oneDayTrial, trialNow + 23 * 3600000));
+  test("cuenta pendiente deja de entrar al vencer la prueba", !trialAccess.canAccessAccount(oneDayTrial, trialNow + 24 * 3600000));
+  test("prueba semanal dura siete días", trialAccess.canAccessAccount(weekTrial, trialNow + 6 * 86400000) && !trialAccess.canAccessAccount(weekTrial, trialNow + 7 * 86400000));
+  test("un bloqueo prevalece sobre una prueba vigente", !trialAccess.canAccessAccount({ ...weekTrial, estado: "bloqueada" }, trialNow + 3600000));
+  test("una cuenta aprobada no depende del vencimiento", trialAccess.canAccessAccount({ ...oneDayTrial, estado: "aprobada" }, trialNow + 30 * 86400000));
   const migratedSprite = dataModule.migrarDatosDemo({
     2: {
       products: [{ id: 212, nombre: "Sprite 2,25 l", codigo: "7790895008478" }],
@@ -112,6 +130,13 @@ try {
   test("elige la promoción automática más conveniente", salesRules.calcularMejorPromocion(promoCart, [{ id: 1, activa: true, tipo: "porcentaje", valor: 10 }, { id: 2, activa: true, tipo: "nxm", lleva: 3, paga: 2, productIds: [10] }]).promocion.id === 2);
   const replenishmentResult = replenishment.buildReplenishmentSuggestions([{ id: 10, nombre: "Bebida", unidad: "unidad", deposito: 1, vitrina: 1, minimo: 3 }], [{ fecha: new Date().toISOString(), items: [{ productId: 10, cantidad: 30 }] }]);
   test("reposición inteligente considera ventas recientes", replenishmentResult.length === 1 && replenishmentResult[0].recomendada >= 8);
+  const automaticLowStock = replenishment.buildAutomaticLowStockItems(
+    [{ id: 10, nombre: "Bebida", unidad: "unidad", deposito: 1, vitrina: 1, minimo: 3 }, { id: 11, nombre: "Yerba", unidad: "unidad", deposito: 8, vitrina: 1, minimo: 3 }],
+    [],
+    []
+  );
+  test("stock bajo entra automáticamente en la lista de compras", automaticLowStock.length === 1 && automaticLowStock[0].product.id === 10);
+  test("lista automática no duplica compras activas", replenishment.buildAutomaticLowStockItems([{ id: 10, nombre: "Bebida", unidad: "unidad", deposito: 1, vitrina: 1, minimo: 3 }], [], [{ productId: 10, estado: "pendiente" }]).length === 0);
   const restored = salesRules.restaurarStock([{ id: 7, vitrina: 1, unidad: "peso" }], { items: [{ productId: 7, cantidad: 250, unidad: "peso" }] });
   test("anulación devuelve gramos a vitrina", restored[0].vitrina === 1.25);
   const annulled = salesRules.anularTicket(tickets[0], "Error", "Juan", "2026-07-19T10:00:00Z");

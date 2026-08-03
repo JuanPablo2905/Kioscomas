@@ -12,6 +12,8 @@ const dataDirectory = process.env.KIOSCO_CLOUD_DATA_DIR || path.dirname(database
 // KIOSCO_CLOUD_PORT remains available for the local desktop server.
 const port = Number(process.env.PORT || process.env.KIOSCO_CLOUD_PORT || 8787);
 const localMode = process.env.KIOSCO_LOCAL_MODE !== "0";
+const configuredSuperAdminUsername = String(process.env.KIOSCO_SUPERADMIN_USERNAME || "").trim();
+const configuredSuperAdminPassword = String(process.env.KIOSCO_SUPERADMIN_PASSWORD || "");
 const emptyDb = () => ({ schemaVersion: 3, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {} });
 const cleanBarcode = (value) => String(value || "").replace(/\D/g, "").slice(0, 18);
 const cleanCatalogText = (value, max = 160) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
@@ -231,13 +233,64 @@ const learnBarcode = (db, product, contributionId = "") => {
     item,
   ]));
   const selected = ranked[0];
-  current.product = selected ? {
+  if (!current.manualOverride) current.product = selected ? {
     ...selected,
     fuenteCatalogo: "Catálogo compartido de Kiosco+",
     confirmacionesCatalogo: current.confirmations,
   } : null;
+  if (!current.manualOverride) current.status = current.product ? "learned" : "unresolved";
   db.barcodeCatalog[candidate.codigo] = current;
   return true;
+};
+const catalogStatus = (entry = {}) => {
+  if (!entry.product) return "unresolved";
+  if (entry.manualOverride || entry.status === "verified") return "verified";
+  if (!entry.product.categoria || !entry.product.imagenUrl) return "incomplete";
+  if (Object.keys(entry.candidates || {}).length > 1) return "conflict";
+  return "learned";
+};
+const touchCatalogLookup = (db, codigo, found = false) => {
+  db.barcodeCatalog ||= {};
+  const entry = db.barcodeCatalog[codigo] || { codigo, candidates: {}, contributions: {}, confirmations: 0 };
+  entry.lookupCount = Number(entry.lookupCount || 0) + 1;
+  entry.lastLookupAt = new Date().toISOString();
+  if (!found && !entry.product) entry.status = "unresolved";
+  db.barcodeCatalog[codigo] = entry;
+  return entry;
+};
+const catalogAdminView = (entry = {}) => ({
+  codigo: entry.codigo,
+  product: entry.product || null,
+  status: catalogStatus(entry),
+  lookupCount: Number(entry.lookupCount || 0),
+  lastLookupAt: entry.lastLookupAt || null,
+  confirmations: Number(entry.confirmations || 0),
+  candidateCount: Object.keys(entry.candidates || {}).length,
+  updatedAt: entry.updatedAt || null,
+  history: Array.isArray(entry.history) ? entry.history.slice(0, 20) : [],
+});
+const saveManualCatalogProduct = (db, codigo, rawProduct, actor = {}) => {
+  const candidate = catalogCandidate({ ...rawProduct, codigo });
+  if (!candidate) return null;
+  db.barcodeCatalog ||= {};
+  const now = new Date().toISOString();
+  const current = db.barcodeCatalog[codigo] || { codigo, candidates: {}, contributions: {}, confirmations: 0 };
+  const previous = current.product || null;
+  const product = {
+    ...candidate,
+    fuenteCatalogo: "Catalogo verificado por Kiosco+",
+    confirmacionesCatalogo: Number(current.confirmations || 0),
+    estadoCatalogo: "verificado",
+    catalogVersion: Number(previous?.catalogVersion || 0) + 1,
+    updatedAt: now,
+  };
+  current.product = product;
+  current.manualOverride = true;
+  current.status = "verified";
+  current.updatedAt = now;
+  current.history = [{ action: previous ? "updated" : "created", at: now, by: actor.userId || "admin", previous, next: product }, ...(Array.isArray(current.history) ? current.history : [])].slice(0, 50);
+  db.barcodeCatalog[codigo] = current;
+  return current;
 };
 const hydrateBarcodeCatalog = (db) => {
   db.barcodeCatalog ||= {};
@@ -251,9 +304,9 @@ const hydrateBarcodeCatalog = (db) => {
 const readDb = async () => {
   try {
     const saved = JSON.parse(await fs.readFile(databasePath, "utf8"));
-    return hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {} });
+    return applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {} }));
   } catch {
-    return emptyDb();
+    return applyConfiguredSuperAdmin(emptyDb());
   }
 };
 const safeName = (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -293,6 +346,7 @@ const send = (res, status, value) => {
     "content-type": "application/json; charset=utf-8",
     "access-control-allow-origin": "*",
     "access-control-allow-headers": "content-type,x-device-id,x-tenant-id,authorization",
+    "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
   });
   res.end(status === 204 ? "" : JSON.stringify(value));
 };
@@ -309,6 +363,24 @@ const verifyPassword = (password, user) => crypto.timingSafeEqual(
   Buffer.from(hashPassword(password, user.salt).hash, "hex"),
   Buffer.from(user.passwordHash, "hex"),
 );
+const applyConfiguredSuperAdmin = (db) => {
+  if (!configuredSuperAdminUsername || configuredSuperAdminPassword.length < 10) return db;
+  const existing = db.users[configuredSuperAdminUsername];
+  const secured = hashPassword(configuredSuperAdminPassword, existing?.adminSecretSalt || existing?.salt);
+  db.users[configuredSuperAdminUsername] = {
+    ...existing,
+    id: existing?.id || crypto.randomUUID(),
+    businessId: "system-admin",
+    username: configuredSuperAdminUsername,
+    name: existing?.name || "Administrador de Kiosco+",
+    role: "superAdmin",
+    salt: secured.salt,
+    adminSecretSalt: secured.salt,
+    passwordHash: secured.hash,
+    status: "active",
+  };
+  return db;
+};
 const token = () => crypto.randomBytes(32).toString("base64url");
 const bearer = (req) => String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
 const activeSession = (db, req) => {
@@ -360,13 +432,19 @@ const handleRequest = async (req, res) => {
       const codigo = cleanBarcode(decodeURIComponent(req.url.split("/").pop()?.split("?")[0] || ""));
       if (codigo.length < 6) return send(res, 400, { error: "Código inválido" });
       const db = await readDb();
-      const saved = db.barcodeCatalog?.[codigo]?.product || null;
-      if (saved) return send(res, 200, { product: saved, found: true, cached: true });
+      const savedEntry = db.barcodeCatalog?.[codigo];
+      const saved = savedEntry?.status === "archived" ? null : savedEntry?.product || null;
+      if (saved) {
+        touchCatalogLookup(db, codigo, true);
+        await writeDb(db);
+        return send(res, 200, { product: saved, found: true, cached: true });
+      }
       const found = await lookupExternalBarcode(codigo);
       if (found) {
         learnBarcode(db, found, `external:${codigo}`);
-        await writeDb(db);
       }
+      touchCatalogLookup(db, codigo, !!found);
+      await writeDb(db);
       return send(res, 200, { product: found, found: !!found, cached: false });
     }
     if (req.method === "POST" && req.url === "/v1/auth/register-local") {
@@ -393,7 +471,7 @@ const handleRequest = async (req, res) => {
     if (req.method === "POST" && req.url === "/v1/auth/bootstrap") {
       const payload = await body(req);
       const db = await readDb();
-      if (Object.keys(db.users).length) return send(res, 409, { error: "El administrador inicial ya existe" });
+      if (Object.values(db.users).some((user) => user.role !== "superAdmin")) return send(res, 409, { error: "El administrador inicial ya existe" });
       const secured = hashPassword(payload.password);
       const businessId = String(payload.businessId || crypto.randomUUID());
       db.users[payload.username] = {
@@ -473,10 +551,49 @@ const handleRequest = async (req, res) => {
     }
     db.devices[deviceId] = { ...(db.devices[deviceId] || {}), tenantId, lastSeenAt: new Date().toISOString() };
 
+    if (req.url?.startsWith("/v1/admin/catalog")) {
+      if (session?.role !== "superAdmin") return send(res, 403, { error: "Se requiere la cuenta administradora de Kiosco+" });
+      if (req.method === "GET" && (req.url === "/v1/admin/catalog" || req.url.startsWith("/v1/admin/catalog?"))) {
+        const url = new URL(req.url, "http://localhost");
+        const query = String(url.searchParams.get("query") || "").trim().toLowerCase();
+        const status = String(url.searchParams.get("status") || "all");
+        const page = Math.max(1, Number(url.searchParams.get("page") || 1));
+        const limit = Math.min(100, Math.max(10, Number(url.searchParams.get("limit") || 30)));
+        const all = Object.values(db.barcodeCatalog || {}).map(catalogAdminView);
+        const filtered = all.filter((item) => {
+          const haystack = `${item.codigo} ${item.product?.nombre || ""} ${item.product?.categoria || ""} ${item.product?.familia || ""}`.toLowerCase();
+          return (!query || haystack.includes(query)) && (status === "all" || item.status === status);
+        }).sort((left, right) => {
+          if (left.status === "unresolved" && right.status !== "unresolved") return -1;
+          if (right.status === "unresolved" && left.status !== "unresolved") return 1;
+          return Number(right.lookupCount) - Number(left.lookupCount) || String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
+        });
+        const stats = all.reduce((result, item) => ({ ...result, [item.status]: Number(result[item.status] || 0) + 1 }), { total: all.length });
+        return send(res, 200, { items: filtered.slice((page - 1) * limit, page * limit), total: filtered.length, page, limit, stats });
+      }
+      const match = req.url.match(/^\/v1\/admin\/catalog\/([^/?]+)$/);
+      if (req.method === "GET" && match) {
+        const codigo = cleanBarcode(decodeURIComponent(match[1]));
+        const entry = db.barcodeCatalog?.[codigo];
+        return entry ? send(res, 200, catalogAdminView(entry)) : send(res, 404, { error: "Codigo inexistente" });
+      }
+      if (req.method === "PUT" && match) {
+        const codigo = cleanBarcode(decodeURIComponent(match[1]));
+        const payload = await body(req);
+        if (codigo.length < 6) return send(res, 400, { error: "El codigo debe tener al menos 6 digitos" });
+        const saved = saveManualCatalogProduct(db, codigo, payload.product || payload, session || {});
+        if (!saved) return send(res, 400, { error: "El nombre del producto es obligatorio" });
+        await writeDb(db);
+        return send(res, 200, catalogAdminView(saved));
+      }
+      return send(res, 404, { error: "Ruta administrativa inexistente" });
+    }
+
     if (req.method === "GET" && req.url?.startsWith("/v1/catalog/barcodes/")) {
       const codigo = cleanBarcode(decodeURIComponent(req.url.split("/").pop()?.split("?")[0] || ""));
       if (!codigo) return send(res, 400, { error: "Código inválido" });
-      const found = db.barcodeCatalog?.[codigo]?.product || null;
+      const entry = db.barcodeCatalog?.[codigo];
+      const found = entry?.status === "archived" ? null : entry?.product || null;
       return send(res, 200, { product: found, found: !!found });
     }
 
@@ -516,8 +633,7 @@ const handleRequest = async (req, res) => {
             continue;
           }
           const versionMismatch = Number(operation.baseVersion ?? 0) !== Number(current?.version || 0);
-          const baseMismatch = !!(operation.baseValue && current?.value
-            && JSON.stringify(operation.baseValue) !== JSON.stringify(current.value));
+          const baseMismatch = !!(operation.baseValue && current?.value && JSON.stringify(operation.baseValue) !== JSON.stringify(current.value));
           if (current && (versionMismatch || baseMismatch)) {
             const merge = mergeConcurrentEntity(operation, current?.value);
             if (!merge.value) {

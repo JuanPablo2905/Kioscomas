@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { Grip, Printer, RotateCcw } from "lucide-react";
+import { Check, Grip, Printer, RotateCcw, Save, Trash2 } from "lucide-react";
 import { money } from "../../shared/domain";
 
 const DEFAULT_POSITIONS = {
@@ -7,6 +7,22 @@ const DEFAULT_POSITIONS = {
   barcode: { x: 50, y: 69 }, code: { x: 50, y: 91 },
 };
 const LABELS = { business: "Negocio", name: "Producto", price: "Precio", barcode: "Código de barras", code: "Número del código" };
+
+const DEFAULT_CONFIG = {
+  width: 60, height: 40, copies: 1, fontSize: 12,
+  sizes: { business: 9, name: 12, price: 21, code: 9 },
+  pricePrefix: "$", businessName: "Mi negocio", background: "#ffffff",
+  textColor: "#111827", priceColor: "#111827", borderColor: "#111827",
+  showBusiness: true, showName: true, showPrice: true, showBarcode: true, showCode: true,
+  positions: DEFAULT_POSITIONS,
+};
+
+const cloneConfig = (value = {}) => ({
+  ...DEFAULT_CONFIG,
+  ...value,
+  sizes: { ...DEFAULT_CONFIG.sizes, ...(value.sizes || {}) },
+  positions: Object.fromEntries(Object.keys(DEFAULT_POSITIONS).map((key) => [key, { ...DEFAULT_POSITIONS[key], ...(value.positions?.[key] || {}) }])),
+});
 
 function Barcode({ code, color }) {
   const value = String(code || "7790000000000");
@@ -44,20 +60,48 @@ function LabelCanvas({ product, edit = {}, config, setConfig, interactive = fals
   </div>;
 }
 
-export function LabelDesignerV2({ products }) {
+export function LabelDesignerV2({ products, templates = [], setTemplates }) {
   const [selected, setSelected] = useState(products[0]?.id ? [products[0].id] : []);
   const [edits, setEdits] = useState({});
-  const [config, setConfig] = useState({ width: 60, height: 40, copies: 1, fontSize: 12, sizes: { business: 9, name: 12, price: 21, code: 9 }, pricePrefix: "$", businessName: "Mi negocio", background: "#ffffff", textColor: "#111827", priceColor: "#111827", borderColor: "#111827", showBusiness: true, showName: true, showPrice: true, showBarcode: true, showCode: true, positions: DEFAULT_POSITIONS });
+  const [config, setConfig] = useState(() => cloneConfig());
+  const [templateName, setTemplateName] = useState("");
+  const [activeTemplateId, setActiveTemplateId] = useState(null);
+  const [savedNotice, setSavedNotice] = useState("");
   const chosen = useMemo(() => products.filter((p) => selected.includes(p.id)), [products, selected]);
   const sample = chosen[0] || products[0];
   const cfg = (key, value) => setConfig((prev) => ({ ...prev, [key]: value }));
   const setSize = (key, value) => setConfig((prev) => ({ ...prev, sizes: { ...prev.sizes, [key]: value } }));
   const reset = () => setConfig((prev) => ({ ...prev, positions: DEFAULT_POSITIONS }));
+  const saveTemplate = () => {
+    const name = templateName.trim();
+    if (!name || !setTemplates) return;
+    const normalizedName = name.toLocaleLowerCase("es");
+    const existing = templates.find((template) => template.name?.trim().toLocaleLowerCase("es") === normalizedName);
+    const template = { id: existing?.id || `label-${Date.now()}`, name, updatedAt: new Date().toISOString(), config: cloneConfig(config) };
+    setTemplates((previous = []) => existing ? previous.map((item) => item.id === existing.id ? template : item) : [template, ...previous]);
+    setActiveTemplateId(template.id);
+    setTemplateName("");
+    setSavedNotice(existing ? "Distribución actualizada" : "Distribución guardada");
+    window.setTimeout(() => setSavedNotice(""), 2200);
+  };
+  const applyTemplate = (template) => {
+    setConfig(cloneConfig(template.config));
+    setActiveTemplateId(template.id);
+  };
+  const removeTemplate = (id) => {
+    setTemplates?.((previous = []) => previous.filter((template) => template.id !== id));
+    if (activeTemplateId === id) setActiveTemplateId(null);
+  };
   if (!sample) return <div className="rounded-xl border border-dashed p-10 text-center text-sm text-gray-500">Primero cargá un producto para diseñar etiquetas.</div>;
   return <div className="min-w-0 rounded-xl border bg-white p-3 sm:p-4">
     <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between"><div className="min-w-0"><h3 className="font-semibold">Editor libre de etiquetas</h3><p className="text-sm text-gray-500">Arrastrá el nombre, precio, código y demás elementos directamente sobre la etiqueta.</p></div><button disabled={!chosen.length} onClick={() => window.print()} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm text-white disabled:opacity-40 sm:w-auto"><Printer size={16}/>Imprimir {chosen.length || ""}</button></div>
     <div className="mt-5 grid min-w-0 gap-5 xl:grid-cols-[360px_1fr]">
       <div className="space-y-4">
+        <section className="rounded-xl border bg-gray-50 p-3">
+          <div className="flex items-start justify-between gap-3"><div><h4 className="text-sm font-semibold">Mis distribuciones</h4><p className="mt-0.5 text-xs text-gray-500">Guardá este diseño para volver a usarlo en cualquier producto.</p></div>{savedNotice ? <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-green-700"><Check size={14}/>{savedNotice}</span> : null}</div>
+          <div className="mt-3 flex flex-col gap-2 min-[420px]:flex-row"><input value={templateName} onChange={(event) => setTemplateName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") saveTemplate(); }} placeholder="Ej: Precios de góndola" className="min-h-10 min-w-0 flex-1 rounded-lg border bg-white px-3 py-2 text-sm"/><button onClick={saveTemplate} disabled={!templateName.trim() || !setTemplates} className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"><Save size={15}/>Guardar distribución</button></div>
+          {templates.length ? <div className="mt-3 space-y-2">{templates.map((template) => <div key={template.id} className={`flex min-w-0 items-center gap-2 rounded-lg border bg-white p-2 ${activeTemplateId === template.id ? "border-green-600 ring-1 ring-green-600" : ""}`}><button onClick={() => applyTemplate(template)} className="min-w-0 flex-1 text-left"><b className="block truncate text-sm">{template.name}</b><span className="text-[11px] text-gray-500">{template.config?.width || 60} × {template.config?.height || 40} mm</span></button><button onClick={() => removeTemplate(template.id)} title="Eliminar distribución" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-red-600 hover:bg-red-50"><Trash2 size={15}/></button></div>)}</div> : <p className="mt-3 rounded-lg border border-dashed bg-white p-3 text-center text-xs text-gray-500">Todavía no guardaste ninguna distribución.</p>}
+        </section>
         <div className="max-h-52 space-y-1 overflow-y-auto overscroll-contain rounded-xl border p-2">{products.map((p) => <label key={p.id} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-gray-50"><input type="checkbox" className="shrink-0" checked={selected.includes(p.id)} onChange={() => setSelected((prev) => prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id])}/><span className="min-w-0 truncate">{p.nombre}</span></label>)}</div>
         <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">{[["width","Ancho mm"],["height","Alto mm"],["copies","Copias"]].map(([key,label]) => <label key={key} className="min-w-0 text-xs">{label}<input type="number" min="1" value={config[key]} onChange={(e) => cfg(key, Math.max(1, Number(e.target.value)))} className="mt-1 w-full min-w-0 rounded-lg border px-3 py-2"/></label>)}</div>
         <div><p className="mb-2 text-xs font-semibold">Tamaño de cada texto</p><div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">{[["business","Negocio"],["name","Producto"],["price","Precio"],["code","Número código"]].map(([key,label]) => <label key={key} className="min-w-0 text-xs">{label}<input type="number" value={config.sizes[key]} onChange={(e) => setSize(key, e.target.value)} className="mt-1 w-full min-w-0 rounded-lg border px-3 py-2"/></label>)}</div><p className="mt-1 text-[11px] opacity-60">Podés borrar el valor completo y escribir cualquier tamaño.</p></div>

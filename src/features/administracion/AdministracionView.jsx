@@ -11,7 +11,7 @@ import { SectionHeader } from "../../shared/layout";
 import { AppSelect } from "../../shared/controls";
 import { defaultDataset, PERMISOS_MENU, PERMISOS_ACCION } from "../../app/data";
 import { secureSubject } from "../../security/auth";
-import { auditActor } from "../../shared/audit";
+import { auditActor, auditDisplayDetail, auditDisplayRole, auditDisplaySection } from "../../shared/audit";
 
 const MOCK_LOCALES = [
   {
@@ -930,10 +930,10 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
                   <div key={evento.id} className="rounded-lg border bg-white px-3 py-2">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
-                        <p className="break-words text-sm font-medium text-gray-900">{evento.detalle || evento.accion}</p>
+                        <p className="break-words text-sm font-medium text-gray-900">{auditDisplayDetail(evento, negocioAbierto)}</p>
                         <p className="mt-0.5 break-words text-xs text-gray-500">
-                          {evento.usuario || "Sin identificar"} · {evento.rol || "Rol desconocido"}
-                          {evento.seccion ? ` · ${evento.seccion}` : ""}
+                          {evento.usuario || "Sin identificar"} · {auditDisplayRole(evento, negocioAbierto)}
+                          {evento.seccion ? ` · ${auditDisplaySection(evento.seccion)}` : ""}
                         </p>
                       </div>
                       <time className="shrink-0 text-xs text-gray-400">{evento.fecha ? new Date(evento.fecha).toLocaleString("es-AR") : "Sin fecha"}</time>

@@ -14,6 +14,23 @@ const Input = (props) => <input {...props} className={`rounded-lg border px-3 py
 const Button = ({ children, ...props }) => <button {...props} className={`flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm text-white disabled:opacity-40 ${props.className || ""}`}>{children}</button>;
 const Card = ({ children }) => <div className="gestion-card min-w-0 rounded-xl border bg-white p-3 sm:p-4">{children}</div>;
 
+function SalesGoalCard({ ventasHoy, meta, amount, setAmount, onSave }) {
+  const objetivo = Number(meta?.objetivo || 0);
+  const porcentaje = objetivo > 0 ? Math.round((ventasHoy / objetivo) * 100) : 0;
+  const diferencia = objetivo - ventasHoy;
+  return <Card>
+    <h3 className="font-semibold">Meta de ventas</h3>
+    {objetivo > 0 ? <>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <div className="rounded-lg border bg-gray-50 p-3"><span className="text-xs text-gray-500">Objetivo diario</span><strong className="mt-1 block text-lg">{money(objetivo)}</strong></div>
+        <div className="rounded-lg border bg-gray-50 p-3"><span className="text-xs text-gray-500">Ventas de hoy</span><strong className="mt-1 block text-lg">{money(ventasHoy)}</strong></div>
+      </div>
+      <div className="mt-4"><div className="mb-1 flex justify-between gap-3 text-sm"><span>Progreso hacia {money(objetivo)}</span><b>{porcentaje}%</b></div><div className="h-3 overflow-hidden rounded-full bg-gray-100"><div className="h-full bg-green-500" style={{width:`${Math.min(100,porcentaje)}%`}}/></div><p className={`mt-2 text-sm font-medium ${diferencia > 0 ? "text-gray-600" : "text-green-700"}`}>{diferencia > 0 ? `Faltan ${money(diferencia)} para alcanzar la meta.` : `Meta alcanzada: superada por ${money(Math.abs(diferencia))}.`}</p></div>
+    </> : <p className="mt-1 text-sm text-gray-500">Todavía no definiste cuánto querés vender hoy.</p>}
+    <div className="mt-4 flex flex-col gap-2 sm:flex-row"><Input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} placeholder={objetivo > 0 ? "Cambiar objetivo diario" : "Objetivo diario"} className="min-w-0 flex-1"/><Button disabled={!Number(amount)} onClick={onSave} className="w-full sm:w-auto"><Flag size={16}/>{objetivo > 0 ? "Actualizar" : "Guardar"}</Button></div>
+  </Card>;
+}
+
 export function GestionView({ data, setters, identidad, preferences = {} }) {
   const [tab, setTab] = useState("tareas");
   const [text, setText] = useState("");
@@ -25,11 +42,21 @@ export function GestionView({ data, setters, identidad, preferences = {} }) {
   const del = (setter, id) => setter((prev) => prev.filter((item) => item.id !== id));
   const toggle = (id) => setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   const ventasHoy = useMemo(() => (data.tickets || []).filter((t) => !t.anulado && new Date(t.fecha).toDateString() === new Date().toDateString()).reduce((s,t)=>s+Number(t.total||0),0), [data.tickets]);
+  const saveSalesGoal = () => {
+    const objective = Number(amount);
+    if (!objective) return;
+    setters.setMetas((previous = []) => {
+      const current = previous[0];
+      const goal = { id: current?.id || Date.now(), fecha: new Date().toISOString(), tipo: "diaria", objetivo: objective };
+      return current ? [goal, ...previous.slice(1)] : [goal];
+    });
+    setAmount("");
+  };
   const section = () => {
-    if (tab === "tareas") return <div className="grid gap-3 sm:gap-5 lg:grid-cols-2"><Card><h3 className="font-semibold">Nueva tarea</h3><div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input value={text} onChange={(e)=>setText(e.target.value)} placeholder="Ej: controlar vencimientos" className="min-w-0 flex-1"/><Button disabled={!text.trim()} onClick={()=>add(setters.setTareas,{titulo:text.trim(),completa:false})} className="w-full sm:w-auto"><Plus size={16}/>Agregar</Button></div><div className="mt-4 space-y-2">{(data.tareas||[]).map(t=><div key={t.id} className="flex items-start gap-3 rounded-lg border p-3"><button onClick={()=>setters.setTareas(p=>p.map(x=>x.id===t.id?{...x,completa:!x.completa}:x))} className={`mt-0.5 h-5 w-5 shrink-0 rounded border ${t.completa?"bg-green-500 text-white":""}`}>{t.completa&&<Check size={16}/>}</button><span className={`min-w-0 flex-1 break-words ${t.completa?"line-through text-gray-400":""}`}>{t.titulo}</span><button className="shrink-0" onClick={()=>del(setters.setTareas,t.id)}><Trash2 size={15}/></button></div>)}</div></Card><Card><h3 className="font-semibold">Meta de ventas</h3><p className="mt-1 text-sm text-gray-500">Ventas de hoy: {money(ventasHoy)}</p><div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input type="number" value={amount} onChange={(e)=>setAmount(e.target.value)} placeholder="Objetivo diario" className="min-w-0 flex-1"/><Button disabled={!Number(amount)} onClick={()=>add(setters.setMetas,{tipo:"diaria",objetivo:Number(amount)})} className="w-full sm:w-auto"><Flag size={16}/>Guardar</Button></div>{data.metas?.[0]&&<div className="mt-4"><div className="mb-1 flex justify-between text-sm"><span>Progreso</span><b>{Math.min(100,Math.round(ventasHoy/data.metas[0].objetivo*100))}%</b></div><div className="h-3 overflow-hidden rounded-full bg-gray-100"><div className="h-full bg-green-500" style={{width:`${Math.min(100,ventasHoy/data.metas[0].objetivo*100)}%`}}/></div></div>}</Card></div>;
+    if (tab === "tareas") return <div className="grid gap-3 sm:gap-5 lg:grid-cols-2"><Card><h3 className="font-semibold">Nueva tarea</h3><div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input value={text} onChange={(e)=>setText(e.target.value)} placeholder="Ej: controlar vencimientos" className="min-w-0 flex-1"/><Button disabled={!text.trim()} onClick={()=>add(setters.setTareas,{titulo:text.trim(),completa:false})} className="w-full sm:w-auto"><Plus size={16}/>Agregar</Button></div><div className="mt-4 space-y-2">{(data.tareas||[]).map(t=><div key={t.id} className="flex items-start gap-3 rounded-lg border p-3"><button onClick={()=>setters.setTareas(p=>p.map(x=>x.id===t.id?{...x,completa:!x.completa}:x))} className={`mt-0.5 h-5 w-5 shrink-0 rounded border ${t.completa?"bg-green-500 text-white":""}`}>{t.completa&&<Check size={16}/>}</button><span className={`min-w-0 flex-1 break-words ${t.completa?"line-through text-gray-400":""}`}>{t.titulo}</span><button className="shrink-0" onClick={()=>del(setters.setTareas,t.id)}><Trash2 size={15}/></button></div>)}</div></Card><SalesGoalCard ventasHoy={ventasHoy} meta={data.metas?.[0]} amount={amount} setAmount={setAmount} onSave={saveSalesGoal}/></div>;
     if (tab === "promos") return <PromotionsManager products={data.products} promociones={data.promociones || []} setPromociones={setters.setPromociones}/>;
     if (tab === "devoluciones") return <Card><h3 className="font-semibold">Devoluciones y cambios</h3><p className="mt-1 text-sm text-gray-500">Elegí una venta. La devolución restaura el stock y deja trazabilidad sin borrar el ticket.</p><div className="mt-4 space-y-2">{(data.tickets||[]).filter(t=>!t.anulado&&!t.devuelto).slice(0,20).map(t=><div key={t.id} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><b>Ticket #{t.id}</b><p className="break-words text-xs text-gray-500">{new Date(t.fecha).toLocaleString("es-AR")} · {money(t.total)}</p></div><Button className="w-full sm:w-auto" onClick={()=>setters.devolverTicket(t)}>Devolver</Button></div>)}</div></Card>;
-    if (tab === "etiquetas") return <LabelDesignerV2 products={data.products}/>;
+    if (tab === "etiquetas") return <LabelDesignerV2 products={data.products} templates={data.labelTemplates || []} setTemplates={setters.setLabelTemplates}/>;
     if (tab === "facturacion") return <InvoiceTicketManager data={data} setters={setters} identidad={identidad}/>;
     return <Card><div className="flex items-start justify-between"><div><h3 className="font-semibold">Preparación de facturación</h3><p className="mt-1 text-sm text-gray-500">Interfaz únicamente. No genera, numera ni emite facturas ante ARCA.</p></div><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">NO EMITE</span></div><div className="mt-5 grid gap-3 md:grid-cols-2"><Input placeholder="Razón social"/><Input placeholder="CUIT"/><Input placeholder="Domicilio fiscal"/><select className="rounded-lg border px-3 py-2 text-sm"><option>Responsable inscripto</option><option>Monotributista</option><option>Exento</option></select><select className="rounded-lg border px-3 py-2 text-sm"><option>Factura A</option><option>Factura B</option><option>Factura C</option></select><Input placeholder="Correo del cliente"/></div><div className="mt-5 flex gap-2"><Button disabled>Vista previa</Button><Button disabled>Enviar por correo</Button><Button disabled><Printer size={16}/>Imprimir</Button></div></Card>;
   };

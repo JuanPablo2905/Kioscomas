@@ -14,6 +14,8 @@ const child = spawn(process.execPath, ["server/cloud-server.mjs"], {
     KIOSCO_CLOUD_DB: dbPath,
     KIOSCO_CLOUD_DATA_DIR: dataDir,
     KIOSCO_LOCAL_MODE: "1",
+    KIOSCO_SUPERADMIN_USERNAME: "central-admin",
+    KIOSCO_SUPERADMIN_PASSWORD: "central-admin-secret",
   },
   stdio: "ignore",
 });
@@ -43,6 +45,12 @@ try {
     body: JSON.stringify({ businessId: "business-a", username: "owner", password: "secret", name: "Dueño" }),
   });
   test("crear administrador inicial", boot.response.status === 201);
+  const configuredAdminLogin = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "central-admin", password: "central-admin-secret", deviceId: "central-pc" }),
+  });
+  test("la cuenta central configurada inicia como superadministrador", configuredAdminLogin.value.user?.role === "superAdmin");
   const login = await request("/v1/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -64,6 +72,34 @@ try {
   const catalog = await request("/v1/catalog/barcodes/7791234567890", { headers });
   test("el catálogo aprende códigos confirmados", catalog.value.product?.nombre === "Coca de prueba");
   test("el catálogo no expone precios ni stock", catalog.value.product?.venta === undefined && catalog.value.product?.deposito === undefined);
+  const deniedCatalogAdmin = await request("/v1/admin/catalog?status=all", { headers });
+  test("un dueno de negocio no puede modificar el catalogo global", deniedCatalogAdmin.response.status === 403);
+  await request("/v1/auth/register-local", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ businessId: "system-admin", username: "catalog-admin", password: "admin-secret", name: "Admin", superAdmin: true }),
+  });
+  const catalogAdminLogin = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "catalog-admin", password: "admin-secret", deviceId: "admin-pc" }),
+  });
+  const catalogAdminHeaders = {
+    "content-type": "application/json",
+    "x-device-id": "admin-pc",
+    "x-tenant-id": "system-admin",
+    authorization: `Bearer ${catalogAdminLogin.value.accessToken}`,
+  };
+  const manualCatalog = await request("/v1/admin/catalog/7799999999991", {
+    method: "PUT",
+    headers: catalogAdminHeaders,
+    body: JSON.stringify({ product: { nombre: "Producto verificado manualmente", categoria: "Almacen", imagenUrl: "https://example.com/producto.jpg", unidad: "unidad" } }),
+  });
+  test("el administrador puede agregar un producto verificado", manualCatalog.response.ok && manualCatalog.value.status === "verified");
+  const catalogAdminList = await request("/v1/admin/catalog?query=7799999999991&status=verified", { headers: catalogAdminHeaders });
+  test("el panel administrativo puede buscar el producto agregado", catalogAdminList.value.items?.[0]?.product?.nombre === "Producto verificado manualmente");
+  const publicManualCatalog = await request("/v1/catalog/lookup/7799999999991");
+  test("el escaner recibe inmediatamente la correccion manual", publicManualCatalog.value.product?.nombre === "Producto verificado manualmente");
   const conflict = { ...operation, id: "op-2", value: { id: 1, nombre: "Pepsi" }, baseVersion: 99 };
   const conflicted = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [conflict] }) });
   test("conflicto de versión detectado", conflicted.value.conflicts?.[0]?.serverVersion === 1);
@@ -101,22 +137,7 @@ try {
   test("dos ventas realmente simultáneas no generan un conflicto falso", simultaneousSales.every((result) => result.value.conflicts?.length === 0));
   test("se acumula el descuento de stock de ambos equipos", simultaneousVersions[1]?.value?.deposito === 6 && simultaneousVersions[1]?.autoMerged === true);
   test("se conservan los historiales de ambas ventas", simultaneousVersions[1]?.value?.historial?.length === 3);
-  const burstSale = {
-    ...saleFromFirstDevice,
-    id: "sale-burst-pc-1",
-    baseVersion: simultaneousVersions[0].version,
-    baseValue: simultaneousVersions[0].value,
-    value: {
-      ...simultaneousVersions[0].value,
-      deposito: 2,
-      // Simulate a temporarily stale UI history while five rapid sales are
-      // compacted into one operation.
-      historial: [
-        productBase.historial[0],
-        ...Array.from({ length: 5 }, (_, index) => ({ id: `burst-${index + 1}`, tipo: "venta" })),
-      ],
-    },
-  };
+  const burstSale = { ...saleFromFirstDevice, id: "sale-burst-pc-1", baseVersion: simultaneousVersions[0].version, baseValue: simultaneousVersions[0].value, value: { ...simultaneousVersions[0].value, deposito: 2, historial: [productBase.historial[0], ...Array.from({ length: 5 }, (_, index) => ({ id: `burst-${index + 1}`, tipo: "venta" }))] } };
   const burstResult = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [burstSale] }) });
   test("una ráfaga de cinco ventas no genera conflictos", burstResult.value.conflicts?.length === 0 && burstResult.value.acceptedIds?.includes("sale-burst-pc-1"));
   test("la ráfaga aplica las cinco unidades sobre el stock más nuevo", burstResult.value.acceptedEntityVersions?.[0]?.value?.deposito === 1);
@@ -125,16 +146,7 @@ try {
   const stressSeed = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [{ ...operation, id: "stress-seed", entityId: "2", value: stressBase }] }) });
   const stressVersion = stressSeed.value.acceptedEntityVersions?.[0]?.version;
   const stressResults = await Promise.all(Array.from({ length: 20 }, (_, index) => request("/v1/sync/push", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ operations: [{
-      ...operation,
-      id: `stress-sale-${index + 1}`,
-      entityId: "2",
-      baseVersion: stressVersion,
-      baseValue: stressBase,
-      value: { ...stressBase, deposito: 99, historial: [...stressBase.historial, { id: `stress-history-${index + 1}`, tipo: "venta" }] },
-    }] }),
+    method: "POST", headers, body: JSON.stringify({ operations: [{ ...operation, id: `stress-sale-${index + 1}`, entityId: "2", baseVersion: stressVersion, baseValue: stressBase, value: { ...stressBase, deposito: 99, historial: [...stressBase.historial, { id: `stress-history-${index + 1}`, tipo: "venta" }] } }] }),
   })));
   const stressVersions = stressResults.map((result) => result.value.acceptedEntityVersions?.[0]).filter(Boolean).sort((left, right) => left.version - right.version);
   test("veinte envíos simultáneos no pierden escrituras ni generan conflictos", stressVersions.length === 20 && stressResults.every((result) => result.value.conflicts?.length === 0));

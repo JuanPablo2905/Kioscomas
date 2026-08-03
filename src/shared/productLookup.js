@@ -70,6 +70,16 @@ function saveCache(code, value) {
   } catch { /* El catálogo sigue funcionando aunque el navegador no permita caché. */ }
 }
 
+export function clearBarcodeCache(code = "") {
+  if (typeof window === "undefined") return;
+  try {
+    if (!code) return window.localStorage.removeItem(CACHE_KEY);
+    const cache = readCache();
+    delete cache[String(code).replace(/\D/g, "")];
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch { /* La correccion del catalogo no depende de la cache local. */ }
+}
+
 function normalizeOpenFacts(product, code, source = "Open Facts") {
   const baseName = product.product_name_es || product.product_name || product.generic_name_es || product.generic_name || "";
   const brand = String(product.brands || "").split(",")[0].trim();

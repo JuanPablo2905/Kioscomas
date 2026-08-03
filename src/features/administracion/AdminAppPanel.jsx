@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from "react";
-import { Bug, CheckCircle2, Cloud, Clock, Lightbulb, Pencil, Plus, Settings2, Shield, Store, Trash2, X, XCircle } from "lucide-react";
+import { Barcode, Bug, CheckCircle2, Cloud, Clock, Lightbulb, Pencil, Plus, Settings2, Shield, Store, Trash2, X, XCircle } from "lucide-react";
 import { SectionHeader } from "../../shared/layout";
 import { secureSubject } from "../../security/auth";
+import { canAccessAccount, formatTrialExpiration, grantTrialAccess, trialAccessStatus } from "../../security/trialAccess";
 import { AppSelect, ConfirmDialog } from "../../shared/controls";
+import { BarcodeCatalogAdmin } from "./BarcodeCatalogAdmin";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 
@@ -11,6 +13,14 @@ const ESTADOS = {
   aprobada: "bg-green-100 text-green-700",
   bloqueada: "bg-red-100 text-red-700",
 };
+
+function TrialStatus({ account }) {
+  if (account.estado === "aprobada") return null;
+  const trial = trialAccessStatus(account);
+  if (trial.active) return <p className="mt-1 text-xs font-medium text-amber-700">Prueba activa · vence {formatTrialExpiration(account)}</p>;
+  if (trial.reason === "expired") return <p className="mt-1 text-xs font-medium text-red-600">Prueba vencida · conserva todos sus datos</p>;
+  return <p className="mt-1 text-xs text-gray-500">Sin acceso temporal activo</p>;
+}
 
 export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, setNotas, reportes = [], setReportes, onOpenNegocio, onLogout, onOpenSettings, syncStatus, onSyncNow }) {
   const [textoNota, setTextoNota] = useState("");
@@ -85,10 +95,11 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                   </div>
                 ) : (
                   <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-                    <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{cuenta.nombreNegocio}</p><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADOS[cuenta.estado] || ESTADOS.pendiente}`}>{cuenta.estado || "pendiente"}</span></div><p className="mt-1 text-sm text-gray-500">{cuenta.nombre} · @{cuenta.usuario} · {(cuenta.empleados || []).length} empleado(s)</p></div>
+                    <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{cuenta.nombreNegocio}</p><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADOS[cuenta.estado] || ESTADOS.pendiente}`}>{cuenta.estado || "pendiente"}</span></div><p className="mt-1 text-sm text-gray-500">{cuenta.nombre} · @{cuenta.usuario} · {(cuenta.empleados || []).length} empleado(s)</p><TrialStatus account={cuenta}/></div>
                     <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-                      <button onClick={() => onOpenNegocio(cuenta.id)} disabled={cuenta.estado !== "aprobada"} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-30">Entrar</button>
-                      <button onClick={() => actualizarCuenta(cuenta.id, { estado: "aprobada" })} className="rounded-lg border border-green-300 px-3 py-2 text-xs text-green-700">Aprobar</button>
+                      <button onClick={() => onOpenNegocio(cuenta.id)} disabled={!canAccessAccount(cuenta)} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-30">Entrar</button>
+                      {cuenta.estado !== "aprobada" && <><button onClick={() => actualizarCuenta(cuenta.id, grantTrialAccess(cuenta, 1))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-medium text-amber-800">Dar 1 día</button><button onClick={() => actualizarCuenta(cuenta.id, grantTrialAccess(cuenta, 7))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-medium text-amber-800">Dar 1 semana</button></>}
+                      <button onClick={() => actualizarCuenta(cuenta.id, { estado: "aprobada", approvedAt: new Date().toISOString() })} className="rounded-lg border border-green-300 px-3 py-2 text-xs text-green-700">Aprobar</button>
                       <button onClick={() => actualizarCuenta(cuenta.id, { estado: "bloqueada" })} className="rounded-lg border border-amber-300 px-3 py-2 text-xs text-amber-700">Bloquear</button>
                       <button onClick={() => { setEditandoId(cuenta.id); setForm({ nombre: cuenta.nombre, nombreNegocio: cuenta.nombreNegocio, usuario: cuenta.usuario, password: "" }); }} className="rounded-lg border px-3 py-2 text-gray-500"><Pencil size={14}/></button>
                       <button onClick={() => setCuentaABorrarId(cuenta.id)} className="rounded-lg border border-red-200 px-3 py-2 text-red-500"><Trash2 size={14}/></button>
@@ -98,6 +109,12 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="mb-7 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
+          <div className="mb-1 flex items-center gap-2"><Barcode size={20}/><h2 className="font-semibold">Catalogo del escaner</h2></div>
+          <p className="mb-4 text-sm text-gray-500">Revisa los codigos buscados, completa productos desconocidos y corrige nombres, categorias o imagenes para todos los negocios.</p>
+          <BarcodeCatalogAdmin/>
         </section>
 
         <section className="mb-7 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">

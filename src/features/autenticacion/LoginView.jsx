@@ -81,6 +81,9 @@ export function LoginView({ onLogin, onRegister, error, onReset }) {
 
         {modo === "registro" && (
           <>
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+              Al crearla vas a poder usar la cuenta durante <b>1 día</b> mientras espera aprobación. El administrador puede extender la prueba a una semana.
+            </div>
             <label className="text-sm text-gray-700 block mb-1">Tu nombre</label>
             <input
               value={nombre}

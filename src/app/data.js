@@ -32,6 +32,7 @@ export const defaultDataset = (seed) => ({
   recordatoriosProveedor: [],
   movimientosStock: [],
   historialLimpiezas: [],
+  labelTemplates: [],
 });
 
 const CATEGORIA_TECNICA = [
@@ -171,7 +172,7 @@ export const migrarDatosDemo = (datosGuardados) => {
     const products = id === "2"
       ? [...savedProducts, ...productosSur.filter((seed) => !savedProducts.some((item) => item.id === seed.id || (seed.codigo && item.codigo === seed.codigo)))]
       : savedProducts;
-    return [id, { ...defaultDataset(false), ...dataset, products, tenantId: String(dataset.tenantId || id), proveedores: dataset.proveedores || [], perdidas: dataset.perdidas || [], sugerencias: dataset.sugerencias || [], pedidos: dataset.pedidos || [], gastos: dataset.gastos || [], ventasSuspendidas: dataset.ventasSuspendidas || [], auditoria: dataset.auditoria || [], inventarios: dataset.inventarios || [], tareas: dataset.tareas || [], metas: dataset.metas || [], promociones: dataset.promociones || [], reservas: dataset.reservas || [], presupuestos: dataset.presupuestos || [], arqueos: dataset.arqueos || [], configuracionFiscal: dataset.configuracionFiscal || {} }];
+    return [id, { ...defaultDataset(false), ...dataset, products, tenantId: String(dataset.tenantId || id), proveedores: dataset.proveedores || [], perdidas: dataset.perdidas || [], sugerencias: dataset.sugerencias || [], pedidos: dataset.pedidos || [], gastos: dataset.gastos || [], ventasSuspendidas: dataset.ventasSuspendidas || [], auditoria: dataset.auditoria || [], inventarios: dataset.inventarios || [], tareas: dataset.tareas || [], metas: dataset.metas || [], promociones: dataset.promociones || [], reservas: dataset.reservas || [], presupuestos: dataset.presupuestos || [], arqueos: dataset.arqueos || [], configuracionFiscal: dataset.configuracionFiscal || {}, labelTemplates: dataset.labelTemplates || [] }];
   }));
 };
 
