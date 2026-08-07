@@ -970,7 +970,7 @@ export default function KioscoApp() {
     return <div className="h-screen flex items-center justify-center text-sm text-gray-500">No se encontraron datos para esta cuenta.</div>;
   }
 
-  const permisos = permisosDe(identidad, cuentaActual);
+  const permisos = PUBLIC_DEMO_MODE ? permisosDe(identidad, cuentaActual).filter((p) => p !== "catalogo") : permisosDe(identidad, cuentaActual);
   const esDueno = identidad?.rol === "Dueño" || !!(identidad?.adminApp && identidad?.operandoNegocio);
   const puede = (permiso) => esDueno || permisos.includes(permiso);
 
