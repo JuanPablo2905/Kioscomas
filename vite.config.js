@@ -18,6 +18,7 @@ export default defineConfig({
       input: {
         app: resolve(import.meta.dirname, "index.html"),
         landing: resolve(import.meta.dirname, "landing.html"),
+        precios: resolve(import.meta.dirname, "precios.html"),
       },
     },
   },

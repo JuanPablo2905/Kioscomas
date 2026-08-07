@@ -23,7 +23,7 @@ const serviceWorkerPath = resolve(publicDir, "sw.js");
 const serviceWorker = await readFile(serviceWorkerPath, "utf8");
 await writeFile(
   serviceWorkerPath,
-  serviceWorker.replace('    "./",', '    "./",\n    "./app.html",'),
+  serviceWorker.replace('    "./",', '    "./",\n    "./app.html",\n    "./precios.html",'),
   "utf8",
 );
 

@@ -76,7 +76,7 @@ function App() {
     return () => observer.disconnect();
   }, []);
   return <main>
-    <nav className="nav"><a className="brand" href="#inicio"><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+" /></a><div className="nav-links"><a href="#funciones">Funciones</a><a href="#como-funciona">Cómo funciona</a><a href="#preguntas">Preguntas</a></div><a className="nav-cta" href={appUrl}>Probar la app <ArrowRight size={16}/></a></nav>
+    <nav className="nav"><a className="brand" href="#inicio"><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+" /></a><div className="nav-links"><a href="#funciones">Funciones</a><a href="#como-funciona">Cómo funciona</a><a href="./precios.html">Precios</a><a href="#preguntas">Preguntas</a></div><a className="nav-cta" href={appUrl}>Probar la app <ArrowRight size={16}/></a></nav>
 
     <section className="hero" id="inicio"><div className="hero-copy hero-enter"><div className="eyebrow"><Sparkles size={15}/> Hecha para comercios reales</div><h1>Tu negocio, <i>más claro</i> todos los días.</h1><p>Stock, ventas, caja, compras y clientes en una sola herramienta simple de usar. Pensada para kioscos y comercios de barrio.</p><div className="hero-actions"><a className="button primary" href={appUrl}>Probar demo <ArrowRight size={18}/></a><a className="button ghost" href="#funciones">Conocer funciones</a></div><div className="hero-trust"><span><Check size={15}/> Sin instalaciones complicadas</span><span><Check size={15}/> Hecha en Argentina</span></div></div><div className="hero-visual hero-device-enter"><div className="glow"/><DemoPanel/></div></section>
 
@@ -90,7 +90,7 @@ function App() {
 
     <section className="section faq" id="preguntas"><div className="section-intro"><span className="eyebrow">Preguntas frecuentes</span><h2>Hecha para que sea fácil empezar.</h2></div><div className="faq-list">{faqs.map(([q,a],i)=><button className={openFaq===i?"faq-item open":"faq-item"} onClick={()=>setOpenFaq(openFaq===i?null:i)} key={q}><span><b>{q}</b>{openFaq===i&&<p>{a}</p>}</span><ChevronDown size={20}/></button>)}</div></section>
 
-    <section className="closing"><div><span className="eyebrow">Empezá a ordenar tu negocio</span><h2>Menos vueltas. Más tiempo para vender.</h2><p>Conocé Kiosco+ y descubrí una forma más simple de llevar el día a día de tu comercio.</p></div><a className="button light" href={appUrl}>Abrir la demo <ArrowRight size={18}/></a></section>
+    <section className="closing"><div><span className="eyebrow">Empezá a ordenar tu negocio</span><h2>Menos vueltas. Más tiempo para vender.</h2><p>Conocé Kiosco+ y descubrí una forma más simple de llevar el día a día de tu comercio.</p></div><div className="hero-actions" style={{margin:0}}><a className="button light" href={appUrl}>Abrir la demo <ArrowRight size={18}/></a><a className="button ghost" href="./precios.html" style={{background:"#fff0e8"}}>Ver precios <ArrowRight size={18}/></a></div></section>
     <footer><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+"/><span>Gestión simple para comercios reales.</span><span>© {new Date().getFullYear()} Kiosco+</span></footer>
   </main>;
 }
