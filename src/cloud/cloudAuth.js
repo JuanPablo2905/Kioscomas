@@ -92,8 +92,6 @@ async function refreshCloud(apiUrl) {
     body: JSON.stringify({ refreshToken: current.refreshToken }),
   });
   if (!response.ok) {
-    // Otra solicitud puede haber renovado la sesión mientras esta respuesta
-    // viajaba. En ese caso nunca debemos borrar las credenciales nuevas.
     const latest = read();
     if (latest?.refreshToken && latest.refreshToken !== current.refreshToken) return latest;
     sessionStorage.removeItem(SESSION_KEY);
@@ -115,8 +113,6 @@ const refreshCloudOnce = (apiUrl) => {
 
 export async function cloudFetch(apiUrl, url, options = {}) {
   let session = read();
-  // Las sesiones remotas persisten solamente el token de renovación. Al
-  // reabrir la app obtenemos un access token antes de enviar la primera cola.
   if (!session?.accessToken && session?.refreshToken) {
     session = await refreshCloudOnce(apiUrl);
   }

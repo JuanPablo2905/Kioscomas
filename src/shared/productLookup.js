@@ -64,10 +64,18 @@ function saveCache(code, value) {
   if (typeof window === "undefined") return;
   try {
     const cache = readCache();
+    const existing = cache[code]?.value;
+    if (existing && !value) return;
     cache[code] = { value, savedAt: Date.now() };
     const entries = Object.entries(cache).sort((a, b) => Number(b[1].savedAt || 0) - Number(a[1].savedAt || 0)).slice(0, MAX_CACHE_ITEMS);
     window.localStorage.setItem(CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
   } catch { /* El catálogo sigue funcionando aunque el navegador no permita caché. */ }
+}
+
+export function rememberBarcode(code, product) {
+  const clean = String(code || "").replace(/\D/g, "");
+  if (!clean) return;
+  saveCache(clean, product || null);
 }
 
 export function clearBarcodeCache(code = "") {
@@ -145,8 +153,10 @@ async function lookupSharedCatalog(code) {
 
 async function lookupThroughKioscoServer(code) {
   const config = loadCloudConfig();
-  if (!config.enabled || !config.apiUrl) return null;
-  const response = await fetch(`${String(config.apiUrl).replace(/\/+$/, "")}/v1/catalog/lookup/${encodeURIComponent(code)}`, {
+  const publicApiUrl = String(import.meta.env?.VITE_PUBLIC_API_URL || "").trim();
+  const apiUrl = (config.enabled && config.apiUrl) || publicApiUrl;
+  if (!apiUrl) return null;
+  const response = await fetch(`${String(apiUrl).replace(/\/+$/, "")}/v1/catalog/lookup/${encodeURIComponent(code)}`, {
     headers: { Accept: "application/json" },
   });
   if (!response.ok) return null;

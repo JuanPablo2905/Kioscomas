@@ -45,7 +45,7 @@ const CATEGORIA_TECNICA = [
 ];
 export const categoriaEvento = (tipo) => (CATEGORIA_TECNICA.includes(tipo) ? "Técnico" : "Operativo");
 
-export const PERMISOS_MENU = ["notificaciones", "stock", "vitrina", "ventas", "compras", "proveedores", "vencimientos", "gastos", "clientes", "reportes", "gestion"];
+export const PERMISOS_MENU = ["notificaciones", "stock", "catalogo", "vitrina", "ventas", "compras", "proveedores", "vencimientos", "gastos", "clientes", "reportes", "gestion"];
 export const PERMISOS_ACCION = [
   { id: "administracion", label: "Ver administración operativa" },
   { id: "editar_precios", label: "Editar precios y costos" },

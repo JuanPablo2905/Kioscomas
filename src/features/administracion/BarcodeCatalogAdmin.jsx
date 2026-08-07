@@ -6,11 +6,12 @@ import { clearBarcodeCache } from "../../shared/productLookup";
 
 const EMPTY = { codigo: "", nombre: "", categoria: "", familia: "", variante: "", unidad: "unidad", descripcionCatalogo: "", imagenUrl: "" };
 const FILTERS = [
-  ["all", "Todos"], ["unresolved", "No reconocidos"], ["verified", "Verificados"],
+  ["all", "Todos"], ["unresolved", "No reconocidos"], ["pending", "Pendientes"], ["verified", "Verificados"],
   ["incomplete", "Incompletos"], ["conflict", "Con variantes"],
 ];
 const STATUS = {
   unresolved: ["No reconocido", "bg-amber-100 text-amber-800"],
+  pending: ["Pendiente de verificar", "bg-violet-100 text-violet-800"],
   verified: ["Verificado", "bg-green-100 text-green-800"],
   incomplete: ["Incompleto", "bg-orange-100 text-orange-800"],
   conflict: ["A revisar", "bg-violet-100 text-violet-800"],

@@ -68,6 +68,9 @@ const compactPendingQueue = (queue = []) => {
 const removeUnsyncableSystemOperations = (queue = []) => {
   const session = cloudSession();
   if (session?.user?.role === "superAdmin") return queue;
+  // Una sesión de negocio nunca puede publicar datos globales de cuentas.
+  // Versiones anteriores los dejaban en espera para siempre. Se descartan al
+  // iniciar sin modificar los datos locales ni la cola normal del negocio.
   return queue.filter((item) => item.type !== "system_set");
 };
 
@@ -123,9 +126,7 @@ export const syncEngine = {
     const targetKey = operationTargetKey(normalized);
     const sameTarget = (item) => targetKey && operationTargetKey(item) === targetKey;
     await conflictMutation;
-    const storedConflicts = ["entity_upsert", "entity_delete"].includes(normalized.type)
-      ? await readJson(CONFLICTS_KEY, [])
-      : [];
+    const storedConflicts = ["entity_upsert", "entity_delete"].includes(normalized.type) ? await readJson(CONFLICTS_KEY, []) : [];
     const previousConflict = storedConflicts.find((item) => item.localOperation && sameEntity(item.localOperation));
     const next = await updateQueue((queue) => {
       const previousEntityOperation = ["entity_upsert", "entity_delete"].includes(normalized.type) ? queue.find(sameEntity) : null;
@@ -135,14 +136,7 @@ export const syncEngine = {
         : normalized;
       return [...queue.filter((item) => !sameTarget(item)), merged].slice(-5000);
     });
-    // A newer local value already contains the unresolved local change. Keep a
-    // single causal operation instead of sending an old conflict and a new sale
-    // for the same product against each other.
-    if (previousConflict) {
-      await updateConflicts((conflicts) => conflicts.filter((item) => !(
-        item.localOperation && sameEntity(item.localOperation)
-      )));
-    }
+    if (previousConflict) await updateConflicts((conflicts) => conflicts.filter((item) => !(item.localOperation && sameEntity(item.localOperation))));
     const activeTenantId = String(context.tenantId || normalized.tenantId || "");
     publish({ mode: "cloud", pending: next.filter((item) => belongsToTenant(item, activeTenantId)).length });
   },
@@ -151,21 +145,14 @@ export const syncEngine = {
     const config = loadCloudConfig();
     if (!config.enabled || !config.apiUrl || status.state === "syncing") return status;
     const tenantId = String(context.tenantId || "");
-    if (!tenantId) {
-      publish({ state: "error", error: "No hay un negocio activo para sincronizar" });
-      return status;
-    }
-    // Mark synchronously, before the first await. Otherwise two timers can both
-    // pass the guard and send overlapping versions of the same product.
+    if (!tenantId) { publish({ state: "error", error: "No hay un negocio activo para sincronizar" }); return status; }
     publish({ state: "syncing", error: null });
     const queue = await updateQueue((items) => removeUnsyncableSystemOperations(compactPendingQueue(items)));
     if (!navigator.onLine) { publish({ state: "offline", pending: queue.filter((item) => belongsToTenant(item, tenantId)).length }); return status; }
     const activeQueue = queue.filter((item) => belongsToTenant(item, tenantId));
     await conflictMutation;
     const storedConflicts = await readJson(CONFLICTS_KEY, []);
-    const activeEntities = new Set(activeQueue
-      .filter((item) => ["entity_upsert", "entity_delete"].includes(item.type))
-      .map((item) => `${item.entity}:${String(item.entityId)}`));
+    const activeEntities = new Set(activeQueue.filter((item) => ["entity_upsert", "entity_delete"].includes(item.type)).map((item) => `${item.entity}:${String(item.entityId)}`));
     const retryEntities = new Set();
     const retryableConflicts = storedConflicts.filter((item) => {
       if (!belongsToTenant(item, tenantId) || !item.localOperation) return false;
@@ -192,37 +179,21 @@ export const syncEngine = {
         const accepted = new Set(result.acceptedIds || operationsToPush.map((item) => item.id));
         const conflictIds = new Set((result.conflicts || []).map((item)=>item.operationId));
         const rejectedIds = new Set((result.rejected || []).map((item) => item.operationId));
-        // New sales can enter the queue while this request is travelling.
-        // Snapshot it before storing conflicts so an obsolete response cannot
-        // resurrect a conflict already superseded by a newer local operation.
         await queueMutation;
         const latestQueue = await readJson(QUEUE_KEY, []);
         const refreshedConflicts = result.conflicts.map((conflict) => {
           const previousConflict = storedConflicts.find((item) => item.operationId === conflict.operationId);
-          return {
-            ...conflict,
-            localOperation: operationsToPush.find((item) => item.id === conflict.operationId),
-            detectedAt: previousConflict?.detectedAt
-              || operationsToPush.find((item) => item.id === conflict.operationId)?.createdAt
-              || new Date().toISOString(),
-            lastAttemptAt: new Date().toISOString(),
-            attempts: Number(previousConflict?.attempts || 0) + 1,
-          };
+          return { ...conflict, localOperation: operationsToPush.find((item) => item.id === conflict.operationId), detectedAt: previousConflict?.detectedAt || operationsToPush.find((item) => item.id === conflict.operationId)?.createdAt || new Date().toISOString(), lastAttemptAt: new Date().toISOString(), attempts: Number(previousConflict?.attempts || 0) + 1 };
         });
         const refreshedIds = new Set(refreshedConflicts.map((item) => item.operationId));
         await updateConflicts((currentConflicts) => {
           const stillRelevant = refreshedConflicts.filter((conflict) => {
             const wasStored = storedConflicts.some((item) => item.operationId === conflict.operationId);
             const wasRemovedWhileSyncing = wasStored && !currentConflicts.some((item) => item.operationId === conflict.operationId);
-            const newerQueuedValue = latestQueue.some((item) => item.id !== conflict.operationId
-              && belongsToTenant(item, tenantId) && isSameEntity(item, conflict));
+            const newerQueuedValue = latestQueue.some((item) => item.id !== conflict.operationId && belongsToTenant(item, tenantId) && isSameEntity(item, conflict));
             return !wasRemovedWhileSyncing && !newerQueuedValue;
           });
-          const relevantIds = new Set(stillRelevant.map((item) => item.operationId));
-          return [
-            ...currentConflicts.filter((item) => !accepted.has(item.operationId) && !refreshedIds.has(item.operationId) && !relevantIds.has(item.operationId)),
-            ...stillRelevant,
-          ].slice(-500);
+          return [...currentConflicts.filter((item) => !accepted.has(item.operationId) && !refreshedIds.has(item.operationId)), ...stillRelevant].slice(-500);
         });
         const acceptedVersions = result.acceptedEntityVersions?.length
           ? result.acceptedEntityVersions
@@ -269,10 +240,7 @@ export const syncEngine = {
         if (["entity_upsert","entity_delete"].includes(normalized.type)) {
           await withDataStorageLock(async () => {
             const conflicts = await readJson(CONFLICTS_KEY, []);
-            const hasUnresolvedLocal = conflicts.some((item) => belongsToTenant(item, tenantId)
-              && item.localOperation && isSameEntity(item.localOperation, normalized));
-            if (hasUnresolvedLocal) return;
-
+            if (conflicts.some((item) => belongsToTenant(item, tenantId) && item.localOperation && isSameEntity(item.localOperation, normalized))) return;
             let pendingFound = false;
             let rebasedValue = null;
             await updateQueue((currentQueue) => currentQueue.map((item) => {
@@ -282,20 +250,12 @@ export const syncEngine = {
               const merge = mergeConcurrentEntity(item, normalized.value);
               if (!merge.value) return item;
               rebasedValue = merge.value;
-              return {
-                ...item,
-                value: merge.value,
-                baseValue: normalized.value,
-                baseVersion: Number(normalized.version || 0),
-              };
+              return { ...item, value: merge.value, baseValue: normalized.value, baseVersion: Number(normalized.version || 0) };
             }));
-
             const allData = await readJson("datos", {});
             const dataset = allData[tenantId] || allData[Number(tenantId)] || {};
             if (pendingFound && !rebasedValue) return;
-            const operationToApply = rebasedValue
-              ? { ...normalized, type: "entity_upsert", value: rebasedValue }
-              : normalized;
+            const operationToApply = rebasedValue ? { ...normalized, type: "entity_upsert", value: rebasedValue } : normalized;
             await writeJson("datos", mergeTenantDataset(allData, tenantId, applyEntityOperations(dataset, [operationToApply])));
           });
         } else if (["section_set","section_delete"].includes(normalized.type)) {

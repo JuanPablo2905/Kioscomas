@@ -687,6 +687,21 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
     if (aprobar && sugerencia.tipo === "nuevo_producto") {
       setProducts((prev) => [...prev, { id: Date.now(), vitrina: 0, ...sugerencia.data, historial: [historialEntry("creacion", `Producto aprobado · sugerido por ${sugerencia.autor}`)] }]);
     }
+    if (aprobar && sugerencia.tipo === "actualizar_producto") {
+      const data = sugerencia.data || {};
+      const codigo = String(data.codigo || "").replace(/\D/g, "");
+      setProducts((prev) => prev.map((p) => p.codigo && String(p.codigo).replace(/\D/g, "") === codigo ? {
+        ...p,
+        nombre: data.nombre || p.nombre,
+        categoria: data.categoria ?? p.categoria,
+        familia: data.familia ?? p.familia,
+        variante: data.variante ?? p.variante,
+        unidad: data.unidad || p.unidad || "unidad",
+        imagenUrl: data.imagenUrl ?? p.imagenUrl,
+        descripcionCatalogo: data.descripcionCatalogo ?? p.descripcionCatalogo,
+        historial: [...(p.historial || []), historialEntry("actualizacion", `Actualizado desde el catálogo · ${sugerencia.autor}`)],
+      } : p));
+    }
     setSugerencias((prev) => prev.map((item) => item.id === sugerencia.id ? { ...item, estado: aprobar ? "aprobada" : "rechazada", resueltaFecha: new Date().toISOString() } : item));
   };
 
@@ -694,10 +709,10 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
     <div data-tour="administration-content" className="mx-auto max-w-6xl p-4 sm:p-8">
       <SectionHeader title="Administracion" />
 
-      {hasEmployees && sugerencias.filter((s) => s.estado === "pendiente").length > 0 && identidad?.rol === "Dueño" && (
+      {sugerencias.filter((s) => s.estado === "pendiente").length > 0 && (identidad?.rol === "Dueño" || (identidad?.adminApp && identidad?.operandoNegocio)) && (
         <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-blue-900">Sugerencias pendientes de empleados</h2>
-          <div className="space-y-2">{sugerencias.filter((s) => s.estado === "pendiente").map((s) => <div key={s.id} className="flex flex-col gap-3 rounded-lg bg-white p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words text-sm font-medium">Nuevo producto: {s.data?.nombre}</p><p className="text-xs text-gray-500">Sugerido por {s.autor} · {new Date(s.fecha).toLocaleString("es-AR")}</p></div><div className="grid grid-cols-2 gap-2 sm:flex"><button onClick={() => resolverSugerencia(s, false)} className="min-h-10 rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-600">Rechazar</button><button onClick={() => resolverSugerencia(s, true)} className="min-h-10 rounded-lg bg-blue-700 px-3 py-1.5 text-xs text-white">Aprobar</button></div></div>)}</div>
+          <h2 className="mb-3 text-sm font-semibold text-blue-900">Sugerencias pendientes</h2>
+          <div className="space-y-2">{sugerencias.filter((s) => s.estado === "pendiente").map((s) => <div key={s.id} className="flex flex-col gap-3 rounded-lg bg-white p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words text-sm font-medium">{s.tipo === "actualizar_producto" ? `Actualizar producto: ${s.data?.nombre || s.data?.codigo}` : `Nuevo producto: ${s.data?.nombre}`}</p><p className="text-xs text-gray-500">Sugerido por {s.autor} · {new Date(s.fecha).toLocaleString("es-AR")}</p></div><div className="grid grid-cols-2 gap-2 sm:flex"><button onClick={() => resolverSugerencia(s, false)} className="min-h-10 rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-600">Rechazar</button><button onClick={() => resolverSugerencia(s, true)} className="min-h-10 rounded-lg bg-blue-700 px-3 py-1.5 text-xs text-white">Aprobar</button></div></div>)}</div>
         </div>
       )}
 

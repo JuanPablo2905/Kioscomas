@@ -1,11 +1,26 @@
-import React from "react";
-import { AlertTriangle, Package, Printer, ReceiptText, ShoppingCart, Warehouse, X } from "lucide-react";
+import React, { useState } from "react";
+import { AlertTriangle, Package, Printer, ReceiptText, Search, ShoppingCart, Warehouse, X } from "lucide-react";
 import { money } from "./domain";
 import { TicketBarcode } from "./TicketBarcodeView";
 
-export function GlobalScanResult({ result, onClose, onSale, onStock, onPrint, onVoid }) {
+export function GlobalScanResult({ result, onClose, onSale, onStock, onPrint, onVoid, onVerifyPending }) {
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState(null);
   if (!result) return null;
   const { type, product, ticket, code } = result;
+  const sendToVerify = async () => {
+    if (!onVerifyPending || verifying) return;
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const outcome = await onVerifyPending(code);
+      setVerifyResult(outcome || { ok: false, message: "No se pudo registrar la verificación." });
+    } catch {
+      setVerifyResult({ ok: false, message: "No se pudo registrar la verificación." });
+    } finally {
+      setVerifying(false);
+    }
+  };
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-3" role="dialog" aria-modal="true">
       <div className="mobile-dialog max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:p-5">
@@ -65,6 +80,11 @@ export function GlobalScanResult({ result, onClose, onSale, onStock, onPrint, on
             <AlertTriangle size={24}/>
             <p className="mt-2 font-semibold">No coincide con un producto ni con un ticket de este negocio.</p>
             <p className="mt-1 break-all font-mono text-xs">{code}</p>
+            <p className="mt-3 rounded-lg bg-white p-3 text-sm">Verificá que el código de barras sea correcto. Si lo es, enviá el código para que el administrador de Kiosco+ lo verifique y lo agregue al catálogo.</p>
+            <div className="mt-3">
+              <button onClick={sendToVerify} disabled={verifying || !onVerifyPending} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#1C4A44] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"><Search size={17}/>{verifying ? "Enviando..." : "Enviar a verificar"}</button>
+              {verifyResult && <p className={`mt-2 rounded-lg p-2 text-xs ${verifyResult.ok ? "bg-green-100 text-green-800" : "bg-red-100 text-red-700"}`}>{verifyResult.message}</p>}
+            </div>
           </div>
         )}
       </div>

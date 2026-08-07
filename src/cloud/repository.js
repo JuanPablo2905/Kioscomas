@@ -54,19 +54,19 @@ export const repository = {
       if (previousResult?.value === serializedValue) return;
       await storage.set(key, serializedValue);
       if (context.tenantId && key === "datos") {
-      const tenantId=String(context.tenantId), config=loadCloudConfig();
-      const before=extractTenantValue(key,previous||{},tenantId)||{}, after=extractTenantValue(key,value,tenantId)||{};
-      const operations=[
-        ...diffTenantEntities(before,after,tenantId,config.deviceId),
-        ...diffTenantSections(before,after,tenantId,config.deviceId),
-      ];
-      if(operations.length) { await syncEngine.enqueueMany(operations); scheduleSync(); }
+        const tenantId=String(context.tenantId), config=loadCloudConfig();
+        const before=extractTenantValue(key,previous||{},tenantId)||{}, after=extractTenantValue(key,value,tenantId)||{};
+        const operations=[
+          ...diffTenantEntities(before,after,tenantId,config.deviceId),
+          ...diffTenantSections(before,after,tenantId,config.deviceId),
+        ];
+        if(operations.length) { await syncEngine.enqueueMany(operations); scheduleSync(); }
       } else if (context.tenantId && key === "cuentas" && context.isSystemAdmin && canSyncSystemData()) {
-      await syncEngine.enqueue({ type: "system_set", key: "cuentas", tenantId: String(context.tenantId), value });
-      scheduleSync();
+        await syncEngine.enqueue({ type: "system_set", key: "cuentas", tenantId: String(context.tenantId), value });
+        scheduleSync();
       } else if (context.tenantId && SYNCABLE_KEYS.has(key)) {
-      await syncEngine.enqueue({ type: "set", key, tenantId: String(context.tenantId), value: extractTenantValue(key, value, String(context.tenantId)) });
-      scheduleSync();
+        await syncEngine.enqueue({ type: "set", key, tenantId: String(context.tenantId), value: extractTenantValue(key, value, String(context.tenantId)) });
+        scheduleSync();
       }
     };
     return key === "datos" ? withDataStorageLock(persist) : persist();
