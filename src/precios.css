@@ -6,11 +6,12 @@
 
 .plans{max-width:1040px;padding-top:56px}
 .plans-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:stretch}
-.plan-card{position:relative;display:flex;flex-direction:column;padding:34px 32px 30px;border:1px solid #dfe7e2;border-radius:18px;background:#fcfdfa;box-shadow:0 10px 30px rgba(23,56,52,.05)}
+.plan-card{position:relative;display:flex;flex-direction:column;padding:34px 32px 30px;border-radius:18px;background:#fcfdfa;transition:border-color .35s ease,box-shadow .35s ease,background-color .35s ease,transform .35s ease,opacity .62s ease}
 .plan-card.main{border:2px solid #173834;box-shadow:0 24px 50px rgba(23,56,52,.14)}
-.plan-card.launch{background:#fff}
-.plan-badge{position:absolute;top:-12px;left:26px;background:#d26731;color:#fff;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:5px 12px;border-radius:999px}
-.plan-badge.alt{background:#3b8274}
+.plan-card.launch{border:1px solid #dfe7e2;background:#fff;box-shadow:0 10px 30px rgba(23,56,52,.05)}
+.plan-card.hovered{border-color:#d26731;transform:translateY(-4px);box-shadow:0 26px 55px rgba(210,103,49,.2)}
+.plan-badge{position:absolute;top:-12px;left:26px;background:#d26731;color:#fff;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:5px 12px;border-radius:999px;transition:background-color .35s ease}
+.plan-card.launch .plan-badge{background:#3b8274}
 .plan-icon{width:42px;height:42px;border-radius:10px;background:#e5f0e9;color:#3b8274;display:grid;place-items:center;margin-bottom:16px}
 .plan-card h3{margin:0;font-size:20px}
 .plan-price{display:flex;align-items:baseline;gap:7px;margin:18px 0 6px}
