@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
-import {
-  ArrowRight, Check, ChevronDown, Gift, Share2, Sparkles, Store, UserPlus, Users, Wallet,
-} from "lucide-react";
+import { Gift, Share2, Sparkles, Store, UserPlus, Wallet, ArrowRight, Check, ChevronDown } from "lucide-react";
 import "./landing.css";
 import "./precios.css";
+import { normalizeWhatsAppPhone } from "./shared/share.js";
 
 const base = import.meta.env.BASE_URL;
 const appUrl = import.meta.env.VITE_PUBLIC_APP_URL || "./";
+const whatsappNumber = normalizeWhatsAppPhone("1122502706");
+const wa = (text) => `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
 
 const planFeatures = [
   "Stock y control de mercadería",
@@ -48,9 +49,9 @@ function App() {
     <section className="pricing-hero"><div className="eyebrow"><Sparkles size={15}/> Precios claros</div><h1>Un precio simple. <i>Sin sorpresas.</i></h1><p>Un solo plan, dos dispositivos incluidos y descuentos reales para quienes suman. Sin letra chica.</p></section>
 
     <section className="section plans" id="planes"><div className="plans-grid">
-      <article className="plan-card main reveal"><span className="plan-badge">Lo que elige la mayoría</span><div className="plan-icon"><Store size={22}/></div><h3>Kiosco+</h3><div className="plan-price"><b>$30.000</b><span>/mes</span></div><p className="plan-note">Incluye <b>2 dispositivos simultáneos</b>. Cada dispositivo adicional suma <b>$5.000/mes</b>.</p><ul>{planFeatures.map((item)=><li key={item}><Check size={15}/>{item}</li>)}</ul><a className="button primary" href={appUrl}>Probar demo <ArrowRight size={18}/></a></article>
+      <article className="plan-card main reveal"><span className="plan-badge">Lo que elige la mayoría</span><div className="plan-icon"><Store size={22}/></div><h3>Kiosco+</h3><div className="plan-price"><b>$30.000</b><span>/mes</span></div><p className="plan-note">Incluye <b>2 dispositivos simultáneos</b>. Cada dispositivo adicional suma <b>$5.000/mes</b>.</p><ul>{planFeatures.map((item)=><li key={item}><Check size={15}/>{item}</li>)}</ul><a className="button primary" href={wa("Hola Kiosco+, me interesa el plan de $30.000/mes con 2 dispositivos incluidos. ¿Cómo lo contrato?")} target="_blank" rel="noopener noreferrer">Quiero este plan <ArrowRight size={18}/></a></article>
 
-      <article className="plan-card launch reveal"><span className="plan-badge alt">Lanzamiento</span><div className="plan-icon"><Sparkles size={22}/></div><h3>Plan Lanzamiento</h3><div className="plan-price"><b>$0</b><span>el primer mes</span></div><p className="plan-note">Después queda en <b>$20.000/mes por siempre</b>, como agradecimiento por ayudarnos a cerrar la app.</p><ul>{planFeatures.map((item)=><li key={item}><Check size={15}/>{item}</li>)}</ul><a className="button ghost" href={appUrl}>Empezar gratis <ArrowRight size={18}/></a></article>
+      <article className="plan-card launch reveal"><span className="plan-badge alt">Lanzamiento</span><div className="plan-icon"><Sparkles size={22}/></div><h3>Plan Lanzamiento</h3><div className="plan-price"><b>$0</b><span>el primer mes</span></div><p className="plan-note">Después queda en <b>$20.000/mes por siempre</b>, como agradecimiento por ayudarnos a cerrar la app.</p><ul>{planFeatures.map((item)=><li key={item}><Check size={15}/>{item}</li>)}</ul><a className="button ghost" href={wa("Hola Kiosco+, me interesa el Plan Lanzamiento (primer mes gratis, después $20.000/mes). ¿Cómo lo contrato?")} target="_blank" rel="noopener noreferrer">Quiero el plan lanzamiento <ArrowRight size={18}/></a></article>
     </div></section>
 
     <section className="section referrals" id="referidos"><div className="section-intro reveal"><span className="eyebrow"><Gift size={15}/> Referidos</span><h2>Recomendá Kiosco+ y pagá menos.</h2><p>Cada comercio que crea su cuenta con tu código te suma un 20% de descuento. Acumulá hasta que tu suscripción quede gratis.</p></div>
@@ -62,7 +63,7 @@ function App() {
 
     <section className="section faq" id="preguntas"><div className="section-intro"><span className="eyebrow">Preguntas frecuentes</span><h2>Precios sin letra chica.</h2></div><div className="faq-list">{faqs.map(([q,a],i)=><button className={openFaq===i?"faq-item open":"faq-item"} onClick={()=>setOpenFaq(openFaq===i?null:i)} key={q}><span><b>{q}</b>{openFaq===i&&<p>{a}</p>}</span><ChevronDown size={20}/></button>)}</div></section>
 
-    <section className="closing"><div><span className="eyebrow">¿Listo para ordenar tu negocio?</span><h2>Empezá hoy. Sin permanencia.</h2><p>Probalo gratis y quedate con el plan que mejor se adapte a tu comercio.</p></div><a className="button light" href={appUrl}>Probar demo <ArrowRight size={18}/></a></section>
+    <section className="closing"><div><span className="eyebrow">¿Listo para ordenar tu negocio?</span><h2>Empezá hoy. Sin permanencia.</h2><p>Probalo gratis y quedate con el plan que mejor se adapte a tu comercio.</p></div><a className="button light" href={wa("Hola Kiosco+, quiero probar la app. ¿Cómo arranco?")} target="_blank" rel="noopener noreferrer">Escribime por WhatsApp <ArrowRight size={18}/></a></section>
     <footer><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+"/><span>Gestión simple para comercios reales.</span><span>© {new Date().getFullYear()} Kiosco+</span></footer>
   </main>;
 }
