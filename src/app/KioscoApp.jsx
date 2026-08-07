@@ -37,6 +37,8 @@ import { unidadInfo } from "../shared/domain";
 import { auditActor, createAuditEvent, describeAccountChange, enrichEntityHistory, hasMeaningfulChange } from "../shared/audit";
 import { captureAppScreenshot } from "../shared/captureScreenshot";
 import { lookupBarcode } from "../shared/productLookup";
+import { cloudFetch, cloudSession } from "../cloud/cloudAuth";
+import { CatalogoView } from "../features/catalogo/CatalogoView";
 import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
 import { PromptDialog } from "../shared/controls";
 import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, rolesPorDefecto, seedCuentas, seedDatos } from "./data";
@@ -320,7 +322,7 @@ export default function KioscoApp() {
       tenantId: currentUserId ? String(currentUserId) : null,
       isSystemAdmin: !!(identidad?.superAdmin || identidad?.adminApp),
     });
-    if (currentUserId) repository.syncNow().catch(() => {});
+    if (currentUserId && !PUBLIC_DEMO_MODE) repository.syncNow().catch(() => {});
   }, [currentUserId, identidad?.superAdmin, identidad?.adminApp]);
   useEffect(() => {
     const reloadRemote = async () => {
@@ -332,6 +334,7 @@ export default function KioscoApp() {
     return () => window.removeEventListener("kiosco-cloud-update", reloadRemote);
   }, []);
   useEffect(() => {
+    if (PUBLIC_DEMO_MODE) return;
     const sync = () => repository.syncNow().catch(() => {});
     const cloudConfig = loadCloudConfig();
     const localCloud = /^(http:\/\/(localhost|127\.0\.0\.1|10\.|192\.168\.|172\.|100\.)|https:\/\/[a-z0-9.-]+\.ts\.net:8443)/i.test(cloudConfig.apiUrl || "");
@@ -343,31 +346,34 @@ export default function KioscoApp() {
   }, []);
 
   // Guardar automáticamente cada vez que cambian cuentas, datos o sesión.
+  // En modo demo pública no se persiste nada: los cambios quedan solo en
+  // estado local de React y se pierden al recargar, manteniendo la demo
+  // siempre con los datos que el administrador configuró en la app real.
   useEffect(() => {
-    if (cargando) return;
+    if (cargando || PUBLIC_DEMO_MODE) return;
     repository.set("cuentas", cuentas).catch(() => {});
   }, [cuentas, cargando]);
 
   useEffect(() => {
-    if (cargando) return;
+    if (cargando || PUBLIC_DEMO_MODE) return;
     repository.set("datos", datos).catch(() => {});
   }, [datos, cargando]);
 
   useEffect(() => {
-    if (cargando) return;
+    if (cargando || PUBLIC_DEMO_MODE) return;
     if (currentUserId && identidad && sessionExpiresAt) repository.set("sesion", { accountId: currentUserId, identity: identidad, expiresAt: sessionExpiresAt }).catch(() => {});
     else repository.delete("sesion").catch(() => {});
   }, [currentUserId, identidad, sessionExpiresAt, cargando]);
 
   useEffect(() => {
-    if (cargando) return;
+    if (cargando || PUBLIC_DEMO_MODE) return;
     repository.set("notasAdmin", notasAdmin).catch(() => {});
   }, [notasAdmin, cargando]);
 
-  useEffect(() => { if (!cargando) repository.set("authSecurity", authSecurity).catch(() => {}); }, [authSecurity, cargando]);
-  useEffect(() => { if (!cargando) repository.set("reportesProblemas", reportesProblemas).catch(() => {}); }, [reportesProblemas, cargando]);
-  useEffect(() => { if (!cargando) repository.set("menuPreferences", menuPreferences).catch(() => {}); }, [menuPreferences, cargando]);
-  useEffect(() => { if (!cargando) repository.set("userPreferences", userPreferences).catch(() => {}); }, [userPreferences, cargando]);
+  useEffect(() => { if (!cargando && !PUBLIC_DEMO_MODE) repository.set("authSecurity", authSecurity).catch(() => {}); }, [authSecurity, cargando]);
+  useEffect(() => { if (!cargando && !PUBLIC_DEMO_MODE) repository.set("reportesProblemas", reportesProblemas).catch(() => {}); }, [reportesProblemas, cargando]);
+  useEffect(() => { if (!cargando && !PUBLIC_DEMO_MODE) repository.set("menuPreferences", menuPreferences).catch(() => {}); }, [menuPreferences, cargando]);
+  useEffect(() => { if (!cargando && !PUBLIC_DEMO_MODE) repository.set("userPreferences", userPreferences).catch(() => {}); }, [userPreferences, cargando]);
   useEffect(() => {
     if (!sessionExpiresAt) return;
     const timer = setInterval(() => { if (Date.now() >= new Date(sessionExpiresAt).getTime()) { setCurrentUserId(null); setIdentidad(null); setSessionExpiresAt(null); setLoginError("La sesión venció. Ingresá nuevamente."); } }, 30000);
@@ -704,6 +710,25 @@ export default function KioscoApp() {
     setVoidTicketPrompt({ ticket, reason: "" });
   };
 
+  const submitPendingVerification = async (code) => {
+    const config = loadCloudConfig();
+    const session = cloudSession();
+    if (!config.enabled || !config.apiUrl || !config.deviceId) {
+      return { ok: false, message: "No hay servidor conectado para registrar la verificación." };
+    }
+    try {
+      const response = await cloudFetch(config.apiUrl, "/v1/catalog/verify-pending", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-device-id": config.deviceId, "x-tenant-id": String(session?.user?.businessId || currentUserId) },
+        body: JSON.stringify({ codigo: String(code || "").replace(/\D/g, "") }),
+      });
+      if (response.ok) return { ok: true, message: "Se envió a verificación. El administrador de Kiosco+ lo revisará." };
+      return { ok: false, message: "No se pudo enviar. Revisá la conexión con el servidor." };
+    } catch {
+      return { ok: false, message: "No se pudo enviar. Revisá la conexión con el servidor." };
+    }
+  };
+
   const confirmVoidScannedTicket = () => {
     const ticket = voidTicketPrompt.ticket;
     const motivo = voidTicketPrompt.reason.trim();
@@ -767,7 +792,7 @@ export default function KioscoApp() {
       name,
       superAdmin,
       deviceId: cloudConfig.deviceId,
-    }).then(() => repository.seedCurrentTenant()).catch(() => {});
+    }).then(() => { if (!PUBLIC_DEMO_MODE) repository.seedCurrentTenant(); }).catch(() => {});
   };
 
   const handleLogin = async ({ usuario, password }) => {
@@ -956,6 +981,17 @@ export default function KioscoApp() {
     switch (view) {
       case "notificaciones":
         return <NotificacionesView data={data} onNavigate={handleNavigate} />;
+      case "catalogo":
+        return (
+          <CatalogoView
+            products={data.products}
+            setProducts={setProducts}
+            tenantId={String(currentUserId)}
+            setSugerencias={setSugerencias}
+            identidad={identidad}
+            preferences={currentPreferences}
+          />
+        );
       case "stock":
         return <StockArea products={data.products} setProducts={setProducts} proveedores={data.proveedores || []} puedeEditarPrecios={puede("editar_precios")} puedeEliminar={puede("eliminar_productos")} puedeCrearDirecto={esDueno} sugerencias={data.sugerencias || []} setSugerencias={setSugerencias} identidad={identidad} perdidas={data.perdidas || []} setPerdidas={setPerdidas} inventarios={data.inventarios || []} setInventarios={setInventarios} preferences={currentPreferences} autoconsumos={data.autoconsumos || []} setAutoconsumos={setAutoconsumos} tutorialMode={stockTutorialActive} initialProduct={pendingStockProduct} onInitialProductHandled={() => setPendingStockProduct(null)} />;
       case "vitrina":
@@ -1144,6 +1180,7 @@ export default function KioscoApp() {
         onStock={() => { setView("stock"); setGlobalScanResult(null); }}
         onPrint={() => printTicket(globalScanResult.ticket, { businessName: cuentaActual?.nombreNegocio || "Mi negocio", paper: currentPreferences.ticketPaper, template: data.configuracionFiscal?.ticket || {}, reprint: true })}
         onVoid={() => voidScannedTicket(globalScanResult?.ticket)}
+        onVerifyPending={submitPendingVerification}
       />
       <PromptDialog open={Boolean(voidTicketPrompt.ticket)} title="Anular o devolver ticket" message={`Indicá el motivo para el ticket #${voidTicketPrompt.ticket?.id || ""}. Quedará registrado en el historial.`} value={voidTicketPrompt.reason} onChange={(reason)=>setVoidTicketPrompt((current)=>({...current,reason}))} placeholder="Ej.: devolución del cliente" confirmLabel="Confirmar anulación" onCancel={()=>setVoidTicketPrompt({ticket:null,reason:""})} onConfirm={confirmVoidScannedTicket}/>
     </div>
