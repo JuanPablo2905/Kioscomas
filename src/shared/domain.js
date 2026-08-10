@@ -3,11 +3,10 @@ import {
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
   MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
-  ChevronRight, Truck, CalendarClock, Receipt, LayoutDashboard, ScanBarcode,
+  ChevronRight, Truck, CalendarClock, Receipt, LayoutDashboard,
 } from "lucide-react";
 export const NAV_ITEMS = [
   { id: "stock", label: "Stock y vencimientos", mobileLabel: "Stock", icon: Package },
-  { id: "catalogo", label: "Catálogo", mobileLabel: "Catálogo", icon: ScanBarcode },
   { id: "notificaciones", label: "Notificaciones", mobileLabel: "Alertas", icon: Bell },
   { id: "vitrina", label: "Vitrina", icon: Store },
   { id: "ventas", label: "Ventas / Caja", mobileLabel: "Ventas", icon: ShoppingCart },
@@ -24,12 +23,6 @@ export const HOME_CARDS = [
     icon: Package,
     title: "Stock y vencimientos",
     desc: "Productos, códigos, vencimientos y pérdidas",
-  },
-  {
-    id: "catalogo",
-    icon: ScanBarcode,
-    title: "Catálogo",
-    desc: "Códigos de barras y productos escaneados",
   },
   {
     id: "vitrina",

@@ -74,6 +74,12 @@ try {
   test("el catálogo no expone precios ni stock", catalog.value.product?.venta === undefined && catalog.value.product?.deposito === undefined);
   const deniedCatalogAdmin = await request("/v1/admin/catalog?status=all", { headers });
   test("un dueno de negocio no puede modificar el catalogo global", deniedCatalogAdmin.response.status === 403);
+  const pendingVerification = await request("/v1/catalog/verify-pending", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ codigo: "7790000000007" }),
+  });
+  test("un negocio puede enviar un codigo desconocido a verificar", pendingVerification.response.status === 202 && pendingVerification.value.item?.status === "pending");
   await request("/v1/auth/register-local", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -90,6 +96,8 @@ try {
     "x-tenant-id": "system-admin",
     authorization: `Bearer ${catalogAdminLogin.value.accessToken}`,
   };
+  const pendingCatalogList = await request("/v1/admin/catalog?query=7790000000007&status=pending", { headers: catalogAdminHeaders });
+  test("el administrador central recibe los codigos pendientes", pendingCatalogList.value.items?.[0]?.codigo === "7790000000007");
   const manualCatalog = await request("/v1/admin/catalog/7799999999991", {
     method: "PUT",
     headers: catalogAdminHeaders,

@@ -243,6 +243,7 @@ const learnBarcode = (db, product, contributionId = "") => {
   return true;
 };
 const catalogStatus = (entry = {}) => {
+  if (entry.status === "pending") return "pending";
   if (!entry.product) return "unresolved";
   if (entry.manualOverride || entry.status === "verified") return "verified";
   if (!entry.product.categoria || !entry.product.imagenUrl) return "incomplete";
@@ -267,6 +268,8 @@ const catalogAdminView = (entry = {}) => ({
   confirmations: Number(entry.confirmations || 0),
   candidateCount: Object.keys(entry.candidates || {}).length,
   updatedAt: entry.updatedAt || null,
+  requestedAt: entry.requestedAt || null,
+  requestedBy: Array.isArray(entry.requestedBy) ? entry.requestedBy.slice(0, 20) : [],
   history: Array.isArray(entry.history) ? entry.history.slice(0, 20) : [],
 });
 const saveManualCatalogProduct = (db, codigo, rawProduct, actor = {}) => {
@@ -551,6 +554,31 @@ const handleRequest = async (req, res) => {
     }
     db.devices[deviceId] = { ...(db.devices[deviceId] || {}), tenantId, lastSeenAt: new Date().toISOString() };
 
+    if (req.method === "POST" && req.url === "/v1/catalog/verify-pending") {
+      const payload = await body(req);
+      const codigo = cleanBarcode(payload.codigo);
+      if (codigo.length < 6) return send(res, 400, { error: "El codigo debe tener al menos 6 digitos" });
+      db.barcodeCatalog ||= {};
+      const now = new Date().toISOString();
+      const current = db.barcodeCatalog[codigo] || { codigo, candidates: {}, contributions: {}, confirmations: 0 };
+      current.lookupCount = Number(current.lookupCount || 0) + 1;
+      current.lastLookupAt = now;
+      current.requestedAt = now;
+      current.requestedBy = [
+        { tenantId, deviceId, userId: session?.userId || null, at: now },
+        ...(Array.isArray(current.requestedBy) ? current.requestedBy : []),
+      ].slice(0, 20);
+      if (!current.product) current.status = "pending";
+      current.updatedAt = now;
+      db.barcodeCatalog[codigo] = current;
+      await writeDb(db);
+      return send(res, current.product ? 200 : 202, {
+        ok: true,
+        alreadyKnown: !!current.product,
+        item: catalogAdminView(current),
+      });
+    }
+
     if (req.url?.startsWith("/v1/admin/catalog")) {
       if (session?.role !== "superAdmin") return send(res, 403, { error: "Se requiere la cuenta administradora de Kiosco+" });
       if (req.method === "GET" && (req.url === "/v1/admin/catalog" || req.url.startsWith("/v1/admin/catalog?"))) {
@@ -564,8 +592,10 @@ const handleRequest = async (req, res) => {
           const haystack = `${item.codigo} ${item.product?.nombre || ""} ${item.product?.categoria || ""} ${item.product?.familia || ""}`.toLowerCase();
           return (!query || haystack.includes(query)) && (status === "all" || item.status === status);
         }).sort((left, right) => {
-          if (left.status === "unresolved" && right.status !== "unresolved") return -1;
-          if (right.status === "unresolved" && left.status !== "unresolved") return 1;
+          const priority = { pending: 0, unresolved: 1 };
+          const leftPriority = priority[left.status] ?? 2;
+          const rightPriority = priority[right.status] ?? 2;
+          if (leftPriority !== rightPriority) return leftPriority - rightPriority;
           return Number(right.lookupCount) - Number(left.lookupCount) || String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
         });
         const stats = all.reduce((result, item) => ({ ...result, [item.status]: Number(result[item.status] || 0) + 1 }), { total: all.length });

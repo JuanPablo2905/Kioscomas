@@ -3,11 +3,19 @@ import ReactDOM from "react-dom/client";
 import { Gift, Share2, Sparkles, Store, UserPlus, Wallet, ArrowRight, Check, ChevronDown } from "lucide-react";
 import "./landing.css";
 import "./precios.css";
-import { normalizeWhatsAppPhone } from "./shared/share.js";
+import { copyText, normalizeWhatsAppPhone } from "./shared/share.js";
 
 const base = import.meta.env.BASE_URL;
 const appUrl = import.meta.env.VITE_PUBLIC_APP_URL || "./";
-const whatsappNumber = normalizeWhatsAppPhone("1122502706");
+const whatsappNumber = normalizeWhatsAppPhone(import.meta.env.VITE_SALES_WHATSAPP || "1122502706");
+const envNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+const monthlyPrice = envNumber(import.meta.env.VITE_PLAN_PRICE, 30000);
+const launchPrice = envNumber(import.meta.env.VITE_LAUNCH_PRICE, 20000);
+const extraDevicePrice = envNumber(import.meta.env.VITE_EXTRA_DEVICE_PRICE, 5000);
+const money = (value) => `$${Number(value).toLocaleString("es-AR")}`;
 const wa = (text) => `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
 
 const planFeatures = [
@@ -26,9 +34,9 @@ const referralSteps = [
 ];
 
 const faqs = [
-  ["¿Los $30.000 son por negocio o por dispositivo?", "Son por negocio e incluyen dos dispositivos simultáneos para que puedas trabajar junto a quien te ayude en el mostrador."],
-  ["¿Cómo sumo un tercer dispositivo?", "Cada dispositivo adicional suma $5.000 por mes. Lo sumás cuando lo necesites, sin permanencia."],
-  ["¿El Plan Lanzamiento queda en $20.000 para siempre?", "Sí. Como agradecimiento por acompañarnos en el arranque, el primer mes es gratis y el plan queda en $20.000 por mes mientras sigas suscrito."],
+  [`¿Los ${money(monthlyPrice)} son por negocio o por dispositivo?`, "Son por negocio e incluyen dos dispositivos simultáneos para que puedas trabajar junto a quien te ayude en el mostrador."],
+  ["¿Cómo sumo un tercer dispositivo?", `Cada dispositivo adicional suma ${money(extraDevicePrice)} por mes. Lo sumás cuando lo necesites, sin permanencia.`],
+  [`¿El Plan Lanzamiento queda en ${money(launchPrice)} para siempre?`, `Sí. Como agradecimiento por acompañarnos en el arranque, el primer mes es gratis y el plan queda en ${money(launchPrice)} por mes mientras sigas suscrito.`],
   ["¿Cómo funcionan los referidos?", "Cada cuenta que se crea con tu código te descuenta un 20% de la suscripción. El descuento es acumulable: con 5 referidos llegás al 100% y pagás $0."],
   ["¿Puedo cancelar cuando quiera?", "Sí. No hay permanencia: podés dejar de suscribirte cuando quieras."],
 ];
@@ -36,6 +44,18 @@ const faqs = [
 function App() {
   const [openFaq, setOpenFaq] = useState(null);
   const [hoverPlans, setHoverPlans] = useState(null);
+  const [referralCode, setReferralCode] = useState("");
+  const [copied, setCopied] = useState(false);
+  const copyReferralCode = async () => {
+    if (!referralCode.trim()) return;
+    try {
+      await copyText(referralCode.trim());
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
   useEffect(() => {
     const elements = document.querySelectorAll(".reveal");
     const observer = new IntersectionObserver((entries) => entries.forEach((entry) => {
@@ -50,16 +70,16 @@ function App() {
     <section className="pricing-hero"><div className="eyebrow"><Sparkles size={15}/> Precios claros</div><h1>Un precio simple. <i>Sin sorpresas.</i></h1><p>Un solo plan, dos dispositivos incluidos y descuentos reales para quienes suman. Sin letra chica.</p></section>
 
     <section className="section plans" id="planes"><div className="plans-grid">
-      <article className={"plan-card reveal" + (hoverPlans === "main" ? " hovered" : "")} onMouseEnter={() => setHoverPlans("main")} onMouseLeave={() => setHoverPlans(null)}><span className="plan-badge">Lo que elige la mayoría</span><div className="plan-icon"><Store size={22}/></div><h3>Kiosco+</h3><div className="plan-price"><b>$30.000</b><span>/mes</span></div><p className="plan-note">Incluye <b>2 dispositivos simultáneos</b>. Cada dispositivo adicional suma <b>$5.000/mes</b>.</p><ul>{planFeatures.map((item)=><li key={item}><Check size={15}/>{item}</li>)}</ul><a className="button ghost" href={wa("Hola Kiosco+, me interesa el plan de $30.000/mes con 2 dispositivos incluidos. ¿Cómo lo contrato?")} target="_blank" rel="noopener noreferrer">Quiero este plan <ArrowRight size={18}/></a></article>
+      <article className={"plan-card reveal" + (hoverPlans === "main" ? " hovered" : "")} onMouseEnter={() => setHoverPlans("main")} onMouseLeave={() => setHoverPlans(null)}><span className="plan-badge">Lo que elige la mayoría</span><div className="plan-icon"><Store size={22}/></div><h3>Kiosco+</h3><div className="plan-price"><b>{money(monthlyPrice)}</b><span>/mes</span></div><p className="plan-note">Incluye <b>2 dispositivos simultáneos</b>. Cada dispositivo adicional suma <b>{money(extraDevicePrice)}/mes</b>.</p><ul>{planFeatures.map((item)=><li key={item}><Check size={15}/>{item}</li>)}</ul><a className="button ghost" href={wa(`Hola Kiosco+, me interesa el plan de ${money(monthlyPrice)}/mes con 2 dispositivos incluidos. ¿Cómo lo contrato?`)} target="_blank" rel="noopener noreferrer">Quiero este plan <ArrowRight size={18}/></a></article>
 
-      <article className={"plan-card reveal" + (hoverPlans === "launch" ? " hovered" : "")} onMouseEnter={() => setHoverPlans("launch")} onMouseLeave={() => setHoverPlans(null)}><span className="plan-badge">Lanzamiento</span><div className="plan-icon"><Sparkles size={22}/></div><h3>Plan Lanzamiento</h3><div className="plan-price"><b>$0</b><span>el primer mes</span></div><p className="plan-note">Después queda en <b>$20.000/mes por siempre</b>, como agradecimiento por ayudarnos a cerrar la app.</p><ul>{planFeatures.map((item)=><li key={item}><Check size={15}/>{item}</li>)}</ul><a className="button ghost" href={wa("Hola Kiosco+, me interesa el Plan Lanzamiento (primer mes gratis, después $20.000/mes). ¿Cómo lo contrato?")} target="_blank" rel="noopener noreferrer">Quiero el plan lanzamiento <ArrowRight size={18}/></a></article>
+      <article className={"plan-card reveal" + (hoverPlans === "launch" ? " hovered" : "")} onMouseEnter={() => setHoverPlans("launch")} onMouseLeave={() => setHoverPlans(null)}><span className="plan-badge">Lanzamiento</span><div className="plan-icon"><Sparkles size={22}/></div><h3>Plan Lanzamiento</h3><div className="plan-price"><b>$0</b><span>el primer mes</span></div><p className="plan-note">Después queda en <b>{money(launchPrice)}/mes por siempre</b>, como agradecimiento por ayudarnos a cerrar la app.</p><ul>{planFeatures.map((item)=><li key={item}><Check size={15}/>{item}</li>)}</ul><a className="button ghost" href={wa(`Hola Kiosco+, me interesa el Plan Lanzamiento (primer mes gratis, después ${money(launchPrice)}/mes). ¿Cómo lo contrato?`)} target="_blank" rel="noopener noreferrer">Quiero el plan lanzamiento <ArrowRight size={18}/></a></article>
     </div></section>
 
     <section className="section referrals" id="referidos"><div className="section-intro reveal"><span className="eyebrow"><Gift size={15}/> Referidos</span><h2>Recomendá Kiosco+ y pagá menos.</h2><p>Cada comercio que crea su cuenta con tu código te suma un 20% de descuento. Acumulá hasta que tu suscripción quede gratis.</p></div>
       <div className="referral-steps">{referralSteps.map(({icon: Icon, title, text}, index)=><div className="step reveal" key={title}><span>0{index+1}</span><div><h3>{title}</h3><p>{text}</p></div></div>)}</div>
-      <div className="referral-bar reveal">{[1,2,3,4,5].map((n)=><div className={n===5?"seg full":"seg"} key={n}><b>{n===5?"100%":"20%"}</b><span>{n===5?"Gratis":`${n} ${n===1?"cuenta":"cuentas"}`}</span></div>)}</div>
+      <div className="referral-bar reveal">{[1,2,3,4,5].map((n)=><div className={n===5?"seg full":"seg"} key={n}><b>{n * 20}%</b><span>{n===5?"Gratis":`${n} ${n===1?"cuenta":"cuentas"}`}</span></div>)}</div>
       <p className="referral-caption reveal">Con 5 referidos tu suscripción queda en <b>$0</b>.</p>
-      <div className="referral-code reveal"><label htmlFor="codigo">Tu código de referido</label><div className="code-row"><input id="codigo" type="text" placeholder="Ej: KIOS-1234" /><button className="button ghost" type="button">Copiar</button></div><small>Próximamente vas a poder compartirlo directo desde la app.</small></div>
+      <div className="referral-code reveal"><label htmlFor="codigo">Tu código de referido</label><div className="code-row"><input id="codigo" type="text" value={referralCode} onChange={(event) => setReferralCode(event.target.value)} placeholder="Ej: KIOS-1234" /><button className="button ghost" type="button" disabled={!referralCode.trim()} onClick={copyReferralCode}>{copied ? "Copiado" : "Copiar"}</button></div><small>Ingresá el código asignado a tu cuenta para copiarlo y compartirlo.</small></div>
     </section>
 
     <section className="section faq" id="preguntas"><div className="section-intro"><span className="eyebrow">Preguntas frecuentes</span><h2>Precios sin letra chica.</h2></div><div className="faq-list">{faqs.map(([q,a],i)=><button className={openFaq===i?"faq-item open":"faq-item"} onClick={()=>setOpenFaq(openFaq===i?null:i)} key={q}><span><b>{q}</b>{openFaq===i&&<p>{a}</p>}</span><ChevronDown size={20}/></button>)}</div></section>

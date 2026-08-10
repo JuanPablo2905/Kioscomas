@@ -20,6 +20,13 @@ export default defineConfig({
         landing: resolve(import.meta.dirname, "landing.html"),
         precios: resolve(import.meta.dirname, "precios.html"),
       },
+      output: {
+        manualChunks: {
+          "react-vendor": ["react", "react-dom"],
+          "icons-vendor": ["lucide-react"],
+          "scanner-vendor": ["@zxing/browser"],
+        },
+      },
     },
   },
 });

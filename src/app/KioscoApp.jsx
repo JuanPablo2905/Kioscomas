@@ -38,7 +38,6 @@ import { auditActor, createAuditEvent, describeAccountChange, enrichEntityHistor
 import { captureAppScreenshot } from "../shared/captureScreenshot";
 import { lookupBarcode } from "../shared/productLookup";
 import { cloudFetch, cloudSession } from "../cloud/cloudAuth";
-import { CatalogoView } from "../features/catalogo/CatalogoView";
 import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
 import { PromptDialog } from "../shared/controls";
 import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, rolesPorDefecto, seedCuentas, seedDatos } from "./data";
@@ -970,7 +969,7 @@ export default function KioscoApp() {
     return <div className="h-screen flex items-center justify-center text-sm text-gray-500">No se encontraron datos para esta cuenta.</div>;
   }
 
-  const permisos = PUBLIC_DEMO_MODE ? permisosDe(identidad, cuentaActual).filter((p) => p !== "catalogo") : permisosDe(identidad, cuentaActual);
+  const permisos = permisosDe(identidad, cuentaActual);
   const esDueno = identidad?.rol === "Dueño" || !!(identidad?.adminApp && identidad?.operandoNegocio);
   const puede = (permiso) => esDueno || permisos.includes(permiso);
 
@@ -981,17 +980,6 @@ export default function KioscoApp() {
     switch (view) {
       case "notificaciones":
         return <NotificacionesView data={data} onNavigate={handleNavigate} />;
-      case "catalogo":
-        return (
-          <CatalogoView
-            products={data.products}
-            setProducts={setProducts}
-            tenantId={String(currentUserId)}
-            setSugerencias={setSugerencias}
-            identidad={identidad}
-            preferences={currentPreferences}
-          />
-        );
       case "stock":
         return <StockArea products={data.products} setProducts={setProducts} proveedores={data.proveedores || []} puedeEditarPrecios={puede("editar_precios")} puedeEliminar={puede("eliminar_productos")} puedeCrearDirecto={esDueno} sugerencias={data.sugerencias || []} setSugerencias={setSugerencias} identidad={identidad} perdidas={data.perdidas || []} setPerdidas={setPerdidas} inventarios={data.inventarios || []} setInventarios={setInventarios} preferences={currentPreferences} autoconsumos={data.autoconsumos || []} setAutoconsumos={setAutoconsumos} tutorialMode={stockTutorialActive} initialProduct={pendingStockProduct} onInitialProductHandled={() => setPendingStockProduct(null)} />;
       case "vitrina":
