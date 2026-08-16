@@ -210,6 +210,11 @@ try {
   test("un cambio global sin permiso se rechaza explícitamente", ownerSystemPush.value.rejected?.some((item) => item.operationId === "owner-system-1" && item.reason === "system_admin_required"));
   const ownerPull = await request("/v1/sync/pull?since=0", { headers: ownerHeaders });
   test("dueño recibe el cambio hecho por el administrador", ownerPull.value.operations?.some((item) => item.type === "section_set" && item.section === "ventas"));
+  const expireAccount = { id: "expire-business-b", deviceId: "admin-pc", tenantId: "business-b", type: "system_set", key: "cuentas", value: [{ id: "business-b", estado: "aprobada", subscriptionExpiresAt: "2026-01-01T00:00:00.000Z" }] };
+  await request("/v1/sync/push", { method: "POST", headers: adminHeaders, body: JSON.stringify({ operations: [expireAccount] }) });
+  const expiredWrite = await request("/v1/sync/push", { method: "POST", headers: ownerHeaders, body: JSON.stringify({ operations: [{ ...section, id: "expired-write", deviceId: "pc-b" }] }) });
+  const expiredRead = await request("/v1/sync/pull?since=0", { headers: ownerHeaders });
+  test("un abono vencido conserva lectura pero bloquea escrituras en la nube", expiredRead.response.ok && expiredWrite.response.status === 403);
   const sharedCatalog = await request("/v1/catalog/barcodes/7791234567890", { headers: ownerHeaders });
   test("otro negocio puede reutilizar el código aprendido", sharedCatalog.value.product?.nombre === "Coca de prueba");
   const mirror = JSON.parse(await fs.readFile(path.join(dataDir, "negocios", "business-b", "datos.json"), "utf8"));

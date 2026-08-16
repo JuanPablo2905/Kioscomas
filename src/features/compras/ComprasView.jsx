@@ -57,9 +57,16 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
     if (!items.length || !setPedidos) return;
     const proveedor = proveedorDeItem(items[0]);
     const pedidoId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setPedidos((prev) => [{ id: pedidoId, proveedorId: proveedor?.id || null, proveedorNombre: proveedor?.nombre || "Sin proveedor", estado: "pedido", fecha: new Date().toISOString(), items: items.map((item) => ({ itemId: item.id, productId: item.productId, nombre: item.nombre, cantidad: item.cantidad })) }, ...prev]);
+    setPedidos((prev) => [{ id: pedidoId, proveedorId: proveedor?.id || null, proveedorNombre: proveedor?.nombre || "Sin proveedor", estado: "pedido", fecha: new Date().toISOString(), items: items.map((item) => ({ itemId: item.id, productId: item.productId, nombre: item.nombre, cantidad: Math.max(1, Number(item.cantidad) || 1), cantidadRecibida: 0, cantidadPendiente: Math.max(1, Number(item.cantidad) || 1) })) }, ...prev]);
     const ids = new Set(items.map((item) => item.id));
-    setComprasItems((prev) => prev.map((item) => ids.has(item.id) ? { ...item, estado: "pedido", pedidoId } : item));
+    setComprasItems((prev) => prev.map((item) => ids.has(item.id) ? {
+      ...item,
+      estado: "pedido",
+      pedidoId,
+      cantidadPedida: Math.max(1, Number(item.cantidad) || 1),
+      cantidadOriginalPedida: Math.max(1, Number(item.cantidad) || 1),
+      cantidadRecibidaAcumulada: 0,
+    } : item));
   };
 
   const generarPedidosPorProveedor = () => {
@@ -219,6 +226,12 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
 
   const confirmarRecepcion = (item) => {
     const cantidadRecibida = Math.max(1, Number(item.cantidad) || 1);
+    const cantidadPendienteAntes = Math.max(1, Number(item.cantidadPedida ?? item.cantidad) || 1);
+    const cantidadPendienteDespues = Math.max(0, cantidadPendienteAntes - cantidadRecibida);
+    const cantidadOriginalPedida = Math.max(cantidadPendienteAntes, Number(item.cantidadOriginalPedida) || 0);
+    const cantidadRecibidaAcumulada = Math.max(0, Number(item.cantidadRecibidaAcumulada) || 0) + cantidadRecibida;
+    const recibidoFecha = new Date().toISOString();
+    const recepcionId = `${item.id}-recibido-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     if (item.productId) {
       setProducts((prev) =>
         prev.map((p) =>
@@ -240,12 +253,59 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
         )
       );
     }
-    setComprasItems((prev) =>
-      prev.map((i) => (i.id === item.id ? { ...i, estado: "recibido", recibidoFecha: new Date().toISOString() } : i))
-    );
+    setComprasItems((prev) => prev.flatMap((current) => {
+      if (current.id !== item.id) return [current];
+
+      const recepcion = {
+        ...current,
+        id: cantidadPendienteDespues > 0 ? recepcionId : current.id,
+        cantidad: cantidadRecibida,
+        cantidadPedida: cantidadPendienteAntes,
+        estado: "recibido",
+        recibidoFecha,
+        recepcionParcial: cantidadPendienteDespues > 0,
+        cantidadPendiente: cantidadPendienteDespues,
+      };
+
+      if (cantidadPendienteDespues === 0) return [recepcion];
+
+      const pendiente = {
+        ...current,
+        cantidad: cantidadPendienteDespues,
+        cantidadPedida: cantidadPendienteDespues,
+        cantidadOriginalPedida,
+        cantidadRecibidaAcumulada,
+        estado: "pedido",
+        ultimaRecepcionFecha: recibidoFecha,
+      };
+      return [pendiente, recepcion];
+    }));
     if (item.pedidoId && setPedidos) {
-      const quedan = comprasItems.some((other) => other.pedidoId === item.pedidoId && other.id !== item.id && other.estado !== "recibido");
-      setPedidos((prev) => prev.map((pedido) => pedido.id === item.pedidoId ? { ...pedido, estado: quedan ? "parcial" : "recibido", recibidoFecha: quedan ? pedido.recibidoFecha : new Date().toISOString() } : pedido));
+      const quedanOtros = comprasItems.some((other) => other.pedidoId === item.pedidoId && other.id !== item.id && other.estado !== "recibido");
+      const quedan = cantidadPendienteDespues > 0 || quedanOtros;
+      setPedidos((prev) => prev.map((pedido) => {
+        if (pedido.id !== item.pedidoId) return pedido;
+        return {
+          ...pedido,
+          estado: quedan ? "parcial" : "recibido",
+          recibidoFecha: quedan ? pedido.recibidoFecha : recibidoFecha,
+          ultimaRecepcionFecha: recibidoFecha,
+          items: (pedido.items || []).map((pedidoItem) => {
+            const corresponde = pedidoItem.itemId != null
+              ? pedidoItem.itemId === item.id
+              : pedidoItem.productId != null
+                ? pedidoItem.productId === item.productId
+                : pedidoItem.nombre === item.nombre;
+            if (!corresponde) return pedidoItem;
+            const totalRecibido = Math.max(0, Number(pedidoItem.cantidadRecibida) || 0) + cantidadRecibida;
+            return {
+              ...pedidoItem,
+              cantidadRecibida: totalRecibido,
+              cantidadPendiente: Math.max(0, Number(pedidoItem.cantidad || cantidadOriginalPedida) - totalRecibido),
+            };
+          }),
+        };
+      }));
     }
   };
 
@@ -400,6 +460,11 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
             >
               <div className="min-w-0">
                 <p className="break-words font-medium text-gray-900">{item.nombre}</p>
+                {item.estado === "pedido" && item.cantidadOriginalPedida != null && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Pedido: {item.cantidadOriginalPedida} · Recibido: {item.cantidadRecibidaAcumulada || 0} · Pendiente: {item.cantidadPedida}
+                  </p>
+                )}
                 {item.__tutorial && <span className="mr-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">Práctica del tutorial</span>}
                 <span
                   className={`text-xs font-medium px-2 py-0.5 rounded-full ${
@@ -408,7 +473,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
                       : "bg-blue-100 text-blue-700"
                   }`}
                 >
-                  {item.estado === "pendiente" ? "Pendiente" : "Pedido realizado"}
+                  {item.estado === "pendiente" ? "Pendiente" : Number(item.cantidadRecibidaAcumulada) > 0 ? "Recepción parcial" : "Pedido realizado"}
                 </span>
               </div>
               <div className="grid min-w-0 gap-3 md:flex md:w-auto md:flex-wrap md:items-center md:justify-end">

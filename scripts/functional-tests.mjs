@@ -100,6 +100,9 @@ try {
   test("prueba semanal dura siete días", trialAccess.canAccessAccount(weekTrial, trialNow + 6 * 86400000) && !trialAccess.canAccessAccount(weekTrial, trialNow + 7 * 86400000));
   test("un bloqueo prevalece sobre una prueba vigente", !trialAccess.canAccessAccount({ ...weekTrial, estado: "bloqueada" }, trialNow + 3600000));
   test("una cuenta aprobada no depende del vencimiento", trialAccess.canAccessAccount({ ...oneDayTrial, estado: "aprobada" }, trialNow + 30 * 86400000));
+  const paidAccount = { id: 52, estado: "aprobada", subscriptionExpiresAt: new Date(trialNow + 30 * 86400000).toISOString() };
+  test("un abono vigente permite consultar y modificar", trialAccess.canAccessAccount(paidAccount, trialNow) && trialAccess.canWriteAccount(paidAccount, trialNow));
+  test("un abono vencido conserva consulta pero bloquea cambios", trialAccess.canAccessAccount(paidAccount, trialNow + 31 * 86400000) && !trialAccess.canWriteAccount(paidAccount, trialNow + 31 * 86400000));
   const migratedSprite = dataModule.migrarDatosDemo({
     2: {
       products: [{ id: 212, nombre: "Sprite 2,25 l", codigo: "7790895008478" }],

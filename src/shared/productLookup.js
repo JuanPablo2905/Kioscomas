@@ -78,6 +78,33 @@ export function rememberBarcode(code, product) {
   saveCache(clean, product || null);
 }
 
+export function rememberedBarcodeCatalog() {
+  const entries = new Map(
+    Object.entries(ARGENTINA_VERIFIED).map(([codigo, product]) => [codigo, {
+      codigo,
+      product,
+      status: "verified",
+      lookupCount: 0,
+      lastLookupAt: null,
+      history: [],
+    }]),
+  );
+  Object.entries(readCache()).forEach(([rawCode, cachedEntry]) => {
+    const codigo = String(rawCode || "").replace(/\D/g, "");
+    if (codigo.length < 6) return;
+    const product = cachedEntry?.value || null;
+    entries.set(codigo, {
+      codigo,
+      product,
+      status: product ? "verified" : "unresolved",
+      lookupCount: 1,
+      lastLookupAt: cachedEntry?.savedAt ? new Date(cachedEntry.savedAt).toISOString() : null,
+      history: [],
+    });
+  });
+  return [...entries.values()];
+}
+
 export function clearBarcodeCache(code = "") {
   if (typeof window === "undefined") return;
   try {

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Barcode, CheckCircle2, Clock3, Image, Pencil, Plus, Search, X } from "lucide-react";
 import { cloudFetch, cloudSession, loginCloud } from "../../cloud/cloudAuth";
 import { loadCloudConfig } from "../../cloud/config";
-import { clearBarcodeCache } from "../../shared/productLookup";
+import { clearBarcodeCache, rememberedBarcodeCatalog } from "../../shared/productLookup";
 
 const EMPTY = { codigo: "", nombre: "", categoria: "", familia: "", variante: "", unidad: "unidad", descripcionCatalogo: "", imagenUrl: "" };
 const FILTERS = [
@@ -24,7 +24,43 @@ function requestContext() {
   return { config, session, tenantId: session?.user?.businessId };
 }
 
-export function BarcodeCatalogAdmin() {
+const matchesItem = (item, query, status) => {
+  const text = `${item.codigo} ${item.product?.nombre || ""} ${item.product?.categoria || ""} ${item.product?.familia || ""}`.toLowerCase();
+  return (!query || text.includes(query)) && (status === "all" || item.status === status);
+};
+
+const localCatalog = (businessData) => {
+  const entries = new Map(rememberedBarcodeCatalog().map((item) => [item.codigo, item]));
+  Object.values(businessData || {}).forEach((business) => {
+    (business?.products || []).forEach((product) => {
+      const codigo = String(product?.codigo || "").replace(/\D/g, "");
+      if (codigo.length < 6) return;
+      const catalogProduct = {
+        codigo,
+        nombre: product.nombre || `Producto ${codigo}`,
+        categoria: product.categoria || "Sin categoría",
+        familia: product.familia || "",
+        variante: product.variante || "",
+        unidad: product.unidad || "unidad",
+        descripcionCatalogo: product.descripcionCatalogo || "",
+        imagenUrl: product.imagenUrl || "",
+        fuenteCatalogo: "Productos guardados en Kiosco+",
+      };
+      const remembered = entries.get(codigo);
+      entries.set(codigo, {
+        codigo,
+        product: remembered?.product || catalogProduct,
+        status: "verified",
+        lookupCount: Number(remembered?.lookupCount || 0),
+        lastLookupAt: remembered?.lastLookupAt || null,
+        history: remembered?.history || [],
+      });
+    });
+  });
+  return [...entries.values()];
+};
+
+export function BarcodeCatalogAdmin({ businessData = {} }) {
   const [query, setQuery] = useState("");
   const [deferredQuery, setDeferredQuery] = useState("");
   const [filter, setFilter] = useState("all");
@@ -35,10 +71,11 @@ export function BarcodeCatalogAdmin() {
   const [editor, setEditor] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
-  const [cloudUsername, setCloudUsername] = useState("kiosco-admin");
+  const [sessionVersion, setSessionVersion] = useState(0);
+  const [cloudUsername, setCloudUsername] = useState("demo");
   const [cloudPassword, setCloudPassword] = useState("");
   const [connecting, setConnecting] = useState(false);
-  const [sessionVersion, setSessionVersion] = useState(0);
+  const [loginError, setLoginError] = useState("");
 
   useEffect(() => {
     const timer = setTimeout(() => { setDeferredQuery(query); setPage(1); }, 250);
@@ -61,29 +98,60 @@ export function BarcodeCatalogAdmin() {
       const response = await cloudFetch(context.config.apiUrl, `/v1/admin/catalog?${params}`, { headers: { "x-device-id": context.config.deviceId, "x-tenant-id": String(context.tenantId) } });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json.error || "No se pudo abrir el catalogo");
-      setData(json);
+      const local = page === 1
+        ? localCatalog(businessData).filter((item) => matchesItem(item, deferredQuery.trim().toLowerCase(), filter))
+        : [];
+      const merged = new Map(local.map((item) => [item.codigo, item]));
+      (json.items || []).forEach((item) => {
+        const fallback = merged.get(item.codigo);
+        merged.set(item.codigo, {
+          ...fallback,
+          ...item,
+          product: item.product || fallback?.product || null,
+          status: item.product || fallback?.product ? (item.status === "conflict" ? "conflict" : "verified") : item.status,
+        });
+      });
+      const localOnly = local.filter((item) => !(json.items || []).some((serverItem) => serverItem.codigo === item.codigo));
+      const stats = { ...(json.stats || {}) };
+      localOnly.forEach((item) => { stats[item.status] = Number(stats[item.status] || 0) + 1; });
+      stats.total = Number(json.stats?.total || 0) + localOnly.length;
+      setData({ ...json, items: [...merged.values()], total: Number(json.total || 0) + localOnly.length, stats });
     } catch (cause) { setError(cause.message); }
     finally { setLoading(false); }
   };
 
+  useEffect(() => {
+    const refreshSession = () => setSessionVersion((value) => value + 1);
+    window.addEventListener("kiosco-cloud-session-changed", refreshSession);
+    return () => window.removeEventListener("kiosco-cloud-session-changed", refreshSession);
+  }, []);
+
   useEffect(() => { load(); }, [deferredQuery, filter, page, sessionVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const connectAdministrator = async () => {
-    const config = loadCloudConfig();
+    const { config } = requestContext();
     if (!config.enabled || !config.apiUrl || !config.deviceId) {
-      setError("Primero activa la sincronizacion y configura el servidor en Nube y dispositivos.");
+      setLoginError("Primero activá la sincronización y configurá el servidor en Nube y dispositivos.");
       return;
     }
-    if (!cloudUsername.trim() || !cloudPassword) return;
-    setConnecting(true); setError("");
+    if (!cloudUsername.trim() || !cloudPassword) {
+      setLoginError("Completá el usuario y la contraseña administrativa.");
+      return;
+    }
+    setConnecting(true);
+    setLoginError("");
     try {
       const session = await loginCloud(config.apiUrl, cloudUsername.trim(), cloudPassword, config.deviceId);
-      if (session.user?.role !== "superAdmin") throw new Error("Esta cuenta pertenece a un negocio y no administra Kiosco+.");
+      if (session.user?.role !== "superAdmin") {
+        throw new Error("Esta cuenta pertenece a un negocio y no administra Kiosco+.");
+      }
       setCloudPassword("");
       setSessionVersion((value) => value + 1);
     } catch (cause) {
-      setError(cause.message || "No se pudo conectar la cuenta administradora.");
-    } finally { setConnecting(false); }
+      setLoginError(cause.message || "No se pudo iniciar la sesión administrativa.");
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const openNew = () => { setForm(EMPTY); setEditor("new"); setError(""); };
@@ -111,19 +179,22 @@ export function BarcodeCatalogAdmin() {
 
   return (
     <div>
-      {(() => {
-        const context = requestContext();
-        if (context.session?.user?.role === "superAdmin") return null;
-        return <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-          <p className="font-semibold text-amber-950">Conectar administracion central</p>
-          <p className="mt-1 text-sm text-amber-800">La sesion de un negocio no permite modificar el catalogo compartido. Inicia sesion con la cuenta administradora configurada en el servidor.</p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-            <input value={cloudUsername} onChange={(event) => setCloudUsername(event.target.value)} placeholder="Usuario administrador" className="min-w-0 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm"/>
-            <input type="password" value={cloudPassword} onChange={(event) => setCloudPassword(event.target.value)} onKeyDown={(event) => event.key === "Enter" && connectAdministrator()} placeholder="Contraseña del servidor" className="min-w-0 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm"/>
-            <button onClick={connectAdministrator} disabled={connecting || !cloudPassword} className="rounded-lg bg-[#1C4A44] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{connecting ? "Conectando..." : "Conectar"}</button>
-          </div>
-        </div>;
-      })()}
+      {requestContext().session?.user?.role !== "superAdmin" && <section className="mx-auto max-w-xl rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm sm:p-6">
+        <p className="text-lg font-bold text-amber-950">Iniciar sesión administrativa</p>
+        <p className="mt-1 text-sm leading-6 text-amber-800">Conectate al catálogo desde esta misma pantalla. Esto no cierra la cuenta de Kiosco+ que ya estás usando.</p>
+        <div className="mt-5 grid gap-3">
+          <label className="text-sm font-semibold text-amber-950">Usuario administrador
+            <input value={cloudUsername} onChange={(event) => setCloudUsername(event.target.value)} autoComplete="username" placeholder="Usuario" className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-gray-900 outline-none focus:border-[#1C4A44] focus:ring-2 focus:ring-[#1C4A44]/20"/>
+          </label>
+          <label className="text-sm font-semibold text-amber-950">Contraseña
+            <input type="password" value={cloudPassword} onChange={(event) => setCloudPassword(event.target.value)} onKeyDown={(event) => event.key === "Enter" && connectAdministrator()} autoComplete="current-password" placeholder="Contraseña" className="mt-1.5 w-full rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-gray-900 outline-none focus:border-[#1C4A44] focus:ring-2 focus:ring-[#1C4A44]/20"/>
+          </label>
+          {loginError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{loginError}</p>}
+          <button type="button" onClick={connectAdministrator} disabled={connecting || !cloudUsername.trim() || !cloudPassword} className="mt-1 min-h-11 rounded-xl bg-[#1C4A44] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{connecting ? "Conectando..." : "Entrar al catálogo"}</button>
+        </div>
+      </section>}
+
+      {requestContext().session?.user?.role === "superAdmin" && <>
       <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
         <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5">
           <Search size={18} className="text-gray-400"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por codigo, nombre, categoria o familia..." className="min-w-0 flex-1 bg-transparent text-sm outline-none"/>
@@ -131,7 +202,7 @@ export function BarcodeCatalogAdmin() {
         <button onClick={openNew} className="flex items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 py-2.5 text-sm font-semibold text-white"><Plus size={17}/>Agregar producto</button>
       </div>
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-        {FILTERS.map(([value, label]) => <button key={value} onClick={() => { setFilter(value); setPage(1); }} className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${filter === value ? "border-[#1C4A44] bg-[#1C4A44] text-white" : "border-gray-200 bg-white text-gray-600"}`}>{label}{value !== "all" && data.stats?.[value] !== undefined ? ` (${data.stats[value]})` : ""}</button>)}
+        {FILTERS.map(([value, label]) => <button key={value} onClick={() => { setFilter(value); setPage(1); }} className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${filter === value ? "border-[#1C4A44] bg-[#1C4A44] text-white" : "border-gray-200 bg-white text-gray-600"}`}>{label}{data.stats?.[value === "all" ? "total" : value] !== undefined ? ` (${data.stats[value === "all" ? "total" : value]})` : ""}</button>)}
       </div>
       {error && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{error}</div>}
       <div className="mt-4 space-y-2">
@@ -163,6 +234,7 @@ export function BarcodeCatalogAdmin() {
         {editor !== "new" && editor.history?.length > 0 && <details className="mt-4 rounded-xl border bg-white p-3 text-xs"><summary className="cursor-pointer font-semibold">Historial de correcciones ({editor.history.length})</summary><div className="mt-2 space-y-2">{editor.history.map((entry, index) => <p key={`${entry.at}-${index}`}><Clock3 size={12} className="mr-1 inline"/>{new Date(entry.at).toLocaleString("es-AR")} · {entry.action === "created" ? "creado" : "editado"}</p>)}</div></details>}
         <div className="mt-5 grid grid-cols-2 gap-2"><button onClick={closeEditor} className="rounded-xl border px-4 py-2.5 text-sm font-semibold">Cancelar</button><button onClick={save} disabled={saving} className="flex items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Guardando..." : <><CheckCircle2 size={17}/>Guardar correccion</>}</button></div>
       </div></div>}
+      </>}
     </div>
   );
 }

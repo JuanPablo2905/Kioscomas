@@ -390,6 +390,14 @@ const activeSession = (db, req) => {
   const session = db.sessions[bearer(req)];
   return session && !session.revokedAt && new Date(session.expiresAt) > new Date() ? session : null;
 };
+const tenantAccount = (db, tenantId) => (db.system?.cuentas || []).find((account) => String(account.id) === String(tenantId));
+const accountCanWrite = (db, tenantId) => {
+  const account = tenantAccount(db, tenantId);
+  if (!account || account.superAdmin) return true;
+  if (account.estado === "bloqueada") return false;
+  if (!account.subscriptionExpiresAt) return true;
+  return new Date(account.subscriptionExpiresAt).getTime() > Date.now();
+};
 const isLoopback = (req) => {
   const address = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
   return address === "127.0.0.1" || address === "::1";
@@ -553,6 +561,10 @@ const handleRequest = async (req, res) => {
       if (db.devices[deviceId]?.revokedAt) return send(res, 403, { error: "Dispositivo bloqueado" });
     }
     db.devices[deviceId] = { ...(db.devices[deviceId] || {}), tenantId, lastSeenAt: new Date().toISOString() };
+
+    if (!["GET", "OPTIONS"].includes(req.method) && session?.role !== "superAdmin" && !req.url.startsWith("/v1/admin/") && !accountCanWrite(db, tenantId)) {
+      return send(res, 403, { error: "El abono está vencido. La cuenta se encuentra en modo consulta." });
+    }
 
     if (req.method === "POST" && req.url === "/v1/catalog/verify-pending") {
       const payload = await body(req);

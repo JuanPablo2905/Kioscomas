@@ -21,6 +21,7 @@ const save = (value) => {
   sessionStorage.setItem(SESSION_KEY, serialized);
   const durable = isLocalApi(value?.apiUrl) ? value : durableSession(value);
   if (durable) localStorage.setItem(SESSION_KEY, JSON.stringify(durable));
+  window.dispatchEvent(new Event("kiosco-cloud-session-changed"));
 };
 
 export const cloudSession = () => read();
@@ -80,6 +81,7 @@ export async function logoutCloud(apiUrl) {
   } finally {
     sessionStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(SESSION_KEY);
+    window.dispatchEvent(new Event("kiosco-cloud-session-changed"));
   }
 }
 

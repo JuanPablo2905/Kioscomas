@@ -4,6 +4,14 @@ import { resolve } from "node:path";
 export default defineConfig({
   base: "./",
   plugins: [react()],
+  resolve: {
+    alias: [
+      {
+        find: /^\.\/browser\/(DecodeContinuouslyCallback|HTMLVisualMediaElement)$/,
+        replacement: resolve(import.meta.dirname, "src/shared/zxingTypeOnlyStub.js"),
+      },
+    ],
+  },
   server: {
     host: "0.0.0.0",
     allowedHosts: [".trycloudflare.com", ".ts.net"],

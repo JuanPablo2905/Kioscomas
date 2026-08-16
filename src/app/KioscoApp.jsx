@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { repository } from "../cloud/repository";
 import { loadCloudConfig } from "../cloud/config";
-import { ensureLocalCloudSession, logoutCloud } from "../cloud/cloudAuth";
+import { ensureLocalCloudSession, loginCloud, logoutCloud } from "../cloud/cloudAuth";
 import { clearLoginFailures, createSession, loginGuard, registerLoginFailure, secureAccounts, secureSubject, validSession, verifyPassword } from "../security/auth";
-import { accountAccessMessage, canAccessAccount, grantTrialAccess, trialAccessStatus } from "../security/trialAccess";
+import { accountAccessMessage, canAccessAccount, formatAccessExpiration, grantTrialAccess, trialAccessStatus } from "../security/trialAccess";
 import { Sidebar } from "../shared/layout";
 import { ViewErrorBoundary } from "../shared/ViewErrorBoundary";
 import { Home, ReportarProblemaModal } from "../features/inicio/Home";
@@ -247,6 +247,7 @@ export default function KioscoApp() {
   const [menuPreferences, setMenuPreferences] = useState({});
   const [userPreferences, setUserPreferences] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [readOnlyNotice, setReadOnlyNotice] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [bugReportDraft, setBugReportDraft] = useState({ captura: null, detalleTecnico: "", vista: null });
   const [globalScanOpen, setGlobalScanOpen] = useState(false);
@@ -396,6 +397,7 @@ export default function KioscoApp() {
   const storedData = currentUserId ? datos[currentUserId] : null;
   const activeAccounts = tutorialOpen && tutorialAccounts ? tutorialAccounts : cuentas;
   const cuentaActual = activeAccounts.find((c) => c.id === currentUserId) || null;
+  const accountAccess = trialAccessStatus(cuentaActual);
   const data = tutorialOpen && tutorialData ? tutorialData : storedData;
   const activeAllBusinessData = tutorialOpen && data ? { ...datos, [currentUserId]: data } : datos;
   const preferenceKey = identidad?.usuarioId || `cuenta:${currentUserId}`;
@@ -555,6 +557,10 @@ export default function KioscoApp() {
       });
       return;
     }
+    if (accountAccess.readOnly) {
+      setReadOnlyNotice(true);
+      return;
+    }
     setDatos((prev) => {
       const cur = prev[currentUserId];
       if (!cur || String(cur.tenantId || currentUserId) !== String(currentUserId)) return prev;
@@ -590,6 +596,10 @@ export default function KioscoApp() {
       setTutorialAccounts((previous) => (previous || cloneForTutorial(cuentas)).map((item) => item.id === currentUserId ? { ...item, ...patch } : item));
       return;
     }
+    if (accountAccess.readOnly) {
+      setReadOnlyNotice(true);
+      return;
+    }
     const previousAccount = cuentas.find((item) => item.id === currentUserId);
     const nextAccount = previousAccount ? { ...previousAccount, ...patch } : patch;
     setCuentas((previous) => previous.map((item) => item.id === currentUserId ? nextAccount : item));
@@ -619,6 +629,10 @@ export default function KioscoApp() {
     });
   };
   const updateAllBusinessData = (updater) => {
+    if (!tutorialOpen && accountAccess.readOnly) {
+      setReadOnlyNotice(true);
+      return;
+    }
     if (!tutorialOpen) {
       setDatos(updater);
       return;
@@ -791,7 +805,9 @@ export default function KioscoApp() {
       name,
       superAdmin,
       deviceId: cloudConfig.deviceId,
-    }).then(() => { if (!PUBLIC_DEMO_MODE) repository.seedCurrentTenant(); }).catch(() => {});
+    }).then((session) => session || loginCloud(cloudConfig.apiUrl, username, password, cloudConfig.deviceId))
+      .then(() => { if (!PUBLIC_DEMO_MODE) repository.seedCurrentTenant(); })
+      .catch(() => {});
   };
 
   const handleLogin = async ({ usuario, password }) => {
@@ -1132,10 +1148,12 @@ export default function KioscoApp() {
         demoMode={PUBLIC_DEMO_MODE}
       />
       <div className="app-content flex-1 overflow-y-auto bg-white">
+        {accountAccess.readOnly && <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"><div><b>Abono vencido: modo consulta.</b> Podés revisar y exportar tus datos, pero los cambios quedan bloqueados hasta renovar.</div><span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-bold">Venció {formatAccessExpiration(cuentaActual)}</span></div>}
         <ViewErrorBoundary view={view} onRecover={() => setView("home")} onReport={abrirReporteProblema}>
           <div key={view} className="view-stage">{renderView()}</div>
         </ViewErrorBoundary>
       </div>
+      {readOnlyNotice && <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/45 p-4" onMouseDown={() => setReadOnlyNotice(false)}><div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><p className="text-xs font-bold uppercase tracking-wide text-amber-700">Modo consulta</p><h2 className="mt-1 text-xl font-bold">El abono está vencido</h2><p className="mt-3 text-sm leading-6 text-gray-600">La información sigue disponible y se puede exportar, pero no se guardarán ventas, cambios de stock ni otras modificaciones hasta registrar un nuevo pago.</p><button onClick={() => setReadOnlyNotice(false)} className="mt-5 w-full rounded-lg bg-[#1C4A44] px-4 py-3 text-sm font-semibold text-white">Entendido</button></div></div>}
       {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness={esDueno} onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} onClose={() => setSettingsOpen(false)}/>} 
       {PUBLIC_DEMO_MODE && tutorialPrompt && <DemoTutorialPrompt view={tutorialPrompt.view} declined={tutorialPrompt.declined} onStart={startDemoTutorial} onDecline={declineDemoTutorial} onClose={() => setTutorialPrompt(null)}/>} 
       {PUBLIC_DEMO_MODE && helpSpotlightOpen && <HelpButtonSpotlight onClose={() => setHelpSpotlightOpen(false)}/>} 

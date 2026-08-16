@@ -10,7 +10,7 @@ import { NAV_ITEMS } from "./domain";
 import { buildNotifications } from "../features/notificaciones/notificationRules";
 import { syncEngine } from "../cloud/syncEngine";
 import { ConfirmDialog } from "./controls";
-import { formatTrialExpiration, trialAccessStatus } from "../security/trialAccess";
+import { formatAccessExpiration, formatTrialExpiration, trialAccessStatus } from "../security/trialAccess";
 const kioscoPlusMark = `${import.meta.env.BASE_URL}kiosco-plus-mark.svg`;
 
 function NavCountBadge({ count, tone }) {
@@ -231,6 +231,8 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
           {demoMode ? "Demostración" : identidad?.rol}
         </span>
         {trial.active && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold leading-4 text-amber-900">Prueba pendiente de aprobación<br/>Vence {formatTrialExpiration(cuenta)}</p>}
+        {trial.activeSubscription && <p className="mt-2 rounded-lg border border-green-200 bg-green-50 px-2 py-1.5 text-[10px] font-semibold leading-4 text-green-900">Abono activo<br/>Vence {formatAccessExpiration(cuenta)}</p>}
+        {trial.readOnly && <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-semibold leading-4 text-red-900">Abono vencido · modo consulta</p>}
         <div className="mt-3 grid grid-cols-[1fr_auto_auto_auto] gap-1"><button data-tour="settings-button" onClick={onOpenSettings} className="flex min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50"><Settings2 size={14}/><span className="truncate">Configurar</span></button><button data-tour="help-button" onClick={onHelp} title="Ayuda de esta sección" className="rounded-lg border px-2 py-1.5 text-gray-600 hover:bg-gray-50"><HelpCircle size={14}/></button><button data-tour="global-scan" onClick={onGlobalScan} title="Escanear producto o ticket" className="rounded-lg border px-2 py-1.5 text-gray-600 hover:bg-gray-50"><ScanLine size={14}/></button><button onClick={onReportProblem} title="Reportar problema" className="rounded-lg border px-2 py-1.5 text-red-600 hover:bg-red-50"><Bug size={14}/></button></div>
         <button
           onClick={onLogout}
