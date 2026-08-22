@@ -1,4 +1,4 @@
-# Estado publicado — 31 de julio de 2026
+# Estado de publicación y nube — 22 de agosto de 2026
 
 ## Enlaces
 
@@ -17,11 +17,14 @@
 - Catálogo compartido de códigos de barras.
 - Conflictos por versión y aislamiento por negocio.
 - Prueba real iPhone ↔ computadora completada correctamente.
-- Dieciséis pruebas automáticas del servidor aprobadas.
+- Treinta y seis pruebas automáticas del servidor aprobadas.
+- Adaptador PostgreSQL/Supabase preparado, con fallback JSON local.
+- Copia diaria en PostgreSQL con retención configurable.
+- Importador seguro para llevar la base JSON actual a PostgreSQL.
 
-## Advertencia importante
+## Advertencia importante hasta activar Supabase
 
-El servidor de prueba todavía guarda sus datos en archivos JSON dentro del disco efímero de Render. Puede perderlos al reiniciarse, reemplazarse o desplegarse nuevamente. No debe usarse todavía como almacenamiento definitivo de negocios reales.
+Si `kiosco-plus-api` no tiene `DATABASE_URL`, todavía guarda sus datos en el disco efímero de Render. El código PostgreSQL ya está preparado, pero sólo queda activo cuando la conexión secreta de Supabase se configura en Render y `/v1/health` muestra `"persistence":"postgresql"`.
 
 ## Próximo paquete obligatorio
 

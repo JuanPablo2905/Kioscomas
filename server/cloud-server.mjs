@@ -4,6 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { mergeConcurrentEntity } from "../src/cloud/conflictMerge.js";
+import { createPostgresStore } from "./postgres-store.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const databasePath = process.env.KIOSCO_CLOUD_DB || path.join(root, "cloud-dev-data", "database.json");
@@ -12,6 +13,8 @@ const dataDirectory = process.env.KIOSCO_CLOUD_DATA_DIR || path.dirname(database
 // KIOSCO_CLOUD_PORT remains available for the local desktop server.
 const port = Number(process.env.PORT || process.env.KIOSCO_CLOUD_PORT || 8787);
 const localMode = process.env.KIOSCO_LOCAL_MODE !== "0";
+const databaseUrl = String(process.env.DATABASE_URL || "").trim();
+let postgresStore = null;
 const configuredSuperAdminUsername = String(process.env.KIOSCO_SUPERADMIN_USERNAME || "").trim();
 const configuredSuperAdminPassword = String(process.env.KIOSCO_SUPERADMIN_PASSWORD || "");
 const emptyDb = () => ({ schemaVersion: 3, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {} });
@@ -304,13 +307,17 @@ const hydrateBarcodeCatalog = (db) => {
   }
   return db;
 };
-const readDb = async () => {
+const readJsonDb = async () => {
   try {
     const saved = JSON.parse(await fs.readFile(databasePath, "utf8"));
     return applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {} }));
   } catch {
     return applyConfiguredSuperAdmin(emptyDb());
   }
+};
+const readDb = async () => {
+  const saved = postgresStore ? await postgresStore.read() : await readJsonDb();
+  return applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {} }));
 };
 const safeName = (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "_");
 const writeJson = async (file, value) => {
@@ -341,6 +348,10 @@ const writeMirrors = async (db) => {
   await writeJson(path.join(dataDirectory, "backups", day, "database.json"), db);
 };
 const writeDb = async (db) => {
+  if (postgresStore) {
+    await postgresStore.write(db);
+    return;
+  }
   await writeJson(databasePath, db);
   await writeMirrors(db);
 };
@@ -411,6 +422,7 @@ const handleRequest = async (req, res) => {
       service: "kiosco-cloud-local",
       schemaVersion: 3,
       localMode,
+      persistence: postgresStore ? "postgresql" : "json",
       revision: String(process.env.RENDER_GIT_COMMIT || "local").slice(0, 12),
       time: new Date().toISOString(),
     });
@@ -759,11 +771,9 @@ const handleRequest = async (req, res) => {
   }
 };
 
-// The current persistence adapter stores the whole database as JSON. Two HTTP
-// requests that read the same snapshot and then write concurrently can lose an
-// accepted sale even if their entity merge is correct. Serialize every request
-// that may read or mutate that database until PostgreSQL replaces this adapter.
-// Public health/metadata endpoints stay outside the queue.
+// The API still applies each operation against a coherent snapshot. Keeping
+// this queue also protects the local JSON fallback and prevents two requests
+// in the same Render instance from calculating over stale state.
 let databaseRequestMutation = Promise.resolve();
 const bypassDatabaseQueue = (req) => req.method === "OPTIONS"
   || req.url === "/v1/health"
@@ -788,6 +798,26 @@ server.on("error", (error) => {
   console.error(error);
   process.exit(1);
 });
-server.listen(port, "0.0.0.0", () => {
-  console.log(`Kiosco Cloud activo en el puerto ${port} · datos: ${dataDirectory}`);
+const startServer = async () => {
+  if (databaseUrl) {
+    postgresStore = await createPostgresStore(databaseUrl, {
+      backupRetentionDays: process.env.KIOSCO_BACKUP_RETENTION_DAYS,
+    });
+    const seed = await readJsonDb();
+    await postgresStore.initialize(seed);
+  }
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Kiosco Cloud activo en el puerto ${port} · persistencia: ${postgresStore ? "PostgreSQL" : dataDirectory}`);
+  });
+};
+
+const shutdown = async () => {
+  try { await postgresStore?.close(); } catch { /* El proceso ya está terminando. */ }
+};
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
+
+startServer().catch((error) => {
+  console.error("No se pudo iniciar la persistencia cloud", error);
+  process.exit(1);
 });

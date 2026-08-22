@@ -1,4 +1,28 @@
-# Actualización de arquitectura cloud — 31 de julio de 2026
+# Actualización de arquitectura cloud — 22 de agosto de 2026
+
+## PostgreSQL/Supabase preparado
+
+La API conserva el mismo contrato de sincronización, pero ahora puede elegir la persistencia según el entorno:
+
+- Con `DATABASE_URL`: PostgreSQL administrado (Supabase).
+- Sin `DATABASE_URL`: archivos JSON locales, para desarrollo y recuperación.
+
+Esta primera fase guarda el estado compatible actual dentro de una columna `jsonb`. Así se elimina el riesgo del disco efímero de Render sin reescribir al mismo tiempo ventas, caja, usuarios y sincronización. El esquema vive en `server/sql/002_runtime_state.sql` y usa `kiosco_private`, un esquema que no se expone directamente al navegador.
+
+El servidor crea una copia diaria en PostgreSQL y conserva siete días por defecto. La retención se controla con `KIOSCO_BACKUP_RETENTION_DAYS`.
+
+### Activación segura
+
+1. En Supabase, copiar la conexión **Session pooler** del proyecto.
+2. En el servicio `kiosco-plus-api` de Render, crear el secreto `DATABASE_URL`.
+3. Configurar `KIOSCO_BACKUP_RETENTION_DAYS=7`.
+4. Importar los datos actuales antes de sustituir el servidor JSON, si se desea conservarlos.
+5. Desplegar la API y abrir `/v1/health`.
+6. Confirmar que la respuesta indique `"persistence":"postgresql"`.
+
+La URI de conexión contiene la contraseña: no se pega en chats, no se guarda en `.env` versionados y no se incorpora al frontend.
+
+El comando `pnpm cloud:import` carga `cloud-dev-data/database.json` en una base vacía. Si el destino ya tiene otros datos, se detiene sin reemplazarlos. `--replace` existe sólo para una restauración deliberada.
 
 ## Despliegue actual
 
@@ -7,11 +31,11 @@
 - Health check: https://kiosco-plus-api.onrender.com/v1/health
 - Repositorio: https://github.com/JuanPablo2905/Kioscomas
 
-La API ya está desplegada con `KIOSCO_LOCAL_MODE=0`, escucha el puerto de Render y fue probada desde escritorio e iPhone. La sincronización incremental, la idempotencia, los conflictos por versión, las sesiones y el aislamiento por negocio tienen cobertura automática; las 16 pruebas cloud pasan.
+La API ya está desplegada con `KIOSCO_LOCAL_MODE=0`, escucha el puerto de Render y fue probada desde escritorio e iPhone. La sincronización incremental, la idempotencia, los conflictos por versión, las sesiones y el aislamiento por negocio tienen cobertura automática; las 36 pruebas cloud pasan.
 
-## Riesgo actual
+## Riesgo anterior
 
-La persistencia continúa basada en JSON. En Render ese disco es efímero, por lo que el despliegue es una demostración funcional y no una nube de producción. El próximo cambio de arquitectura debe reemplazar el adaptador de archivos por PostgreSQL sin modificar el contrato de sincronización.
+Sin `DATABASE_URL`, la persistencia continúa basada en JSON. En Render ese disco es efímero. Al activar `DATABASE_URL`, el adaptador PostgreSQL reemplaza ese disco sin modificar el contrato de sincronización.
 
 ## Próxima etapa
 

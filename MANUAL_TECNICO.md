@@ -601,6 +601,15 @@ Kiosco+ es **local-first**:
 3. La operación queda en cola si no se puede enviar.
 4. Cuando vuelve la conexión, se reintenta.
 
+### Persistencia cloud con PostgreSQL/Supabase
+
+Desde agosto de 2026, `server/cloud-server.mjs` selecciona automáticamente el almacenamiento:
+
+- `DATABASE_URL` configurada: usa `server/postgres-store.mjs` y PostgreSQL.
+- Sin `DATABASE_URL`: conserva el servidor JSON local anterior.
+
+La primera migración usa un estado `jsonb` compatible con toda la app dentro del esquema privado `kiosco_private`. Cada escritura aumenta una revisión y mantiene una copia diaria con retención configurable. El importador `scripts/import-cloud-json-to-postgres.mjs` permite sembrar Supabase desde la base JSON existente sin reemplazar por accidente una base que ya contiene otros datos. La normalización por productos, ventas, caja y auditoría queda como segunda fase.
+
 La computadora principal puede ejecutar un servidor central local en:
 
 ```text

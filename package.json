@@ -22,6 +22,7 @@
     "desktop:build": "vite build && electron-builder --win portable",
     "desktop:launcher": "vite build && electron-builder --win portable --config.directories.output=launcher-build --config.portable.artifactName=KioscoPlus-Desarrollo.exe"
     ,"cloud:dev": "node server/cloud-server.mjs",
+    "cloud:import": "node scripts/import-cloud-json-to-postgres.mjs",
     "dev:full": "node scripts/dev-full.mjs"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "autoprefixer": "latest",
     "lucide-react": "latest",
     "postcss": "latest",
+    "postgres": "3.4.9",
     "react": "latest",
     "react-dom": "latest",
     "tailwindcss": "^3.4.17",

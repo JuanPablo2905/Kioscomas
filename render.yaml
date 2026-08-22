@@ -27,6 +27,10 @@ services:
     envVars:
       - key: KIOSCO_LOCAL_MODE
         value: "0"
+      - key: DATABASE_URL
+        sync: false
+      - key: KIOSCO_BACKUP_RETENTION_DAYS
+        value: "7"
       - key: KIOSCO_SUPERADMIN_USERNAME
         value: kiosco-admin
       - key: KIOSCO_SUPERADMIN_PASSWORD
