@@ -307,6 +307,22 @@ const hydrateBarcodeCatalog = (db) => {
   }
   return db;
 };
+const materializeTenantSnapshot = (tenant = {}) => {
+  const dataset = { ...(tenant.sections || {}) };
+  for (const [entity, records] of Object.entries(tenant.entities || {})) {
+    dataset[entity] = Object.values(records || {})
+      .filter((record) => !record?.deletedAt && record?.value)
+      .map((record) => ({ ...record.value, _syncVersion: Number(record.version || 0) }));
+  }
+  const values = {};
+  for (const [key, record] of Object.entries(tenant || {})) {
+    if (key === "entities" || key === "sections") continue;
+    if (record && typeof record === "object" && Object.prototype.hasOwnProperty.call(record, "value")) values[key] = record.value;
+  }
+  const entityCount = Object.values(tenant.entities || {}).reduce((total, records) => total + Object.keys(records || {}).length, 0);
+  const hasData = entityCount > 0 || Object.keys(tenant.sections || {}).length > 0 || Object.keys(values).length > 0;
+  return { dataset, values, hasData };
+};
 const readJsonDb = async () => {
   try {
     const saved = JSON.parse(await fs.readFile(databasePath, "utf8"));
@@ -576,6 +592,15 @@ const handleRequest = async (req, res) => {
 
     if (!["GET", "OPTIONS"].includes(req.method) && session?.role !== "superAdmin" && !req.url.startsWith("/v1/admin/") && !accountCanWrite(db, tenantId)) {
       return send(res, 403, { error: "El abono está vencido. La cuenta se encuentra en modo consulta." });
+    }
+
+    if (req.method === "GET" && req.url === "/v1/sync/bootstrap") {
+      const snapshot = materializeTenantSnapshot(db.tenants[tenantId] || {});
+      return send(res, 200, {
+        cursor: Number(db.cursor || 0),
+        ...snapshot,
+        accounts: session?.role === "superAdmin" ? (db.system?.cuentas || []) : undefined,
+      });
     }
 
     if (req.method === "POST" && req.url === "/v1/catalog/verify-pending") {

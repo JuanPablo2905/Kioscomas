@@ -67,6 +67,9 @@ try {
   const first = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [operation] }) });
   test("alta incremental aceptada", first.value.acceptedIds?.includes("op-1"));
   test("servidor confirma la versión aceptada", first.value.acceptedEntityVersions?.[0]?.operationId === "op-1" && first.value.acceptedEntityVersions?.[0]?.version === 1);
+  const bootstrap = await request("/v1/sync/bootstrap", { headers });
+  test("un equipo nuevo puede descargar la copia inicial antes de subir datos", bootstrap.value.hasData === true && bootstrap.value.dataset?.products?.[0]?.nombre === "Coca de prueba");
+  test("la copia inicial incluye la versión remota de cada registro", bootstrap.value.dataset?.products?.[0]?._syncVersion === 1 && bootstrap.value.cursor >= 1);
   const duplicate = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [operation] }) });
   test("reintento idempotente no duplica", duplicate.value.acceptedIds?.includes("op-1"));
   const catalog = await request("/v1/catalog/barcodes/7791234567890", { headers });

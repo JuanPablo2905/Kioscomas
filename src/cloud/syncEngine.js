@@ -114,6 +114,60 @@ export const syncEngine = {
     const visibleConflicts = tenantId ? conflicts.filter((item) => belongsToTenant(item, tenantId)).length : 0;
     publish({ mode: config.enabled && config.apiUrl ? "cloud" : "local", state: visibleConflicts ? "conflict" : "idle", pending, conflicts: visibleConflicts, lastSyncAt: meta.lastSyncAt || null });
   },
+  async bootstrapTenant() {
+    const config = loadCloudConfig();
+    const tenantId = String(context.tenantId || "");
+    if (!config.enabled || !config.apiUrl || !tenantId) return { hasRemoteData: false, skipped: true };
+    if (!navigator.onLine) throw new Error("No hay conexión para comprobar la copia de la nube.");
+    const headers = { "x-device-id": config.deviceId, "x-tenant-id": tenantId };
+    const response = await cloudFetch(config.apiUrl, "/v1/sync/bootstrap", { headers });
+    if (!response.ok) {
+      if (response.status === 401) throw new Error("La sesión de nube venció. Volvé a conectarla desde Configuración.");
+      if (response.status === 403) throw new Error("Este dispositivo ya no tiene permiso para sincronizar.");
+      throw new Error(`No se pudo preparar la copia de nube (${response.status}).`);
+    }
+    const remote = await response.json();
+    if (!remote.hasData) return { hasRemoteData: false, cursor: Number(remote.cursor || 0) };
+
+    // Una carga inicial es sólo una propuesta para una nube vacía. Si el
+    // negocio ya existe en el servidor, esas propuestas no son cambios del
+    // usuario y deben retirarse antes de sincronizar.
+    const remaining = await updateQueue((items) => items.filter((item) => !(
+      belongsToTenant(item, tenantId) && item.seedOnly
+    )));
+    const tenantPending = remaining.filter((item) => belongsToTenant(item, tenantId));
+    const pendingEntities = tenantPending.filter((item) => ["entity_upsert", "entity_delete"].includes(item.type));
+    const pendingSections = tenantPending.filter((item) => ["section_set", "section_delete"].includes(item.type));
+    const hydratedDataset = applySectionOperations(
+      applyEntityOperations(remote.dataset || {}, pendingEntities),
+      pendingSections,
+    );
+    await withDataStorageLock(async () => {
+      const allData = await readJson("datos", {});
+      await writeJson("datos", mergeTenantDataset(allData, tenantId, hydratedDataset));
+    });
+    const pendingValueKeys = new Set(tenantPending
+      .filter((item) => ["set", "delete"].includes(item.type))
+      .map((item) => item.key));
+    for (const [key, value] of Object.entries(remote.values || {})) {
+      if (!pendingValueKeys.has(key)) await writeJson(key, value);
+    }
+    const hasPendingAccounts = tenantPending.some((item) => item.type === "system_set" && item.key === "cuentas");
+    if (Array.isArray(remote.accounts) && !hasPendingAccounts) await writeJson("cuentas", remote.accounts);
+    const meta = await readJson(META_KEY, {});
+    const lastSyncAt = new Date().toISOString();
+    await writeJson(META_KEY, {
+      ...meta,
+      lastSyncAt,
+      cursors: { ...(meta.cursors || {}), [tenantId]: Number(remote.cursor || 0) },
+    });
+    const conflicts = await readJson(CONFLICTS_KEY, []);
+    const pending = remaining.filter((item) => belongsToTenant(item, tenantId)).length;
+    const visibleConflicts = conflicts.filter((item) => belongsToTenant(item, tenantId)).length;
+    publish({ state: visibleConflicts ? "conflict" : pending ? "idle" : "synced", pending, conflicts: visibleConflicts, lastSyncAt, error: null });
+    window.dispatchEvent(new CustomEvent("kiosco-cloud-update", { detail: { tenantId, bootstrap: true } }));
+    return { hasRemoteData: true, cursor: Number(remote.cursor || 0) };
+  },
   async enqueue(operation) {
     const config = loadCloudConfig();
     if (!config.enabled || !config.apiUrl) return;
