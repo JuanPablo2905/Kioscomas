@@ -27,11 +27,29 @@ services:
     envVars:
       - key: KIOSCO_LOCAL_MODE
         value: "0"
-      - key: DATABASE_URL
-        sync: false
-      - key: KIOSCO_BACKUP_RETENTION_DAYS
-        value: "7"
       - key: KIOSCO_SUPERADMIN_USERNAME
         value: kiosco-admin
       - key: KIOSCO_SUPERADMIN_PASSWORD
         sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: KIOSCO_BACKUP_RETENTION_DAYS
+        value: "7"
+  - type: web
+    runtime: static
+    name: kiosco-plus-app
+    buildCommand: pnpm install --frozen-lockfile --ignore-scripts && pnpm run build:cloud-app
+    staticPublishPath: ./dist-cloud-app
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(self), microphone=(), geolocation=()
+      - path: /*
+        name: X-Frame-Options
+        value: SAMEORIGIN

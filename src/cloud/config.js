@@ -1,8 +1,11 @@
 export const CLOUD_CONFIG_KEY = "kiosco_cloud_config";
 
+const publishedApiUrl = String(import.meta.env?.VITE_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+const autoConnectPublishedCloud = import.meta.env?.VITE_CLOUD_AUTO_CONNECT === "true";
+
 export const defaultCloudConfig = {
-  enabled: false,
-  apiUrl: "",
+  enabled: Boolean(publishedApiUrl) && autoConnectPublishedCloud,
+  apiUrl: publishedApiUrl,
   deviceId: "",
   syncIntervalMs: 30000,
   updateChannel: "stable",
