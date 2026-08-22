@@ -1,9 +1,9 @@
 services:
   - type: web
     runtime: static
-    name: kiosco-plus
-    buildCommand: pnpm install --frozen-lockfile --ignore-scripts && pnpm run build:public
-    staticPublishPath: ./dist-public
+    name: Kioscomas
+    buildCommand: pnpm install --frozen-lockfile --ignore-scripts && pnpm run build:cloud-app
+    staticPublishPath: ./dist-cloud-app
     headers:
       - path: /*
         name: X-Content-Type-Options
@@ -35,21 +35,3 @@ services:
         sync: false
       - key: KIOSCO_BACKUP_RETENTION_DAYS
         value: "7"
-  - type: web
-    runtime: static
-    name: kiosco-plus-app
-    buildCommand: pnpm install --frozen-lockfile --ignore-scripts && pnpm run build:cloud-app
-    staticPublishPath: ./dist-cloud-app
-    headers:
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: Referrer-Policy
-        value: strict-origin-when-cross-origin
-      - path: /*
-        name: Permissions-Policy
-        value: camera=(self), microphone=(), geolocation=()
-      - path: /*
-        name: X-Frame-Options
-        value: SAMEORIGIN
