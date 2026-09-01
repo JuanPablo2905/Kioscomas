@@ -806,8 +806,8 @@ export default function KioscoApp() {
       superAdmin,
       deviceId: cloudConfig.deviceId,
     }).then((session) => session || loginCloud(cloudConfig.apiUrl, username, password, cloudConfig.deviceId))
-      .then(() => { if (!PUBLIC_DEMO_MODE) repository.seedCurrentTenant(); })
-      .catch(() => {});
+      .then(() => PUBLIC_DEMO_MODE ? null : repository.seedCurrentTenant())
+      .catch((error) => repository.reportSyncError(error));
   };
 
   const handleLogin = async ({ usuario, password }) => {

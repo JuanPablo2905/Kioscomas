@@ -12,6 +12,15 @@ export default defineConfig({
       },
     ],
   },
+  // @zxing/library publica dos reexports de tipos sin archivos JavaScript.
+  // El bundle normal ya los redirige al stub de arriba; excluir ZXing del
+  // prebundle evita que el servidor de desarrollo falle antes de usarlo.
+  optimizeDeps: {
+    exclude: ["@zxing/browser", "@zxing/library"],
+  },
+  ssr: {
+    noExternal: ["@zxing/browser", "@zxing/library"],
+  },
   server: {
     host: "0.0.0.0",
     allowedHosts: [".trycloudflare.com", ".ts.net"],

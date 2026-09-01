@@ -36,7 +36,7 @@ const ensureCloudBootstrap = async () => {
   if (!bootstrapPromise) {
     bootstrapPromise = syncEngine.bootstrapTenant()
       .then((result) => { bootstrapResult = result; return result; })
-      .catch((error) => { bootstrapPromise = null; throw error; });
+      .catch((error) => { bootstrapPromise = null; syncEngine.reportError(error); throw error; });
   }
   return bootstrapPromise;
 };
@@ -48,7 +48,28 @@ export const repository = {
     bootstrapScope = "";
     bootstrapPromise = null;
     bootstrapResult = null;
-    return syncEngine.initialize();
+    await syncEngine.initialize();
+
+    // Al reabrir la app ya existe una sesión local, pero React todavía no
+    // alcanzó a restaurarla. Preparar la nube acá evita que los efectos de
+    // arranque vuelvan a guardar la copia vieja antes de descargar la vigente.
+    if (!context.tenantId) {
+      const savedSessionResult = await storage.get("sesion");
+      try {
+        const savedSession = savedSessionResult?.value ? JSON.parse(savedSessionResult.value) : null;
+        const sessionIsCurrent = savedSession?.accountId
+          && (!savedSession.expiresAt || new Date(savedSession.expiresAt).getTime() > Date.now());
+        if (sessionIsCurrent) {
+          context = {
+            ...context,
+            tenantId: String(savedSession.accountId),
+            isSystemAdmin: !!(savedSession.identity?.superAdmin || savedSession.identity?.adminApp),
+          };
+          syncEngine.setContext(context);
+          await ensureCloudBootstrap().catch(() => {});
+        }
+      } catch {}
+    }
   },
   setContext(value) {
     const previousTenant = String(context.tenantId || "");
@@ -62,9 +83,15 @@ export const repository = {
   },
   subscribe: (fn) => syncEngine.subscribe(fn),
   getSyncStatus: () => syncEngine.getStatus(),
+  reportSyncError: (error) => syncEngine.reportError(error),
   async syncNow() {
-    await ensureCloudBootstrap();
-    return syncEngine.flush();
+    try {
+      await ensureCloudBootstrap();
+      return syncEngine.flush();
+    } catch (error) {
+      syncEngine.reportError(error);
+      throw error;
+    }
   },
   async seedCurrentTenant() {
     if (!context.tenantId) return;

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 
 const port = 8799;
 const dataDir = path.join(tmpdir(), `kiosco-cloud-test-${Date.now()}`);
@@ -51,6 +52,39 @@ try {
     body: JSON.stringify({ username: "central-admin", password: "central-admin-secret", deviceId: "central-pc" }),
   });
   test("la cuenta central configurada inicia como superadministrador", configuredAdminLogin.value.user?.role === "superAdmin");
+  const portableSalt = crypto.randomBytes(16).toString("base64");
+  const portableHash = crypto.pbkdf2Sync("lazy-secret", Buffer.from(portableSalt, "base64"), 210000, 32, "sha256").toString("base64");
+  const centralHeaders = {
+    "content-type": "application/json",
+    "x-device-id": "central-pc",
+    "x-tenant-id": "system-admin",
+    authorization: `Bearer ${configuredAdminLogin.value.accessToken}`,
+  };
+  const accountDirectory = await request("/v1/sync/push", {
+    method: "POST",
+    headers: centralHeaders,
+    body: JSON.stringify({ operations: [{
+      id: "seed-lazy-cloud-user",
+      deviceId: "central-pc",
+      tenantId: "system-admin",
+      type: "system_set",
+      key: "cuentas",
+      value: [{ id: "business-lazy", usuario: "lazy-owner", nombre: "Dueño migrado", estado: "aprobada", passwordHash: portableHash, passwordSalt: portableSalt, passwordVersion: 1 }],
+    }] }),
+  });
+  test("el administrador publica el padrón de cuentas", accountDirectory.value.acceptedIds?.includes("seed-lazy-cloud-user"));
+  const rejectedLazyLogin = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "lazy-owner", password: "wrong-secret", deviceId: "lazy-pc" }),
+  });
+  test("la migración automática rechaza una contraseña incorrecta", rejectedLazyLogin.response.status === 401);
+  const lazyLogin = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "lazy-owner", password: "lazy-secret", deviceId: "lazy-pc" }),
+  });
+  test("una cuenta importada crea su usuario de nube al iniciar sesión", lazyLogin.response.ok && lazyLogin.value.user?.businessId === "business-lazy" && lazyLogin.value.user?.role === "owner");
   const login = await request("/v1/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },

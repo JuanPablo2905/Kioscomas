@@ -1,16 +1,16 @@
-import { storage } from "../shared/storage";
-import { loadCloudConfig } from "./config";
-import { mergeTenantDataset, normalizeOperation } from "./protocol";
-import { applyAcceptedEntityVersions, applyEntityOperations, applySectionOperations, rebasePendingEntityOperations } from "./entitySync";
-import { cloudFetch, cloudSession } from "./cloudAuth";
-import { withDataStorageLock } from "./dataStorageLock";
-import { isSameEntity, mergeConcurrentEntity } from "./conflictMerge";
+import { storage } from "../shared/storage.js";
+import { isLocalCloudApiUrl, loadCloudConfig } from "./config.js";
+import { mergeTenantDataset, normalizeOperation } from "./protocol.js";
+import { applyAcceptedEntityVersions, applyEntityOperations, applySectionOperations, rebasePendingEntityOperations } from "./entitySync.js";
+import { cloudFetch, cloudSession } from "./cloudAuth.js";
+import { withDataStorageLock } from "./dataStorageLock.js";
+import { isSameEntity, mergeConcurrentEntity } from "./conflictMerge.js";
 
 const QUEUE_KEY = "__cloud_sync_queue_v1";
 const META_KEY = "__cloud_sync_meta_v1";
 const CONFLICTS_KEY = "__cloud_sync_conflicts_v1";
 const listeners = new Set();
-let status = { mode: "local", state: "idle", pending: 0, conflicts: 0, lastSyncAt: null, error: null };
+let status = { mode: "local", state: "idle", pending: 0, conflicts: 0, lastSyncAt: null, error: null, apiUrl: "", serverMode: "local" };
 let context = { tenantId: null };
 let contextRevision = 0;
 
@@ -73,9 +73,61 @@ const removeUnsyncableSystemOperations = (queue = []) => {
   // iniciar sin modificar los datos locales ni la cola normal del negocio.
   return queue.filter((item) => item.type !== "system_set");
 };
+const canonicalJson = (value) => {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === "object") {
+    return Object.keys(value).sort().reduce((result, key) => {
+      if (value[key] !== undefined) result[key] = canonicalJson(value[key]);
+      return result;
+    }, {});
+  }
+  return value;
+};
+const sameJsonValue = (left, right) => {
+  try { return JSON.stringify(canonicalJson(left)) === JSON.stringify(canonicalJson(right)); }
+  catch { return false; }
+};
+export const isRedundantBootstrapOperation = (item, tenantId, remote) => {
+  if (!belongsToTenant(item, tenantId)) return false;
+  if (item.seedOnly) return true;
+  const remoteDataset = remote.dataset || {};
+  if (["entity_upsert", "entity_delete"].includes(item.type)) {
+    const remoteEntity = (remoteDataset[item.entity] || []).find(
+      (entry) => String(entry?.id) === String(item.entityId),
+    );
+    if (item.type === "entity_delete") return !remoteEntity;
+    if (!remoteEntity) return false;
+    const { _syncVersion, ...remoteValue } = remoteEntity;
+    return sameJsonValue(item.value, remoteValue);
+  }
+  if (item.type === "section_set" && Object.prototype.hasOwnProperty.call(remoteDataset, item.section)) {
+    return sameJsonValue(item.value, remoteDataset[item.section]);
+  }
+  if (item.type === "section_delete") {
+    return !Object.prototype.hasOwnProperty.call(remoteDataset, item.section);
+  }
+  if (item.type === "set" && Object.prototype.hasOwnProperty.call(remote.values || {}, item.key)) {
+    return sameJsonValue(item.value, remote.values[item.key]);
+  }
+  if (item.type === "system_set" && item.key === "cuentas" && Array.isArray(remote.accounts)) {
+    return sameJsonValue(item.value, remote.accounts);
+  }
+  return false;
+};
 
 export const syncEngine = {
   getStatus: () => status,
+  reportError(error) {
+    const config = loadCloudConfig();
+    publish({
+      mode: config.enabled && config.apiUrl ? "cloud" : "local",
+      state: navigator.onLine ? "error" : "offline",
+      error: error?.message || String(error || "No se pudo sincronizar."),
+      apiUrl: config.apiUrl || "",
+      serverMode: isLocalCloudApiUrl(config.apiUrl) ? "local" : "remote",
+    });
+    return status;
+  },
   async getPendingReview() {
     const [conflicts, queue] = await Promise.all([
       readJson(CONFLICTS_KEY, []),
@@ -112,13 +164,17 @@ export const syncEngine = {
     const tenantId = String(context.tenantId || "");
     const pending = tenantId ? queue.filter((item) => belongsToTenant(item, tenantId)).length : 0;
     const visibleConflicts = tenantId ? conflicts.filter((item) => belongsToTenant(item, tenantId)).length : 0;
-    publish({ mode: config.enabled && config.apiUrl ? "cloud" : "local", state: visibleConflicts ? "conflict" : "idle", pending, conflicts: visibleConflicts, lastSyncAt: meta.lastSyncAt || null });
+    publish({ mode: config.enabled && config.apiUrl ? "cloud" : "local", state: visibleConflicts ? "conflict" : "idle", pending, conflicts: visibleConflicts, lastSyncAt: meta.lastSyncAt || null, apiUrl: config.apiUrl || "", serverMode: isLocalCloudApiUrl(config.apiUrl) ? "local" : "remote" });
   },
   async bootstrapTenant() {
     const config = loadCloudConfig();
     const tenantId = String(context.tenantId || "");
     if (!config.enabled || !config.apiUrl || !tenantId) return { hasRemoteData: false, skipped: true };
     if (!navigator.onLine) throw new Error("No hay conexión para comprobar la copia de la nube.");
+    const session = cloudSession(config.apiUrl);
+    if (!session?.accessToken && !session?.refreshToken) {
+      throw new Error("Falta iniciar sesión en la nube de Render. Cerrá la sesión de Kiosco+ y volvé a entrar una vez.");
+    }
     const headers = { "x-device-id": config.deviceId, "x-tenant-id": tenantId };
     const response = await cloudFetch(config.apiUrl, "/v1/sync/bootstrap", { headers });
     if (!response.ok) {
@@ -131,10 +187,12 @@ export const syncEngine = {
 
     // Una carga inicial es sólo una propuesta para una nube vacía. Si el
     // negocio ya existe en el servidor, esas propuestas no son cambios del
-    // usuario y deben retirarse antes de sincronizar.
-    const remaining = await updateQueue((items) => items.filter((item) => !(
-      belongsToTenant(item, tenantId) && item.seedOnly
-    )));
+    // usuario y deben retirarse antes de sincronizar. Versiones antiguas no
+    // marcaban todas las propuestas: también retiramos las que ya son
+    // exactamente iguales a la copia remota, sin tocar cambios reales.
+    const remaining = await updateQueue((items) => items.filter(
+      (item) => !isRedundantBootstrapOperation(item, tenantId, remote),
+    ));
     const tenantPending = remaining.filter((item) => belongsToTenant(item, tenantId));
     const pendingEntities = tenantPending.filter((item) => ["entity_upsert", "entity_delete"].includes(item.type));
     const pendingSections = tenantPending.filter((item) => ["section_set", "section_delete"].includes(item.type));
@@ -192,7 +250,7 @@ export const syncEngine = {
     });
     if (previousConflict) await updateConflicts((conflicts) => conflicts.filter((item) => !(item.localOperation && sameEntity(item.localOperation))));
     const activeTenantId = String(context.tenantId || normalized.tenantId || "");
-    publish({ mode: "cloud", pending: next.filter((item) => belongsToTenant(item, activeTenantId)).length });
+    publish({ mode: "cloud", pending: next.filter((item) => belongsToTenant(item, activeTenantId)).length, apiUrl: config.apiUrl || "", serverMode: isLocalCloudApiUrl(config.apiUrl) ? "local" : "remote" });
   },
   async enqueueMany(operations) { for (const operation of operations) await this.enqueue(operation); },
   async flush() {

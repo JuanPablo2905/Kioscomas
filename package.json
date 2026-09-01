@@ -17,8 +17,9 @@
     "test:views": "node scripts/smoke-views.mjs",
     "test:functions": "node scripts/functional-tests.mjs",
     "test:cloud": "node scripts/cloud-integration-tests.mjs",
+    "test:cloud-config": "node scripts/cloud-config-tests.mjs",
     "test:tutorials": "node scripts/tutorial-target-tests.mjs",
-    "test:all": "node scripts/tutorial-target-tests.mjs && node scripts/smoke-views.mjs && node scripts/functional-tests.mjs && vite build",
+    "test:all": "node scripts/cloud-config-tests.mjs && node scripts/tutorial-target-tests.mjs && node scripts/smoke-views.mjs && node scripts/functional-tests.mjs && vite build",
     "desktop": "electron .",
     "desktop:build": "vite build && electron-builder --win portable",
     "desktop:launcher": "vite build && electron-builder --win portable --config.directories.output=launcher-build --config.portable.artifactName=KioscoPlus-Desarrollo.exe"

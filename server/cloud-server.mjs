@@ -393,6 +393,75 @@ const verifyPassword = (password, user) => crypto.timingSafeEqual(
   Buffer.from(hashPassword(password, user.salt).hash, "hex"),
   Buffer.from(user.passwordHash, "hex"),
 );
+const safeEqual = (left, right) => {
+  const first = Buffer.from(String(left || ""));
+  const second = Buffer.from(String(right || ""));
+  return first.length === second.length && crypto.timingSafeEqual(first, second);
+};
+const verifyAppPassword = (password, subject) => {
+  try {
+    if (subject?.passwordHash && subject?.passwordSalt) {
+      const candidate = crypto.pbkdf2Sync(
+        String(password),
+        Buffer.from(subject.passwordSalt, "base64"),
+        210000,
+        32,
+        "sha256",
+      ).toString("base64");
+      return safeEqual(candidate, subject.passwordHash);
+    }
+    return typeof subject?.password === "string" && safeEqual(password, subject.password);
+  } catch { return false; }
+};
+const accountCredential = (db, username) => {
+  const normalized = String(username || "").trim().toLowerCase();
+  for (const account of db.system?.cuentas || []) {
+    if (account?.estado === "bloqueada") continue;
+    if (String(account?.usuario || "").trim().toLowerCase() === normalized) {
+      return {
+        subject: account,
+        businessId: String(account.id),
+        name: account.nombre || account.usuario,
+        role: account.superAdmin ? "superAdmin" : "owner",
+      };
+    }
+    const employee = (account?.empleados || []).find(
+      (item) => String(item?.usuario || "").trim().toLowerCase() === normalized,
+    );
+    if (employee) return {
+      subject: employee,
+      businessId: String(account.id),
+      name: employee.nombre || employee.usuario,
+      role: "employee",
+    };
+  }
+  return null;
+};
+const migrateAppUser = (db, username, password) => {
+  const credential = accountCredential(db, username);
+  if (!credential || !verifyAppPassword(password, credential.subject)) return null;
+  const existingEntry = Object.entries(db.users || {}).find(
+    ([, user]) => String(user?.username || "").trim().toLowerCase() === String(username).trim().toLowerCase(),
+  );
+  const existing = existingEntry?.[1];
+  if (existing && existing.status !== "active") return null;
+  const secured = hashPassword(password);
+  const canonicalUsername = String(username).trim();
+  const migrated = {
+    ...existing,
+    id: existing?.id || crypto.randomUUID(),
+    businessId: credential.businessId,
+    username: canonicalUsername,
+    name: credential.name || canonicalUsername,
+    role: credential.role,
+    salt: secured.salt,
+    passwordHash: secured.hash,
+    status: "active",
+  };
+  if (existingEntry?.[0] && existingEntry[0] !== canonicalUsername) delete db.users[existingEntry[0]];
+  db.users[canonicalUsername] = migrated;
+  return migrated;
+};
 const applyConfiguredSuperAdmin = (db) => {
   if (!configuredSuperAdminUsername || configuredSuperAdminPassword.length < 10) return db;
   const existing = db.users[configuredSuperAdminUsername];
@@ -529,8 +598,15 @@ const handleRequest = async (req, res) => {
     if (req.method === "POST" && req.url === "/v1/auth/login") {
       const payload = await body(req);
       const db = await readDb();
-      const user = db.users[payload.username];
-      if (!user || user.status !== "active" || !verifyPassword(payload.password, user)) return send(res, 401, { error: "Credenciales incorrectas" });
+      const username = String(payload.username || "").trim();
+      const existingUser = Object.values(db.users || {}).find(
+        (entry) => String(entry?.username || "").trim().toLowerCase() === username.toLowerCase(),
+      );
+      let user = existingUser;
+      let cloudPasswordIsValid = false;
+      try { cloudPasswordIsValid = !!user && user.status === "active" && verifyPassword(payload.password, user); } catch {}
+      if (!cloudPasswordIsValid) user = migrateAppUser(db, username, payload.password);
+      if (!user) return send(res, 401, { error: "Credenciales incorrectas" });
       const accessToken = token();
       const refreshToken = token();
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
