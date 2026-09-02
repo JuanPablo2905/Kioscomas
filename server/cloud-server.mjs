@@ -531,7 +531,11 @@ const handleRequest = async (req, res) => {
         return send(res, 200, { ok: true, sections: await postgresStore.inspectSections() });
       } catch (error) {
         console.error("No se pudo medir el estado PostgreSQL", error);
-        return send(res, 503, { ok: false, error: error?.code || error?.name || "database_unavailable" });
+        return send(res, 503, {
+          ok: false,
+          error: error?.code || error?.name || "database_unavailable",
+          detail: String(error?.message || "").slice(0, 180),
+        });
       }
     }
     if (req.url?.startsWith("/v1/releases/latest")) {

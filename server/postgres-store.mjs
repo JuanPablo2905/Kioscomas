@@ -90,12 +90,12 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
 
   const inspectSections = async () => {
     const rows = await sql`
-      SELECT section.key,
-             pg_column_size(section.value)::bigint AS stored_bytes
-      FROM kiosco_private.cloud_state state,
-           LATERAL jsonb_each(state.payload) AS section(key, value)
+      SELECT section_key AS key,
+             pg_column_size(state.payload -> section_key)::bigint AS stored_bytes
+      FROM kiosco_private.cloud_state state
+      CROSS JOIN LATERAL jsonb_object_keys(state.payload) AS keys(section_key)
       WHERE state.id = ${STATE_ID}
-      ORDER BY pg_column_size(section.value) DESC
+      ORDER BY pg_column_size(state.payload -> section_key) DESC
     `;
     return rows.map((row) => ({
       key: row.key,
