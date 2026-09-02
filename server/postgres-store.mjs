@@ -75,7 +75,6 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
     const [row] = await sql`
       SELECT
         pg_column_size(payload)::bigint AS state_bytes,
-        octet_length(payload::text)::bigint AS state_text_bytes,
         revision,
         updated_at
       FROM kiosco_private.cloud_state
@@ -84,7 +83,6 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
     return {
       ok: Boolean(row),
       stateBytes: Number(row?.state_bytes || 0),
-      stateTextBytes: Number(row?.state_text_bytes || 0),
       revision: Number(row?.revision || 0),
       updatedAt: row?.updated_at || null,
     };
@@ -93,17 +91,15 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
   const inspectSections = async () => {
     const rows = await sql`
       SELECT section.key,
-             pg_column_size(section.value)::bigint AS stored_bytes,
-             octet_length(section.value::text)::bigint AS text_bytes
+             pg_column_size(section.value)::bigint AS stored_bytes
       FROM kiosco_private.cloud_state state,
            LATERAL jsonb_each(state.payload) AS section(key, value)
       WHERE state.id = ${STATE_ID}
-      ORDER BY octet_length(section.value::text) DESC
+      ORDER BY pg_column_size(section.value) DESC
     `;
     return rows.map((row) => ({
       key: row.key,
       storedBytes: Number(row.stored_bytes || 0),
-      textBytes: Number(row.text_bytes || 0),
     }));
   };
 
