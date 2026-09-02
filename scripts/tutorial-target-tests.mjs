@@ -4,6 +4,7 @@ import path from "node:path";
 const root = path.resolve("src");
 const tutorialPath = path.join(root, "shared", "TutorialOverlay.jsx");
 const tutorial = fs.readFileSync(tutorialPath, "utf8");
+const app = fs.readFileSync(path.join(root, "app", "KioscoApp.jsx"), "utf8");
 const sourceFiles = [];
 
 function collect(directory) {
@@ -22,6 +23,9 @@ const check = (condition, message) => assertions.push({ condition, message });
 check(tutorial.includes("pointer-events-none fixed left-0 right-0 top-0"), "La capa oscura superior no debe bloquear el control resaltado.");
 check(tutorial.includes("pointer-events-none fixed inset-0"), "La capa oscura sin destino no debe bloquear la interfaz.");
 check(tutorial.includes("performHighlightedAction"), "El boton alternativo debe ejecutar la accion resaltada antes de avanzar.");
+check(app.includes("const preferenceKey = identidad?.usuarioId || `cuenta:${currentUserId}`"), "El progreso debe pertenecer a la cuenta o empleado actual, no al dispositivo.");
+check(app.includes("markTutorialHandled(view);"), "Cerrar un tutorial debe marcar esa sección como vista.");
+check(app.includes("onClose={closeTutorial}"), "Todos los cierres del tutorial deben guardar el progreso.");
 
 check(!/\{\s*text\s*:/.test(tutorial), "Los recorridos no deben buscar controles por texto ambiguo.");
 check(!/selector:\s*["'][^"']*(?:\.grid|\.rounded-xl|\.stock-row)/.test(tutorial), "Los recorridos no deben usar selectores visuales genéricos.");

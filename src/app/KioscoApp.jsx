@@ -627,6 +627,14 @@ export default function KioscoApp() {
     });
     saveTutorialProgress(completed);
   };
+  const closeTutorial = () => {
+    // Cerrar también significa "ya lo vi". El progreso se guarda con
+    // preferenceKey, que identifica a la cuenta o empleado actual y no a la
+    // computadora; otra persona en esta misma PC recibirá su propia guía.
+    markTutorialHandled(view);
+    autoTutorialRef.current = false;
+    setTutorialOpen(false);
+  };
   const startDemoTutorial = () => {
     markTutorialHandled(DEMO_INTRO_TUTORIAL_KEY);
     autoTutorialRef.current = false;
@@ -1401,7 +1409,7 @@ export default function KioscoApp() {
       {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness={esDueno} onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} onClose={() => setSettingsOpen(false)}/>} 
       {PUBLIC_DEMO_MODE && tutorialPrompt && <DemoTutorialPrompt view={tutorialPrompt.view} declined={tutorialPrompt.declined} onStart={startDemoTutorial} onDecline={declineDemoTutorial} onClose={() => setTutorialPrompt(null)}/>} 
       {PUBLIC_DEMO_MODE && helpSpotlightOpen && <HelpButtonSpotlight onClose={() => setHelpSpotlightOpen(false)}/>} 
-      <TutorialOverlay open={tutorialOpen} view={view} hasEmployees={hasEmployees} showCatalog={tutorialCatalog} onClose={() => { autoTutorialRef.current = false; setTutorialOpen(false); }} onComplete={completeTutorial}/>
+      <TutorialOverlay open={tutorialOpen} view={view} hasEmployees={hasEmployees} showCatalog={tutorialCatalog} onClose={closeTutorial} onComplete={completeTutorial}/>
       {bugReportOpen && <ReportarProblemaModal initialCapture={bugReportDraft.captura} errorContext={bugReportDraft.detalleTecnico} onCapture={captureAppScreenshot} canSystemCapture={Boolean(window.kioscoDesktop?.captureScreenshot)} onClose={() => { setBugReportOpen(false); setBugReportDraft({ captura: null, detalleTecnico: "", vista: null }); }} onSubmit={(payload) => { reportarProblema({ ...payload, vista: bugReportDraft.vista }); setBugReportOpen(false); setBugReportDraft({ captura: null, detalleTecnico: "", vista: null }); }}/>} 
       {globalScanOpen && <ScanModal
         continuous
