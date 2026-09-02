@@ -28,6 +28,7 @@ function publishUpdateState(patch = {}) {
 
 function readableUpdateError(error) {
   const message = String(error?.message || error || "No se pudo comprobar la actualización.");
+  if (/net::|ENOTFOUND|ECONN|timeout|timed out/i.test(message)) return "No se pudo consultar la actualización. Se volverá a intentar más tarde.";
   return message.replace(/https?:\/\/\S+/g, "servidor de actualizaciones").slice(0, 240);
 }
 
