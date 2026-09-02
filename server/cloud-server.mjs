@@ -669,7 +669,7 @@ const handleRequest = async (req, res) => {
     if (req.method === "POST" && req.url === "/v1/activation/status") {
       const payload = await body(req);
       const deviceId = cleanActivationDeviceId(payload.deviceId);
-      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del equipo no es válido" });
+      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del dispositivo no es válido" });
       const db = await readDb();
       db.activations ||= {};
       let current = db.activations[deviceId];
@@ -698,7 +698,7 @@ const handleRequest = async (req, res) => {
       const payload = await body(req);
       const deviceId = cleanActivationDeviceId(payload.deviceId);
       const normalizedCode = normalizeActivationCode(payload.code);
-      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del equipo no es válido" });
+      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del dispositivo no es válido" });
       const db = await readDb();
       db.activationCodes ||= {};
       db.activations ||= {};
@@ -737,7 +737,7 @@ const handleRequest = async (req, res) => {
       if (!configuredSuperAdminUsername || configuredSuperAdminPassword.length < 10) {
         return send(res, 503, { error: "La cuenta administradora todavía no está configurada en Render" });
       }
-      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del equipo no es válido" });
+      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del dispositivo no es válido" });
       if (!safeEqual(payload.deviceKey, configuredSuperAdminPassword)) {
         return send(res, 401, { error: "La clave privada de administrador no es correcta" });
       }
@@ -782,7 +782,7 @@ const handleRequest = async (req, res) => {
       const db = await readDb();
       const activation = db.activations?.[deviceId];
       if (!activation || activation.revokedAt) {
-        return send(res, 403, { error: "Esta PC todavía no fue activada con una clave de instalación" });
+        return send(res, 403, { error: "Este dispositivo todavía no fue autorizado. Ingresá la clave del administrador para crear un negocio nuevo." });
       }
       const normalizedUsername = username.toLowerCase();
       const usernameExists = Object.values(db.users || {}).some(
@@ -920,6 +920,9 @@ const handleRequest = async (req, res) => {
     if (req.method === "POST" && req.url === "/v1/auth/login") {
       const payload = await body(req);
       const db = await readDb();
+      const deviceId = cleanActivationDeviceId(payload.deviceId);
+      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del dispositivo no es válido" });
+      if (db.devices?.[deviceId]?.revokedAt) return send(res, 403, { error: "Este dispositivo fue bloqueado por el administrador" });
       const username = String(payload.username || "").trim();
       const existingUser = Object.values(db.users || {}).find(
         (entry) => String(entry?.username || "").trim().toLowerCase() === username.toLowerCase(),
@@ -935,14 +938,14 @@ const handleRequest = async (req, res) => {
       db.sessions[accessToken] = {
         userId: user.id,
         businessId: user.businessId,
-        deviceId: payload.deviceId,
+        deviceId,
         role: user.role,
         expiresAt,
         refreshExpiresAt: refreshTokenExpiresAt(),
         refreshHash: crypto.createHash("sha256").update(refreshToken).digest("hex"),
         revokedAt: null,
       };
-      db.devices[payload.deviceId] = { tenantId: user.businessId, userId: user.id, lastSeenAt: new Date().toISOString(), revokedAt: null };
+      db.devices[deviceId] = { tenantId: user.businessId, userId: user.id, lastSeenAt: new Date().toISOString(), revokedAt: null };
       await writeDb(db);
       return send(res, 200, {
         accessToken,
@@ -1091,8 +1094,16 @@ const handleRequest = async (req, res) => {
       const activationRevokeMatch = req.url.match(/^\/v1\/admin\/activations\/([^/?]+)\/revoke$/);
       if (req.method === "POST" && activationRevokeMatch) {
         const deviceIdToRevoke = cleanActivationDeviceId(decodeURIComponent(activationRevokeMatch[1]));
-        if (!db.activations[deviceIdToRevoke]) return send(res, 404, { error: "Equipo inexistente" });
-        db.activations[deviceIdToRevoke].revokedAt = db.activations[deviceIdToRevoke].revokedAt || new Date().toISOString();
+        if (!db.activations[deviceIdToRevoke]) return send(res, 404, { error: "Dispositivo inexistente" });
+        const revokedAt = db.activations[deviceIdToRevoke].revokedAt || new Date().toISOString();
+        db.activations[deviceIdToRevoke].revokedAt = revokedAt;
+        if (db.devices?.[deviceIdToRevoke]) db.devices[deviceIdToRevoke].revokedAt = revokedAt;
+        for (const session of Object.values(db.sessions || {})) {
+          if (session.deviceId === deviceIdToRevoke && !session.revokedAt) {
+            session.revokedAt = revokedAt;
+            session.revokedReason = "device_revoked";
+          }
+        }
         await writeDb(db);
         return send(res, 200, { ok: true, activation: activationView(db.activations[deviceIdToRevoke]) });
       }

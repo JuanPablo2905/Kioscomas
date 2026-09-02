@@ -150,7 +150,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
     try {
       const detail = await activationRequest(`/v1/admin/activations/${encodeURIComponent(deviceId)}/revoke`, { method: "POST" });
       setActivatedDevices((previous) => previous.map((item) => item.deviceId === deviceId ? detail.activation : item));
-    } catch (error) { setActivationError(error?.message || "No se pudo desactivar la PC."); }
+    } catch (error) { setActivationError(error?.message || "No se pudo desactivar el dispositivo."); }
   };
 
   const actualizarCuenta = (id, cambios) =>
@@ -293,7 +293,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-start gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-700"><KeyRound size={20}/></span>
-              <div><h2 className="font-semibold">Claves para instalar Kiosco+</h2><p className="mt-1 max-w-2xl text-sm leading-5 text-gray-500">Generá una clave, mandásela a la persona autorizada y quedará vinculada a su PC cuando abra la aplicación por primera vez.</p></div>
+              <div><h2 className="font-semibold">Claves para autorizar Kiosco+</h2><p className="mt-1 max-w-2xl text-sm leading-5 text-gray-500">Generá una clave y mandásela a la persona autorizada. Sirve para instalar Kiosco+ o crear un negocio nuevo desde un celular.</p></div>
             </div>
             <button type="button" onClick={loadActivations} disabled={activationLoading} className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50">{activationLoading ? "Actualizando..." : "Actualizar lista"}</button>
           </div>
@@ -301,10 +301,10 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
           <div className="mt-5 grid gap-2 md:grid-cols-[minmax(0,1.5fr)_170px_130px_auto]">
             <input value={activationForm.label} onChange={(event) => setActivationForm({ ...activationForm, label: event.target.value })} placeholder="Para quién es (opcional)" className="min-h-11 min-w-0 rounded-lg border bg-gray-50 px-3 text-sm outline-none focus:border-[#1C4A44]"/>
             <label className="rounded-lg border bg-gray-50 px-3 py-1"><span className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Vence la clave en</span><select value={activationForm.expiresInDays} onChange={(event) => setActivationForm({ ...activationForm, expiresInDays: Number(event.target.value) })} className="w-full bg-transparent py-0.5 text-sm outline-none"><option value="1">1 día</option><option value="7">7 días</option><option value="30">30 días</option><option value="90">90 días</option></select></label>
-            <label className="rounded-lg border bg-gray-50 px-3 py-1"><span className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Cantidad de PC</span><input type="number" min="1" max="25" value={activationForm.maxUses} onChange={(event) => setActivationForm({ ...activationForm, maxUses: Math.max(1, Number(event.target.value) || 1) })} className="w-full bg-transparent py-0.5 text-sm outline-none"/></label>
+            <label className="rounded-lg border bg-gray-50 px-3 py-1"><span className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Cantidad de dispositivos</span><input type="number" min="1" max="25" value={activationForm.maxUses} onChange={(event) => setActivationForm({ ...activationForm, maxUses: Math.max(1, Number(event.target.value) || 1) })} className="w-full bg-transparent py-0.5 text-sm outline-none"/></label>
             <button type="button" onClick={createActivationCode} disabled={activationLoading} className="min-h-11 rounded-lg bg-[#1C4A44] px-4 text-sm font-semibold text-white disabled:opacity-50">Generar clave</button>
           </div>
-          <p className="mt-2 text-xs text-gray-500">El vencimiento limita hasta cuándo puede usarse la clave; una PC ya activada no se desactiva al vencerla.</p>
+          <p className="mt-2 text-xs text-gray-500">El vencimiento limita hasta cuándo puede usarse la clave; un dispositivo ya autorizado no se desactiva al vencerla.</p>
 
           {generatedCode && <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-green-950">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-wide text-green-700">Clave lista · se muestra una sola vez</p><code className="mt-2 block break-all text-base font-bold sm:text-lg">{generatedCode.code}</code></div><div className="grid grid-cols-2 gap-2 sm:flex"><button type="button" onClick={() => navigator.clipboard?.writeText(generatedCode.code)} className="rounded-lg border border-green-300 bg-white px-3 py-2 text-xs font-semibold">Copiar clave</button><button type="button" onClick={() => setGeneratedCode(null)} className="rounded-lg px-3 py-2 text-xs font-semibold">Ocultar</button></div></div>
@@ -322,16 +322,16 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                   const exhausted = Number(item.uses || 0) >= Number(item.maxUses || 1);
                   const unavailable = Boolean(item.revokedAt || expired || exhausted);
                   const status = item.revokedAt ? "Desactivada" : expired ? "Vencida" : exhausted ? "Utilizada" : "Disponible";
-                  return <div key={item.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><code className="text-xs font-semibold">{item.maskedCode}</code><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${unavailable ? "bg-gray-100 text-gray-600" : "bg-green-100 text-green-700"}`}>{status}</span></div><p className="mt-1 truncate text-xs text-gray-500">{item.label || "Sin nombre"} · {item.uses}/{item.maxUses} PC · vence {new Date(item.expiresAt).toLocaleDateString("es-AR")}</p></div>{!item.revokedAt && !expired && !exhausted && <button type="button" onClick={() => revokeActivationCode(item.id)} className="shrink-0 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Desactivar</button>}</div>;
+                  return <div key={item.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><code className="text-xs font-semibold">{item.maskedCode}</code><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${unavailable ? "bg-gray-100 text-gray-600" : "bg-green-100 text-green-700"}`}>{status}</span></div><p className="mt-1 truncate text-xs text-gray-500">{item.label || "Sin nombre"} · {item.uses}/{item.maxUses} dispositivo(s) · vence {new Date(item.expiresAt).toLocaleDateString("es-AR")}</p></div>{!item.revokedAt && !expired && !exhausted && <button type="button" onClick={() => revokeActivationCode(item.id)} className="shrink-0 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Desactivar</button>}</div>;
                 })}
               </div>
             </div>
 
             <div className="overflow-hidden rounded-xl border border-gray-200">
-              <div className="flex items-center justify-between bg-gray-50 px-4 py-3"><h3 className="text-sm font-bold">PC activadas</h3><span className="text-xs text-gray-500">{activatedDevices.filter((item) => !item.revokedAt).length} activas</span></div>
+              <div className="flex items-center justify-between bg-gray-50 px-4 py-3"><h3 className="text-sm font-bold">Dispositivos autorizados</h3><span className="text-xs text-gray-500">{activatedDevices.filter((item) => !item.revokedAt).length} activos</span></div>
               <div className="max-h-72 divide-y overflow-auto">
-                {!activationLoading && activatedDevices.length === 0 && <p className="px-4 py-6 text-center text-sm text-gray-400">Ninguna PC activada todavía.</p>}
-                {activatedDevices.map((item) => <div key={item.deviceId} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">Equipo …{String(item.deviceId).slice(-8).toUpperCase()}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${item.revokedAt ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{item.revokedAt ? "Desactivada" : "Activa"}</span></div><p className="mt-1 text-xs text-gray-500">Activada {new Date(item.activatedAt).toLocaleDateString("es-AR")}{item.appVersion ? ` · versión ${item.appVersion}` : ""}</p></div>{!item.revokedAt && <button type="button" onClick={() => revokeActivatedDevice(item.deviceId)} className="shrink-0 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Desactivar PC</button>}</div>)}
+                {!activationLoading && activatedDevices.length === 0 && <p className="px-4 py-6 text-center text-sm text-gray-400">Ningún dispositivo autorizado todavía.</p>}
+                {activatedDevices.map((item) => <div key={item.deviceId} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">Dispositivo …{String(item.deviceId).slice(-8).toUpperCase()}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${item.revokedAt ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{item.revokedAt ? "Desactivado" : "Activo"}</span></div><p className="mt-1 text-xs text-gray-500">Autorizado {new Date(item.activatedAt).toLocaleDateString("es-AR")}{item.appVersion ? ` · versión ${item.appVersion}` : ""}</p></div>{!item.revokedAt && <button type="button" onClick={() => revokeActivatedDevice(item.deviceId)} className="shrink-0 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Desactivar dispositivo</button>}</div>)}
               </div>
             </div>
           </div>

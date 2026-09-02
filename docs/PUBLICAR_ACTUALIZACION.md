@@ -25,11 +25,11 @@ No se debe reutilizar una etiqueta ni publicar dos contenidos distintos con el m
 ## Autorizar una instalación nueva
 
 1. Entrar con la cuenta personal administradora de Kiosco+.
-2. En **Claves para instalar Kiosco+**, escribir para quién es la clave, elegir cuánto tiempo estará disponible y cuántas PC puede activar.
+2. En **Claves para autorizar Kiosco+**, escribir para quién es la clave, elegir cuánto tiempo estará disponible y cuántos dispositivos puede autorizar.
 3. Presionar **Generar clave** y copiarla. La clave completa se muestra una sola vez.
 4. La persona descarga el instalador desde la página, abre Kiosco+ y pega esa clave.
 
-La clave queda asociada a la PC. Las actualizaciones no vuelven a pedirla. Desde el mismo panel se puede desactivar una clave que todavía no se usó o una PC ya activada. Este cambio se guarda dentro de la base existente de Supabase y no necesita ejecutar otro archivo SQL.
+La clave queda asociada al dispositivo. En escritorio autoriza la instalación; en la web móvil autoriza la creación de un negocio nuevo. Una cuenta existente puede iniciar sesión desde otro celular sin consumir una clave. Desde el mismo panel se puede desactivar una clave que todavía no se usó o un dispositivo ya autorizado.
 
 ## Firma de Windows
 

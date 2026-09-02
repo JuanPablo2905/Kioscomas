@@ -106,7 +106,7 @@ export async function pairCloudDevice(apiUrl, deviceKey, deviceId) {
   }, CLOUD_AUTH_TIMEOUT_MS);
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
-    const error = new Error(detail.error || `No se pudo autorizar este equipo (${response.status}).`);
+    const error = new Error(detail.error || `No se pudo autorizar este dispositivo (${response.status}).`);
     error.status = response.status;
     throw error;
   }

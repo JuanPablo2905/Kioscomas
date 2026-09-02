@@ -23,7 +23,7 @@ const activationRequest = async (apiUrl, path, payload) => {
     return detail;
   } catch (error) {
     if (controller.signal.aborted) throw new Error("La nube tardó demasiado en responder. Revisá Internet e intentá otra vez.");
-    if (!error?.status) throw new Error("No se pudo conectar con la nube. Abrí la dirección de estado de Render en esta misma PC y volvé a intentarlo.");
+    if (!error?.status) throw new Error("No se pudo conectar con la nube. Abrí la dirección de estado de Render en este mismo dispositivo y volvé a intentarlo.");
     throw error;
   } finally {
     clearTimeout(timer);

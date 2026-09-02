@@ -164,14 +164,20 @@ try {
   const activationDirectory = await request("/v1/admin/activation-codes", { headers: centralHeaders });
   const savedActivationCode = activationDirectory.value.codes?.find((item) => item.id === createdActivationCode.value.item?.id);
   test("el panel muestra usos y equipos sin exponer la clave completa", savedActivationCode?.uses === 1 && !JSON.stringify(savedActivationCode).includes(createdActivationCode.value.code) && activationDirectory.value.activations?.some((item) => item.deviceId === "activation-pc"));
-  const revokedActivation = await request("/v1/admin/activations/activation-pc/revoke", { method: "POST", headers: centralHeaders });
+  const revokedActivation = await request("/v1/admin/activations/paired-pc/revoke", { method: "POST", headers: centralHeaders });
   test("el administrador puede desactivar una PC", revokedActivation.response.ok && !!revokedActivation.value.activation?.revokedAt);
   const activationAfterRevoke = await request("/v1/activation/status", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ deviceId: "activation-pc" }),
+    body: JSON.stringify({ deviceId: "paired-pc" }),
   });
   test("una PC desactivada deja de estar autorizada", activationAfterRevoke.value.activated === false);
+  const revokedDeviceLogin = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "central-admin", password: "central-admin-secret", deviceId: "paired-pc" }),
+  });
+  test("un dispositivo desactivado no se rehabilita al iniciar sesión", revokedDeviceLogin.response.status === 403);
   const accountDirectory = await request("/v1/sync/push", {
     method: "POST",
     headers: centralHeaders,

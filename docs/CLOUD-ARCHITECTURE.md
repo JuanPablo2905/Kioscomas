@@ -25,7 +25,7 @@ La API continúa procesando mutaciones en orden dentro de una única instancia d
 
 ## Corte limpio desde la generación anterior
 
-La tabla nueva se crea automáticamente durante el primer despliegue. Si existe `kiosco_private.cloud_state`, solamente se intenta conservar la activación vigente de computadoras administradoras. No se importan negocios, usuarios comerciales, sesiones ni movimientos anteriores.
+La tabla nueva se crea automáticamente durante el primer despliegue. Si existe `kiosco_private.cloud_state`, solamente se intenta conservar la activación vigente de dispositivos administradores. No se importan negocios, usuarios comerciales, sesiones ni movimientos anteriores.
 
 Esto es deliberado para la versión `0.2.0`: los datos existentes eran ficticios y la prioridad es comenzar con una base coherente.
 
@@ -40,8 +40,8 @@ La retención se configura mediante `KIOSCO_BACKUP_RETENTION_DAYS`, entre 1 y 90
 ## Autenticación y activaciones
 
 - La cuenta central se define sólo en Render mediante `KIOSCO_SUPERADMIN_USERNAME` y `KIOSCO_SUPERADMIN_PASSWORD`.
-- Una PC comercial usa una clave `KIOSCO-...` generada por el administrador.
-- Una PC administradora que perdió su activación puede elegir **Esta es mi PC administradora** e ingresar la clave privada de Render.
+- Un dispositivo comercial usa una clave `KIOSCO-...` generada por el administrador para instalar la app de escritorio o crear un negocio nuevo desde la web.
+- Un dispositivo administrador que perdió su activación puede elegir **Este es mi dispositivo administrador** e ingresar la clave privada de Render.
 - Los clientes no reciben secretos de Supabase ni de Render dentro del instalador.
 - Una lista vacía enviada por una versión vieja no puede borrar el padrón de negocios.
 

@@ -4,6 +4,7 @@ const manifest = JSON.parse(fs.readFileSync("public/manifest.webmanifest", "utf8
 const index = fs.readFileSync("index.html", "utf8");
 const main = fs.readFileSync("src/main.jsx", "utf8");
 const login = fs.readFileSync("src/features/autenticacion/LoginView.jsx", "utf8");
+const app = fs.readFileSync("src/app/KioscoApp.jsx", "utf8");
 const serviceWorker = fs.readFileSync("public/sw.js", "utf8");
 
 const checks = [
@@ -15,6 +16,8 @@ const checks = [
   [index.includes("apple-touch-icon.png"), "Falta el ícono de instalación para iPhone."],
   [main.includes('import "./shared/pwaInstall"'), "La captura del aviso de instalación debe comenzar antes de renderizar."],
   [login.includes("requestPwaInstall"), "El botón móvil debe invocar la instalación nativa del navegador."],
+  [login.includes("requiresRegistrationCode"), "La web debe ofrecer la clave al crear un negocio desde un dispositivo nuevo."],
+  [app.includes("await redeemInstallationCode") && app.includes("activationCode"), "La clave móvil debe autorizar el dispositivo antes de registrar el negocio."],
   [serviceWorker.includes("pwa-icon-maskable-512.png"), "Los íconos deben estar disponibles sin conexión."],
 ];
 

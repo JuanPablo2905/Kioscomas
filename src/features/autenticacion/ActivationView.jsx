@@ -28,7 +28,7 @@ export function ActivationView({ deviceId, onActivate, onAdminActivate }) {
       if (adminMode) await onAdminActivate(adminKey);
       else await onActivate(code);
     }
-    catch (activationError) { setError(activationError?.message || "No se pudo activar esta PC."); }
+    catch (activationError) { setError(activationError?.message || "No se pudo activar este dispositivo."); }
     finally { setWorking(false); }
   };
 
@@ -39,17 +39,17 @@ export function ActivationView({ deviceId, onActivate, onAdminActivate }) {
           <img src={kioscoPlusLockup} alt="Kiosco+" className="h-12 w-auto max-w-[220px] object-contain object-left brightness-0 invert"/>
           <div className="my-12">
             <span className="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-white/10"><ShieldCheck size={29}/></span>
-            <h1 className="max-w-md text-3xl font-bold leading-tight sm:text-4xl">Activá Kiosco+ en esta PC</h1>
+            <h1 className="max-w-md text-3xl font-bold leading-tight sm:text-4xl">Activá Kiosco+ en este dispositivo</h1>
             <p className="mt-4 max-w-md text-sm leading-6 text-white/75 sm:text-base">La clave confirma que esta instalación fue autorizada. Se pide una sola vez y las actualizaciones futuras se instalan normalmente.</p>
           </div>
-          <p className="text-xs text-white/50">Equipo {String(deviceId || "").slice(-8).toUpperCase()}</p>
+          <p className="text-xs text-white/50">Dispositivo {String(deviceId || "").slice(-8).toUpperCase()}</p>
         </section>
 
         <section className="flex items-center p-7 sm:p-10 lg:p-14">
           <form onSubmit={submit} className="w-full">
             <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-100 text-amber-700"><KeyRound size={24}/></span>
-            <h2 className="mt-6 text-2xl font-bold">{adminMode ? "Activar PC administradora" : "Clave de instalación"}</h2>
-            <p className="mt-2 text-sm leading-6 text-gray-500">{adminMode ? "Usá la clave privada configurada en Render para recuperar tu computadora administradora." : "Pedile una clave al administrador de Kiosco+ y pegala acá."}</p>
+            <h2 className="mt-6 text-2xl font-bold">{adminMode ? "Activar dispositivo administrador" : "Clave de instalación"}</h2>
+            <p className="mt-2 text-sm leading-6 text-gray-500">{adminMode ? "Usá la clave privada configurada en Render para recuperar tu dispositivo administrador." : "Pedile una clave al administrador de Kiosco+ y pegala acá."}</p>
             <label className="mt-7 block text-xs font-bold uppercase tracking-wide text-gray-600" htmlFor="installation-code">{adminMode ? "Clave privada de Render" : "Clave"}</label>
             {adminMode ? (
               <input
@@ -76,14 +76,14 @@ export function ActivationView({ deviceId, onActivate, onAdminActivate }) {
             )}
             {error && <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>}
             <button type="submit" disabled={working} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 font-semibold text-white transition hover:bg-[#163d38] disabled:cursor-wait disabled:opacity-60">
-              {working ? <><Loader2 size={18} className="animate-spin"/>Comprobando...</> : <><CheckCircle2 size={18}/>{adminMode ? "Activar como administrador" : "Activar esta PC"}</>}
+              {working ? <><Loader2 size={18} className="animate-spin"/>Comprobando...</> : <><CheckCircle2 size={18}/>{adminMode ? "Activar como administrador" : "Activar este dispositivo"}</>}
             </button>
             <button
               type="button"
               onClick={() => { setAdminMode((value) => !value); setError(""); }}
               className="mt-3 min-h-11 w-full rounded-xl border border-gray-200 px-4 text-sm font-semibold text-[#1C4A44] hover:bg-gray-50"
             >
-              {adminMode ? "Volver a la clave de instalación" : "Esta es mi PC administradora"}
+              {adminMode ? "Volver a la clave de instalación" : "Este es mi dispositivo administrador"}
             </button>
             <p className="mt-5 text-center text-xs leading-5 text-gray-400">Necesitás Internet únicamente para validar la clave por primera vez.</p>
           </form>

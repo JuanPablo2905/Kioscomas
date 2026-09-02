@@ -10,14 +10,16 @@ import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money 
 import { SectionHeader } from "../../shared/layout";
 import { getPwaInstallState, requestPwaInstall, subscribePwaInstall } from "../../shared/pwaInstall";
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
+const formatActivationCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
 
-export function LoginView({ onLogin, onRegister, error, notice, onReset, showDemoAccounts = false }) {
+export function LoginView({ onLogin, onRegister, error, notice, onReset, showDemoAccounts = false, requiresRegistrationCode = false }) {
   const [modo, setModo] = useState("login");
   const [nombre, setNombre] = useState("");
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
   const [nombreNegocio, setNombreNegocio] = useState("");
   const [modoNegocio, setModoNegocio] = useState("solo");
+  const [activationCode, setActivationCode] = useState("");
   const [confirmarReset, setConfirmarReset] = useState(false);
   const [installState, setInstallState] = useState(getPwaInstallState);
   const [installHelp, setInstallHelp] = useState(false);
@@ -38,6 +40,7 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
           password,
           nombreNegocio: nombreNegocio.trim(),
           modoNegocio,
+          activationCode,
         });
         if (result?.ok) {
           setModo("login");
@@ -88,8 +91,21 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
         {modo === "registro" && (
           <>
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-              La solicitud se enviará al administrador de Kiosco+. Podrás entrar cuando la apruebe y habilite el abono.
+              La solicitud se enviará al administrador de Kiosco+. Podrás entrar cuando la apruebe y habilite el abono. Si ya tenés una cuenta, volvé a Iniciar sesión: no necesitás una clave nueva.
             </div>
+            {requiresRegistrationCode && <>
+              <label className="block text-sm text-gray-700" htmlFor="registration-activation-code">Clave para crear el negocio</label>
+              <input
+                id="registration-activation-code"
+                value={activationCode}
+                onChange={(event) => setActivationCode(formatActivationCode(event.target.value))}
+                autoComplete="off"
+                spellCheck="false"
+                placeholder="KIOSCO-XXXX-XXXX-XXXX-XXXX"
+                className="mb-1 mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm font-semibold uppercase"
+              />
+              <p className="mb-3 text-xs leading-relaxed text-gray-500">La genera el administrador y autoriza este dispositivo a enviar una cuenta nueva.</p>
+            </>}
             <label className="text-sm text-gray-700 block mb-1">Tu nombre</label>
             <input
               value={nombre}

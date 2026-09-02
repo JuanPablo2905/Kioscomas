@@ -1061,7 +1061,7 @@ export default function KioscoApp() {
     setLoginError("Usuario o contraseña incorrectos.");
   };
 
-  const handleRegister = async ({ nombre, usuario, password, nombreNegocio, modoNegocio = "solo" }) => {
+  const handleRegister = async ({ nombre, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "" }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "").trim();
     if (cuentas.some((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())) {
@@ -1078,6 +1078,14 @@ export default function KioscoApp() {
       return;
     }
     try {
+      const receipt = loadInstallationReceipt();
+      const deviceActivated = receipt?.activated && receipt.deviceId === cloudConfig.deviceId;
+      if (!deviceActivated) {
+        if (String(activationCode).replace(/[^A-Z0-9]/gi, "").length < 12) {
+          throw new Error("Ingresá la clave que te dio el administrador para crear un negocio nuevo.");
+        }
+        await redeemInstallationCode(cloudConfig.apiUrl, activationCode, cloudConfig.deviceId, import.meta.env.VITE_APP_VERSION || "web");
+      }
       const result = await registerCloudAccount(cloudConfig.apiUrl, {
         deviceId: cloudConfig.deviceId,
         name: nombre,
@@ -1093,6 +1101,9 @@ export default function KioscoApp() {
       setLoginNotice("Solicitud enviada. La cuenta quedó pendiente; vas a poder entrar con este usuario y contraseña cuando el administrador la habilite.");
       return { ok: true };
     } catch (error) {
+      if (error?.status === 403 && /dispositivo.*autoriza/i.test(String(error?.message || ""))) {
+        clearInstallationReceipt();
+      }
       setLoginNotice("");
       setLoginError(error?.message || "No se pudo enviar la solicitud de cuenta.");
       return { ok: false };
@@ -1159,7 +1170,7 @@ export default function KioscoApp() {
       roles: [],
       empleados: [],
     });
-    if (!adminAccount) throw new Error("La nube activó la PC, pero no devolvió la cuenta administradora.");
+    if (!adminAccount) throw new Error("La nube autorizó el dispositivo, pero no devolvió la cuenta administradora.");
     const identity = {
       usuarioId: `cuenta:${adminAccount.id}`,
       tenantId: String(adminAccount.id),
@@ -1192,6 +1203,8 @@ export default function KioscoApp() {
   }
 
   if (!currentUserId) {
+    const cloudDeviceId = loadCloudConfig().deviceId;
+    const installationReceipt = loadInstallationReceipt();
     return (
       <LoginView
         onLogin={handleLogin}
@@ -1200,6 +1213,7 @@ export default function KioscoApp() {
         notice={loginNotice}
         onReset={handleReset}
         showDemoAccounts={PUBLIC_DEMO_MODE}
+        requiresRegistrationCode={!PUBLIC_DEMO_MODE && !(installationReceipt?.activated && installationReceipt.deviceId === cloudDeviceId)}
       />
     );
   }
