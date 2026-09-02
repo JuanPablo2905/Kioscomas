@@ -10,6 +10,7 @@ dist-public/
 dist-cloud-app/
 release/
 release-v*/
+release-installer-*/
 release-staging-v*/
 launcher-asar-stage-*/
 desktop/*-smoke-result.json

@@ -7,6 +7,9 @@ import { mergeConcurrentEntity } from "../src/cloud/conflictMerge.js";
 import { createPostgresStore } from "./postgres-store.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+let appVersion = "0.0.0";
+try { appVersion = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8")).version || appVersion; } catch {}
+const windowsInstallerUrl = "https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Setup.exe";
 const databasePath = process.env.KIOSCO_CLOUD_DB || path.join(root, "cloud-dev-data", "database.json");
 const dataDirectory = process.env.KIOSCO_CLOUD_DATA_DIR || path.dirname(databasePath);
 // Render and most cloud hosts provide the public port through PORT.
@@ -17,6 +20,12 @@ const databaseUrl = String(process.env.DATABASE_URL || "").trim();
 let postgresStore = null;
 const configuredSuperAdminUsername = String(process.env.KIOSCO_SUPERADMIN_USERNAME || "").trim();
 const configuredSuperAdminPassword = String(process.env.KIOSCO_SUPERADMIN_PASSWORD || "");
+const configuredAccessTokenHours = Number(process.env.KIOSCO_ACCESS_TOKEN_HOURS || 24);
+const accessTokenTtlMs = (Number.isFinite(configuredAccessTokenHours) && configuredAccessTokenHours > 0
+  ? Math.min(configuredAccessTokenHours, 24 * 30)
+  : 24) * 60 * 60 * 1000;
+const refreshRetryGraceMs = 5 * 60 * 1000;
+const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISOString();
 const emptyDb = () => ({ schemaVersion: 3, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {} });
 const cleanBarcode = (value) => String(value || "").replace(/\D/g, "").slice(0, 18);
 const cleanCatalogText = (value, max = 160) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
@@ -542,10 +551,10 @@ const handleRequest = async (req, res) => {
       const channel = new URL(req.url, "http://localhost").searchParams.get("channel") || "stable";
       return send(res, 200, {
         channel,
-        version: "0.1.0",
+        version: appVersion,
         mandatory: false,
-        notes: ["Respaldo central local", "Sincronización por negocio"],
-        downloadUrl: null,
+        notes: ["Actualización automática y mejoras de estabilidad"],
+        downloadUrl: windowsInstallerUrl,
         sha256: null,
         publishedAt: new Date().toISOString(),
       });
@@ -619,7 +628,7 @@ const handleRequest = async (req, res) => {
       }
       const accessToken = token();
       const refreshToken = token();
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      const expiresAt = accessTokenExpiresAt();
       db.sessions[accessToken] = {
         userId: user.id,
         businessId: user.businessId,
@@ -671,7 +680,7 @@ const handleRequest = async (req, res) => {
       if (!user) return send(res, 401, { error: "Credenciales incorrectas" });
       const accessToken = token();
       const refreshToken = token();
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      const expiresAt = accessTokenExpiresAt();
       db.sessions[accessToken] = {
         userId: user.id,
         businessId: user.businessId,
@@ -689,18 +698,30 @@ const handleRequest = async (req, res) => {
       const payload = await body(req);
       const db = await readDb();
       const hash = crypto.createHash("sha256").update(String(payload.refreshToken || "")).digest("hex");
-      const entry = Object.entries(db.sessions).find(([, session]) => session.refreshHash === hash && !session.revokedAt);
+      const now = Date.now();
+      const entry = Object.entries(db.sessions).find(([, session]) => {
+        if (session.refreshHash !== hash) return false;
+        if (!session.revokedAt) return true;
+        return session.revokedReason === "refreshed" && Date.parse(session.refreshGraceUntil || "") > now;
+      });
       if (!entry) return send(res, 401, { error: "Sesión inválida" });
       const [, old] = entry;
-      old.revokedAt = new Date().toISOString();
+      if (db.devices[old.deviceId]?.revokedAt) return send(res, 403, { error: "Dispositivo bloqueado" });
+      if (!old.revokedAt) {
+        old.revokedAt = new Date(now).toISOString();
+        old.revokedReason = "refreshed";
+        old.refreshGraceUntil = new Date(now + refreshRetryGraceMs).toISOString();
+      }
       const accessToken = token();
       const refreshToken = token();
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      const expiresAt = accessTokenExpiresAt();
       db.sessions[accessToken] = {
         ...old,
         expiresAt,
         refreshHash: crypto.createHash("sha256").update(refreshToken).digest("hex"),
         revokedAt: null,
+        revokedReason: null,
+        refreshGraceUntil: null,
       };
       await writeDb(db);
       return send(res, 200, { accessToken, refreshToken, expiresAt });
@@ -710,6 +731,8 @@ const handleRequest = async (req, res) => {
       const session = activeSession(db, req);
       if (session) {
         session.revokedAt = new Date().toISOString();
+        session.revokedReason = "logout";
+        session.refreshGraceUntil = null;
         await writeDb(db);
       }
       return send(res, 204, {});

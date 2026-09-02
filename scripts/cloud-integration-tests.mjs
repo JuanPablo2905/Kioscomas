@@ -102,7 +102,7 @@ try {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username: "owner", password: "secret", deviceId: "pc-1" }),
   });
-  test("login entrega sesión corta y renovación", !!login.value.accessToken && !!login.value.refreshToken);
+  test("login entrega sesión renovable para toda la jornada", !!login.value.accessToken && !!login.value.refreshToken && Date.parse(login.value.expiresAt) > Date.now() + 23 * 60 * 60 * 1000);
   const headers = {
     "content-type": "application/json",
     "x-device-id": "pc-1",
@@ -217,6 +217,12 @@ try {
     body: JSON.stringify({ refreshToken: login.value.refreshToken }),
   });
   test("renovación revoca token anterior", !!refresh.value.accessToken);
+  const repeatedRefresh = await request("/v1/auth/refresh", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ refreshToken: login.value.refreshToken }),
+  });
+  test("un reintento inmediato de renovación no pierde la sesión", repeatedRefresh.response.ok && !!repeatedRefresh.value.refreshToken);
 
   await request("/v1/auth/register-local", {
     method: "POST",

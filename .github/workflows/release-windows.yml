@@ -1,0 +1,52 @@
+name: Publicar Kiosco+ para Windows
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Descargar el proyecto
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Preparar pnpm
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Verificar que la etiqueta coincida con la versión
+        shell: pwsh
+        run: |
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($tagVersion -ne $packageVersion) {
+            throw "La etiqueta v$tagVersion no coincide con package.json ($packageVersion)."
+          }
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Probar la aplicación
+        run: |
+          pnpm run test:all
+          pnpm run test:cloud
+
+      - name: Crear instalador y publicar actualización
+        run: pnpm run desktop:release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}

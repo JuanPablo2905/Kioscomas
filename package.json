@@ -1,7 +1,13 @@
 {
   "name": "kiosco-app",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
+  "description": "Gestión simple de stock, ventas, caja y compras para comercios.",
+  "author": "Kiosco+",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JuanPablo2905/Kioscomas.git"
+  },
   "packageManager": "pnpm@11.9.0",
   "type": "module",
   "main": "desktop/main.cjs",
@@ -21,27 +27,30 @@
     "test:tutorials": "node scripts/tutorial-target-tests.mjs",
     "test:all": "node scripts/cloud-config-tests.mjs && node scripts/tutorial-target-tests.mjs && node scripts/smoke-views.mjs && node scripts/functional-tests.mjs && vite build",
     "desktop": "electron .",
-    "desktop:build": "vite build && electron-builder --win portable",
-    "desktop:launcher": "vite build && electron-builder --win portable --config.directories.output=launcher-build --config.portable.artifactName=KioscoPlus-Desarrollo.exe"
-    ,"cloud:dev": "node server/cloud-server.mjs",
+    "desktop:build": "vite build --mode cloud && electron-builder --win nsis --publish never",
+    "desktop:portable": "vite build --mode cloud && electron-builder --win portable --publish never",
+    "desktop:release": "vite build --mode cloud && electron-builder --win nsis --publish always",
+    "desktop:launcher": "vite build && electron-builder --win portable --config.directories.output=launcher-build --config.portable.artifactName=KioscoPlus-Desarrollo.exe",
+    "cloud:dev": "node server/cloud-server.mjs",
     "cloud:import": "node scripts/import-cloud-json-to-postgres.mjs",
     "dev:full": "node scripts/dev-full.mjs"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
+    "@vitejs/plugin-react": "6.0.3",
     "@zxing/browser": "0.1.5",
-    "autoprefixer": "latest",
-    "lucide-react": "latest",
-    "postcss": "latest",
+    "autoprefixer": "10.5.4",
+    "electron-updater": "6.8.9",
+    "lucide-react": "1.25.0",
+    "postcss": "8.5.20",
     "postgres": "3.4.9",
-    "react": "latest",
-    "react-dom": "latest",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "tailwindcss": "^3.4.17",
-    "vite": "latest"
+    "vite": "8.1.5"
   },
   "devDependencies": {
-    "electron": "latest",
-    "electron-builder": "latest"
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.kioscoplus.desktop",
@@ -64,11 +73,30 @@
       "server/**/*"
     ],
     "asar": true,
+    "generateUpdatesFilesForAllChannels": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "JuanPablo2905",
+        "repo": "Kioscomas",
+        "releaseType": "release"
+      }
+    ],
     "win": {
       "icon": "desktop/icon.ico",
       "target": [
-        "portable"
+        "nsis"
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kiosco+",
+      "artifactName": "KioscoPlus-Setup.exe",
+      "deleteAppDataOnUninstall": false
     },
     "portable": {
       "artifactName": "KioscoPlus-${version}-portable.exe"

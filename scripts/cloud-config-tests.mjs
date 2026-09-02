@@ -86,6 +86,10 @@ assert.equal(cloudSession()?.refreshToken, "remote-refresh", "a local session mu
 assert.equal(cloudSession(localUrl)?.accessToken, "local-token");
 assert.equal(cloudSessionBelongsToApi({ apiUrl: localUrl }, remoteUrl), false);
 
+sessionStorage.setItem("kiosco_cloud_session", JSON.stringify({ apiUrl: remoteUrl, refreshToken: "old-refresh", accessToken: "old-access", savedAt: "2026-01-01T00:00:00.000Z" }));
+localStorage.setItem("kiosco_cloud_session", JSON.stringify({ apiUrl: remoteUrl, refreshToken: "new-refresh", savedAt: "2026-01-01T00:01:00.000Z" }));
+assert.equal(cloudSession(remoteUrl)?.refreshToken, "new-refresh", "a tab must adopt a newer refresh token saved by another tab");
+
 sessionStorage.clear();
 localStorage.setItem("kiosco_cloud_session", JSON.stringify({ apiUrl: remoteUrl, refreshToken: "keep-on-temporary-error" }));
 const originalFetch = globalThis.fetch;
@@ -129,4 +133,4 @@ assert.equal(cloudSession(), null, "a mismatched local session must look disconn
 sessionStorage.setItem("kiosco_cloud_session", "{broken-json");
 assert.equal(cloudSession(), null, "corrupt saved sessions must not crash startup");
 
-console.log("cloud-config-tests: 30 assertions passed");
+console.log("cloud-config-tests: 31 assertions passed");

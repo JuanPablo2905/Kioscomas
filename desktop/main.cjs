@@ -1,9 +1,116 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, Notification } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFile, spawn } = require("child_process");
 
 let localCloudProcess = null;
+let desktopUpdater = null;
+let updateCheckTimer = null;
+let updateNoticeShownFor = "";
+let updatePolicy = { autoCheck: true, channel: "stable" };
+let updateState = {
+  supported: false,
+  status: "unavailable",
+  currentVersion: app.getVersion(),
+  availableVersion: null,
+  percent: 0,
+  error: null,
+  channel: "stable",
+};
+
+function publishUpdateState(patch = {}) {
+  updateState = { ...updateState, ...patch };
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send("kiosco:update-state", updateState);
+  }
+  return updateState;
+}
+
+function readableUpdateError(error) {
+  const message = String(error?.message || error || "No se pudo comprobar la actualización.");
+  return message.replace(/https?:\/\/\S+/g, "servidor de actualizaciones").slice(0, 240);
+}
+
+async function checkDesktopUpdates({ manual = false } = {}) {
+  if (!desktopUpdater) return updateState;
+  if (["checking", "downloading"].includes(updateState.status)) return updateState;
+  publishUpdateState({ status: "checking", error: null, manual });
+  try {
+    await desktopUpdater.checkForUpdates();
+  } catch (error) {
+    publishUpdateState({ status: "error", error: readableUpdateError(error), manual: false });
+  }
+  return updateState;
+}
+
+function applyUpdatePolicy(policy = {}) {
+  updatePolicy = {
+    autoCheck: typeof policy.autoCheck === "boolean" ? policy.autoCheck : updatePolicy.autoCheck,
+    channel: policy.channel === "beta" ? "beta" : "stable",
+  };
+  if (desktopUpdater) {
+    desktopUpdater.channel = updatePolicy.channel === "beta" ? "beta" : "latest";
+    desktopUpdater.allowPrerelease = updatePolicy.channel === "beta";
+  }
+  publishUpdateState({ channel: updatePolicy.channel });
+  return updateState;
+}
+
+function configureDesktopUpdater() {
+  if (!app.isPackaged || isDevelopmentLauncher()) {
+    publishUpdateState({ supported: false, status: "development" });
+    return;
+  }
+  try {
+    ({ autoUpdater: desktopUpdater } = require("electron-updater"));
+  } catch (error) {
+    publishUpdateState({ supported: false, status: "error", error: readableUpdateError(error) });
+    return;
+  }
+
+  desktopUpdater.autoDownload = true;
+  desktopUpdater.autoInstallOnAppQuit = true;
+  applyUpdatePolicy(updatePolicy);
+  publishUpdateState({ supported: true, status: "idle", currentVersion: app.getVersion(), error: null });
+
+  desktopUpdater.on("checking-for-update", () => publishUpdateState({ status: "checking", error: null }));
+  desktopUpdater.on("update-available", (info) => publishUpdateState({
+    status: "available",
+    availableVersion: info?.version || null,
+    releaseDate: info?.releaseDate || null,
+    error: null,
+  }));
+  desktopUpdater.on("update-not-available", () => publishUpdateState({
+    status: "up-to-date",
+    availableVersion: null,
+    percent: 0,
+    error: null,
+  }));
+  desktopUpdater.on("download-progress", (progress) => publishUpdateState({
+    status: "downloading",
+    percent: Math.max(0, Math.min(100, Number(progress?.percent || 0))),
+    error: null,
+  }));
+  desktopUpdater.on("update-downloaded", (info) => {
+    const version = info?.version || updateState.availableVersion || "nueva";
+    publishUpdateState({ status: "downloaded", availableVersion: version, percent: 100, error: null });
+    if (updateNoticeShownFor === version || !Notification.isSupported()) return;
+    updateNoticeShownFor = version;
+    new Notification({
+      title: "Actualización de Kiosco+ lista",
+      body: `La versión ${version} se instalará cuando cierres la aplicación.`,
+      icon: path.join(__dirname, "icon.png"),
+    }).show();
+  });
+  desktopUpdater.on("error", (error) => publishUpdateState({ status: "error", error: readableUpdateError(error) }));
+
+  setTimeout(() => {
+    if (updatePolicy.autoCheck) checkDesktopUpdates();
+  }, 15000);
+  updateCheckTimer = setInterval(() => {
+    if (updatePolicy.autoCheck) checkDesktopUpdates();
+  }, 4 * 60 * 60 * 1000);
+}
 
 function isDevelopmentLauncher() {
   return !app.isPackaged
@@ -169,6 +276,15 @@ function createWindow() {
   });
 }
 
+ipcMain.handle("kiosco:updates:get-state", () => updateState);
+ipcMain.handle("kiosco:updates:check", () => checkDesktopUpdates({ manual: true }));
+ipcMain.handle("kiosco:updates:configure", (_event, policy) => applyUpdatePolicy(policy));
+ipcMain.handle("kiosco:updates:install", () => {
+  if (!desktopUpdater || updateState.status !== "downloaded") return { ok: false };
+  setImmediate(() => desktopUpdater.quitAndInstall(false, true));
+  return { ok: true };
+});
+
 ipcMain.handle("kiosco:open-cash-drawer", async (_event, { printerName = "" } = {}) => new Promise((resolve) => {
   if (process.platform !== "win32") return resolve({ ok: false, error: "El pulso ESC/POS está disponible en Windows." });
   const encodedPrinter = Buffer.from(String(printerName), "utf8").toString("base64");
@@ -195,12 +311,16 @@ app.whenReady().then(() => {
   if (process.platform === "win32") app.setAppUserModelId("com.kioscoplus.desktop");
   if (isDevelopmentLauncher() || process.env.KIOSCO_ENABLE_LOCAL_CLOUD === "1") startLocalCloud();
   createWindow();
+  configureDesktopUpdater();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
-app.on("before-quit", stopLocalCloud);
+app.on("before-quit", () => {
+  if (updateCheckTimer) clearInterval(updateCheckTimer);
+  stopLocalCloud();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

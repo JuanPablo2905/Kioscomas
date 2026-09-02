@@ -25,16 +25,26 @@ const parseStoredSession = (storageArea) => {
 export const cloudSessionBelongsToApi = (session, apiUrl) => !apiUrl || normalizeCloudApiUrl(session?.apiUrl) === normalizeCloudApiUrl(apiUrl);
 
 const durableSession = (value) => value?.refreshToken ? { ...value, accessToken: undefined } : null;
+const savedAt = (value) => Date.parse(value?.savedAt || "") || 0;
 
 const read = (apiUrl = "") => {
   const volatile = parseStoredSession(globalThis.sessionStorage);
-  if (volatile && cloudSessionBelongsToApi(volatile, apiUrl)) return volatile;
   const durable = parseStoredSession(globalThis.localStorage);
-  return durable && cloudSessionBelongsToApi(durable, apiUrl) ? durable : null;
+  const scopedVolatile = volatile && cloudSessionBelongsToApi(volatile, apiUrl) ? volatile : null;
+  const scopedDurable = durable && cloudSessionBelongsToApi(durable, apiUrl) ? durable : null;
+  if (!scopedVolatile) return scopedDurable;
+  if (!scopedDurable) return scopedVolatile;
+  // localStorage se comparte entre pestañas. Si otra pestaña renovó el token,
+  // usar esa copia más nueva en vez de insistir con la sesión vieja guardada
+  // en sessionStorage.
+  if (scopedVolatile.refreshToken !== scopedDurable.refreshToken && savedAt(scopedDurable) > savedAt(scopedVolatile)) {
+    return scopedDurable;
+  }
+  return scopedVolatile;
 };
 
 const save = (value) => {
-  const scoped = { ...value, apiUrl: normalizeCloudApiUrl(value?.apiUrl) };
+  const scoped = { ...value, apiUrl: normalizeCloudApiUrl(value?.apiUrl), savedAt: new Date().toISOString() };
   const serialized = JSON.stringify(scoped);
   globalThis.sessionStorage?.setItem(SESSION_KEY, serialized);
   const durable = isLocalCloudApiUrl(scoped.apiUrl) ? scoped : durableSession(scoped);
@@ -138,8 +148,10 @@ async function refreshCloud(apiUrl) {
     body: JSON.stringify({ refreshToken: current.refreshToken }),
   });
   if (!response.ok) {
-    const latest = read(normalizedApiUrl);
-    if (latest?.refreshToken && latest.refreshToken !== current.refreshToken) return latest;
+    const latestDurable = parseStoredSession(globalThis.localStorage);
+    if (cloudSessionBelongsToApi(latestDurable, normalizedApiUrl)
+      && latestDurable?.refreshToken
+      && latestDurable.refreshToken !== current.refreshToken) return latestDurable;
     const detail = await response.json().catch(() => ({}));
     if (![401, 403].includes(response.status)) {
       const error = new Error(detail.error || `La nube no pudo renovar la sesión temporalmente (${response.status}).`);
@@ -149,8 +161,10 @@ async function refreshCloud(apiUrl) {
     }
     const volatile = parseStoredSession(globalThis.sessionStorage);
     const durable = parseStoredSession(globalThis.localStorage);
-    if (cloudSessionBelongsToApi(volatile, normalizedApiUrl)) globalThis.sessionStorage?.removeItem(SESSION_KEY);
-    if (cloudSessionBelongsToApi(durable, normalizedApiUrl)) globalThis.localStorage?.removeItem(SESSION_KEY);
+    if (cloudSessionBelongsToApi(volatile, normalizedApiUrl)
+      && volatile?.refreshToken === current.refreshToken) globalThis.sessionStorage?.removeItem(SESSION_KEY);
+    if (cloudSessionBelongsToApi(durable, normalizedApiUrl)
+      && durable?.refreshToken === current.refreshToken) globalThis.localStorage?.removeItem(SESSION_KEY);
     globalThis.window?.dispatchEvent?.(new Event("kiosco-cloud-session-changed"));
     return null;
   }

@@ -270,6 +270,21 @@ export default function KioscoApp() {
   const scannerLastKeyRef = useRef(0);
   const autoTutorialRef = useRef(false);
 
+  useEffect(() => {
+    const updates = window.kioscoDesktop?.updates;
+    if (!updates) return undefined;
+    const applySavedUpdatePolicy = () => {
+      const config = loadCloudConfig();
+      updates.configure({
+        channel: config.updateChannel,
+        autoCheck: config.autoCheckUpdates,
+      }).catch(() => {});
+    };
+    applySavedUpdatePolicy();
+    window.addEventListener("kiosco-cloud-config-changed", applySavedUpdatePolicy);
+    return () => window.removeEventListener("kiosco-cloud-config-changed", applySavedUpdatePolicy);
+  }, []);
+
   // Cargar todo lo guardado al abrir la app.
   useEffect(() => {
     let activo = true;
