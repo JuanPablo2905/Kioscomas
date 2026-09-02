@@ -16,6 +16,11 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
     max: 5,
     idle_timeout: 20,
     connect_timeout: 15,
+    // A dropped pooler connection must fail fast. Otherwise one request can
+    // occupy the server mutation queue forever and make every client look
+    // offline until Render restarts the process.
+    query_timeout: 20,
+    max_lifetime: 60 * 10,
     prepare: false,
     ssl: "require",
   });

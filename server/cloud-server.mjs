@@ -911,13 +911,37 @@ const handleRequest = async (req, res) => {
 // this queue also protects the local JSON fallback and prevents two requests
 // in the same Render instance from calculating over stale state.
 let databaseRequestMutation = Promise.resolve();
+const DATABASE_REQUEST_TIMEOUT_MS = 30_000;
 const bypassDatabaseQueue = (req) => req.method === "OPTIONS"
   || req.url === "/v1/health"
   || req.url?.startsWith("/v1/releases/latest")
   || req.url === "/v1/catalog/providers";
 
+const runQueuedRequest = async (req, res) => {
+  let timeoutId;
+  try {
+    await Promise.race([
+      handleRequest(req, res),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error("database_request_timeout")), DATABASE_REQUEST_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error) {
+    console.error("La petición a la base excedió el tiempo permitido", {
+      method: req.method,
+      url: req.url,
+      error: error?.message || String(error),
+    });
+    if (!res.headersSent && !res.destroyed) {
+      send(res, 503, { error: "La nube está tardando demasiado. Intentá nuevamente en unos segundos." });
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const server = http.createServer((req, res) => {
-  const run = () => handleRequest(req, res);
+  const run = () => runQueuedRequest(req, res);
   if (bypassDatabaseQueue(req)) {
     run();
     return;
