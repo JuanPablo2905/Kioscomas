@@ -62,6 +62,21 @@ export async function bootstrapCloud(apiUrl, payload) {
   });
 }
 
+export async function registerCloudAccount(apiUrl, payload) {
+  const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const detail = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(detail.error || `No se pudo crear la cuenta en la nube (${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
+  return detail;
+}
+
 export async function loginCloud(apiUrl, username, password, deviceId) {
   const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/login`, {
     method: "POST",

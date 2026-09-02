@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { repository } from "../cloud/repository";
 import { loadCloudConfig } from "../cloud/config";
-import { ensureLocalCloudSession, loginCloud, logoutCloud } from "../cloud/cloudAuth";
+import { ensureLocalCloudSession, loginCloud, logoutCloud, registerCloudAccount } from "../cloud/cloudAuth";
 import { clearLoginFailures, createSession, loginGuard, registerLoginFailure, secureAccounts, secureSubject, validSession, verifyPassword } from "../security/auth";
-import { accountAccessMessage, canAccessAccount, formatAccessExpiration, grantTrialAccess, trialAccessStatus } from "../security/trialAccess";
+import { accountAccessMessage, canAccessAccount, formatAccessExpiration, trialAccessStatus } from "../security/trialAccess";
 import { Sidebar } from "../shared/layout";
 import { ViewErrorBoundary } from "../shared/ViewErrorBoundary";
 import { Home, ReportarProblemaModal } from "../features/inicio/Home";
@@ -42,7 +42,7 @@ import { cloudFetch, cloudSession } from "../cloud/cloudAuth";
 import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
 import { PromptDialog } from "../shared/controls";
 import { clearInstallationReceipt, loadInstallationReceipt, markLegacyInstallation, redeemInstallationCode, saveInstallationReceipt, verifyInstallationActivation } from "../security/installationActivation";
-import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, rolesPorDefecto, seedCuentas, seedDatos } from "./data";
+import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, seedCuentas, seedDatos } from "./data";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const PUBLIC_DEMO_MODE = import.meta.env.VITE_PUBLIC_DEMO === "true";
@@ -240,11 +240,12 @@ export default function KioscoApp() {
   const [activationStatus, setActivationStatus] = useState("checking");
   const [activationDeviceId, setActivationDeviceId] = useState("");
   const [activationAppVersion, setActivationAppVersion] = useState("");
-  const [cuentas, setCuentas] = useState(seedCuentas());
-  const [datos, setDatos] = useState(seedDatos());
+  const [cuentas, setCuentas] = useState(() => PUBLIC_DEMO_MODE ? seedCuentas() : []);
+  const [datos, setDatos] = useState(() => PUBLIC_DEMO_MODE ? seedDatos() : {});
   const [currentUserId, setCurrentUserId] = useState(null);
   const [identidad, setIdentidad] = useState(null); // { rol, nombre }
   const [loginError, setLoginError] = useState("");
+  const [loginNotice, setLoginNotice] = useState("");
   const [notasAdmin, setNotasAdmin] = useState([]);
   const [authSecurity, setAuthSecurity] = useState({});
   const [sessionExpiresAt, setSessionExpiresAt] = useState(null);
@@ -299,6 +300,22 @@ export default function KioscoApp() {
         repository.get("cuentas", []), repository.get("datos", {}), repository.get("sesion", null), repository.get("notasAdmin", []), repository.get("authSecurity", {}), repository.get("reportesProblemas", []), repository.get("menuPreferences", {}), repository.get("userPreferences", {}),
       ]);
       if (!activo) return;
+      let accountsToLoad = Array.isArray(cuentasGuardadas) ? cuentasGuardadas : [];
+      if (!PUBLIC_DEMO_MODE) {
+        const cleanedAccounts = [];
+        for (const account of accountsToLoad) {
+          const isBundledBusiness = (
+            (String(account?.id) === "2" && String(account?.usuario || "").toLowerCase() === "sur" && /demo/i.test(String(account?.nombreNegocio || "")))
+            || (String(account?.id) === "3" && String(account?.usuario || "").toLowerCase() === "pruebas" && /negocio de pruebas/i.test(String(account?.nombreNegocio || "")))
+          );
+          let isBundledAdmin = false;
+          if (String(account?.id) === "1" && String(account?.usuario || "").toLowerCase() === "demo") {
+            try { isBundledAdmin = await verifyPassword("1234", account); } catch {}
+          }
+          if (!isBundledBusiness && !isBundledAdmin) cleanedAccounts.push(account);
+        }
+        accountsToLoad = cleanedAccounts;
+      }
       let requiresActivation = false;
       let runtime = null;
       if (!PUBLIC_DEMO_MODE && window.kioscoDesktop?.runtime?.get) {
@@ -308,14 +325,17 @@ export default function KioscoApp() {
         const config = loadCloudConfig();
         const receipt = loadInstallationReceipt();
         const hasExistingInstallation = Boolean(
-          validSession(sesion)
-          || (Array.isArray(cuentasGuardadas) && cuentasGuardadas.some((account) => ![1, 2, 3].includes(account.id)))
+          (validSession(sesion) && accountsToLoad.some((account) => String(account.id) === String(sesion.accountId)))
+          || accountsToLoad.length
           || (datosGuardados && Object.keys(datosGuardados).some((id) => !["1", "2", "3"].includes(String(id)))),
         );
         setActivationDeviceId(config.deviceId);
         setActivationAppVersion(runtime.version || "");
         if (receipt?.activated && receipt.deviceId === config.deviceId) {
-          if (receipt.mode === "code") {
+          if (receipt.mode === "legacy" && !hasExistingInstallation) {
+            clearInstallationReceipt();
+            requiresActivation = true;
+          } else if (receipt.mode === "code") {
             try {
               const verified = await verifyInstallationActivation(config.apiUrl, config.deviceId, runtime.version);
               if (!verified.activated) {
@@ -339,24 +359,34 @@ export default function KioscoApp() {
         }
       }
       let loadedAccounts;
-      try { loadedAccounts = await secureAccounts(migrarCuentasDemo(cuentasGuardadas)); } catch { loadedAccounts = await secureAccounts(seedCuentas()); }
+      try { loadedAccounts = await secureAccounts(migrarCuentasDemo(accountsToLoad, { includeSeeds: PUBLIC_DEMO_MODE })); } catch { loadedAccounts = PUBLIC_DEMO_MODE ? await secureAccounts(seedCuentas()) : []; }
       setCuentas(loadedAccounts);
       if (datosGuardados) {
         try {
-          const guardados = datosGuardados;
-          const demoActual = seedDatos()[2];
-          if ((guardados?.[2]?.demoSeedVersion || 0) < demoActual.demoSeedVersion) {
-            guardados[2] = demoActual;
+          const guardados = { ...datosGuardados };
+          if (PUBLIC_DEMO_MODE) {
+            const demoActual = seedDatos()[2];
+            if ((guardados?.[2]?.demoSeedVersion || 0) < demoActual.demoSeedVersion) guardados[2] = demoActual;
+          } else {
+            for (const id of ["1", "2", "3"]) {
+              if (!loadedAccounts.some((account) => String(account.id) === id)) delete guardados[id];
+            }
           }
-          setDatos(migrarDatosDemo(guardados));
+          setDatos(migrarDatosDemo(guardados, { includeSeeds: PUBLIC_DEMO_MODE }));
         } catch {}
       }
       if (PUBLIC_DEMO_MODE) {
         setCurrentUserId(2);
         setIdentidad(PUBLIC_DEMO_IDENTITY);
         setSessionExpiresAt(null);
-      } else if (validSession(sesion) && (sesion.identity?.superAdmin || sesion.identity?.adminApp || canAccessAccount(loadedAccounts.find((account) => account.id === sesion.accountId)))) { setCurrentUserId(sesion.accountId); setIdentidad(sesion.identity); setSessionExpiresAt(sesion.expiresAt); }
-      else await repository.delete("sesion");
+      } else {
+        const sessionAccount = loadedAccounts.find((account) => String(account.id) === String(sesion?.accountId));
+        if (validSession(sesion) && sessionAccount && (sesion.identity?.superAdmin || sesion.identity?.adminApp || canAccessAccount(sessionAccount))) {
+          setCurrentUserId(sessionAccount.id);
+          setIdentidad(sesion.identity);
+          setSessionExpiresAt(sesion.expiresAt);
+        } else await repository.delete("sesion");
+      }
       setNotasAdmin(notas || []);
       setAuthSecurity(security || {});
       setReportesProblemas(reportes || []);
@@ -391,8 +421,12 @@ export default function KioscoApp() {
   useEffect(() => {
     const reloadRemote = async () => {
       const [remoteData, remoteAccounts] = await Promise.all([repository.get("datos", {}), repository.get("cuentas", [])]);
-      setDatos(migrarDatosDemo(remoteData));
-      setCuentas(await secureAccounts(migrarCuentasDemo(remoteAccounts)));
+      setDatos(migrarDatosDemo(remoteData, { includeSeeds: PUBLIC_DEMO_MODE }));
+      const preparedAccounts = await secureAccounts(migrarCuentasDemo(remoteAccounts, { includeSeeds: PUBLIC_DEMO_MODE }));
+      setCuentas((previous) => {
+        const localAdmins = previous.filter((account) => account.superAdmin && !preparedAccounts.some((remote) => String(remote.id) === String(account.id)));
+        return [...localAdmins, ...preparedAccounts];
+      });
     };
     window.addEventListener("kiosco-cloud-update", reloadRemote);
     return () => window.removeEventListener("kiosco-cloud-update", reloadRemote);
@@ -874,29 +908,70 @@ export default function KioscoApp() {
       .catch((error) => repository.reportSyncError(error));
   };
 
+  const prepareCloudAccount = async (account) => {
+    if (!account) return null;
+    const [prepared] = await secureAccounts(migrarCuentasDemo([account], { includeSeeds: false }));
+    return prepared || null;
+  };
+
+  const saveCloudAccountLocally = (account) => {
+    setCuentas((previous) => [...previous.filter((item) => String(item.id) !== String(account.id)), account]);
+    setDatos((previous) => previous[account.id]
+      ? previous
+      : { ...previous, [account.id]: { ...defaultDataset(false), tenantId: String(account.id) } });
+  };
+
+  const startAuthenticatedCloudSync = (account) => {
+    repository.setContext({ tenantId: String(account.id), isSystemAdmin: !!account.superAdmin });
+    if (!PUBLIC_DEMO_MODE) repository.seedCurrentTenant().catch((error) => repository.reportSyncError(error));
+  };
+
   const handleLogin = async ({ usuario, password }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "").trim();
+    setLoginNotice("");
     const guard = loginGuard(authSecurity, normalizedUser);
     if (guard.blocked) { setLoginError(`Acceso bloqueado temporalmente. Probá nuevamente en ${Math.ceil(guard.remainingMs / 60000)} minuto(s).`); return; }
     const cuentaCandidate = cuentas.find((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase());
     const cuenta = cuentaCandidate && await verifyPassword(normalizedPassword, cuentaCandidate) ? cuentaCandidate : null;
     if (cuenta) {
-      if (!cuenta.superAdmin && !canAccessAccount(cuenta)) {
-        setLoginError(accountAccessMessage(cuenta));
+      let activeAccount = cuenta;
+      let cloudReady = false;
+      const cloudConfig = loadCloudConfig();
+      if (!cuenta.superAdmin && cloudConfig.enabled && cloudConfig.apiUrl && navigator.onLine) {
+        try {
+          const remoteSession = await loginCloud(cloudConfig.apiUrl, normalizedUser, normalizedPassword, cloudConfig.deviceId);
+          const remoteAccount = await prepareCloudAccount(remoteSession.account);
+          if (remoteAccount) {
+            activeAccount = remoteAccount;
+            saveCloudAccountLocally(remoteAccount);
+          }
+          cloudReady = true;
+        } catch (error) {
+          if (!canAccessAccount(cuenta)) {
+            setLoginError(error?.message || "No se pudo consultar si la cuenta ya fue habilitada.");
+            return;
+          }
+          repository.reportSyncError(error);
+        }
+      }
+      if (!activeAccount.superAdmin && !canAccessAccount(activeAccount)) {
+        logoutCloud(cloudConfig.apiUrl).catch(() => {});
+        setLoginError(accountAccessMessage(activeAccount));
         return;
       }
       setLoginError("");
       setView("home");
-      setCurrentUserId(cuenta.id);
-      const identity = { usuarioId: `cuenta:${cuenta.id}`, tenantId: String(cuenta.id), rol: cuenta.superAdmin ? "Administrador de la app" : "Dueño", nombre: cuenta.nombre, superAdmin: !!cuenta.superAdmin, adminId: cuenta.superAdmin ? cuenta.id : null };
+      setCurrentUserId(activeAccount.id);
+      const identity = { usuarioId: `cuenta:${activeAccount.id}`, tenantId: String(activeAccount.id), rol: activeAccount.superAdmin ? "Administrador de la app" : "Dueño", nombre: activeAccount.nombre, superAdmin: !!activeAccount.superAdmin, adminId: activeAccount.superAdmin ? activeAccount.id : null };
       setIdentidad(identity);
-      connectLocalCloud({ businessId: cuenta.id, username: normalizedUser, password: normalizedPassword, name: cuenta.nombre, superAdmin: !!cuenta.superAdmin });
-      const session = createSession(cuenta.id, identity);
-      const trial = trialAccessStatus(cuenta);
+      if (cloudReady) startAuthenticatedCloudSync(activeAccount);
+      else connectLocalCloud({ businessId: activeAccount.id, username: normalizedUser, password: normalizedPassword, name: activeAccount.nombre, superAdmin: !!activeAccount.superAdmin });
+      const session = createSession(activeAccount.id, identity);
+      const trial = trialAccessStatus(activeAccount);
       setSessionExpiresAt(trial.active && new Date(trial.expiresAt) < new Date(session.expiresAt) ? trial.expiresAt : session.expiresAt);
       setAuthSecurity((prev) => clearLoginFailures(prev, normalizedUser));
-      setDatos((prev) => ({ ...prev, [cuenta.id]: { ...prev[cuenta.id], auditoria: [...(prev[cuenta.id]?.auditoria || []), { id: Date.now(), fecha: new Date().toISOString(), tenantId: String(cuenta.id), usuario: cuenta.nombre, usuarioId: identity.usuarioId, rol: identity.rol, origen: cuenta.superAdmin ? "administracion_app" : "dueno", seccion: "seguridad", accion: "inicio_sesion", detalle: "Inicio de sesión", resultado: "exitoso" }] } }));
+      setDatos((prev) => ({ ...prev, [activeAccount.id]: { ...prev[activeAccount.id], auditoria: [...(prev[activeAccount.id]?.auditoria || []), { id: Date.now(), fecha: new Date().toISOString(), tenantId: String(activeAccount.id), usuario: activeAccount.nombre, usuarioId: identity.usuarioId, rol: identity.rol, origen: activeAccount.superAdmin ? "administracion_app" : "dueno", seccion: "seguridad", accion: "inicio_sesion", detalle: "Inicio de sesión", resultado: "exitoso" }] } }));
       return;
     }
 
@@ -923,6 +998,57 @@ export default function KioscoApp() {
       }
     }
 
+    const cloudConfig = loadCloudConfig();
+    if (cloudConfig.enabled && cloudConfig.apiUrl && navigator.onLine) {
+      try {
+        const remoteSession = await loginCloud(cloudConfig.apiUrl, normalizedUser, normalizedPassword, cloudConfig.deviceId);
+        let remoteAccount = await prepareCloudAccount(remoteSession.account);
+        if (!remoteAccount && remoteSession.user?.role === "superAdmin") {
+          remoteAccount = await secureSubject({
+            id: remoteSession.user.businessId || "system-admin",
+            tenantId: String(remoteSession.user.businessId || "system-admin"),
+            nombre: remoteSession.user.name || "Administrador de Kiosco+",
+            nombreNegocio: "Administración de Kiosco+",
+            usuario: normalizedUser,
+            password: normalizedPassword,
+            superAdmin: true,
+            tipo: "administrador_app",
+            estado: "aprobada",
+            modoNegocio: "equipo",
+            roles: [],
+            empleados: [],
+          });
+        }
+        if (!remoteAccount) throw new Error("La cuenta existe en la nube, pero todavía no está asociada a un negocio.");
+        saveCloudAccountLocally(remoteAccount);
+        if (!remoteAccount.superAdmin && !canAccessAccount(remoteAccount)) {
+          await logoutCloud(cloudConfig.apiUrl).catch(() => {});
+          setLoginError(accountAccessMessage(remoteAccount));
+          return;
+        }
+        const employee = remoteSession.user?.role === "employee"
+          ? (remoteAccount.empleados || []).find((item) => String(item.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())
+          : null;
+        const identity = employee
+          ? { usuarioId: `empleado:${employee.id}`, tenantId: String(remoteAccount.id), rol: employee.rol, nombre: employee.nombre, superAdmin: false }
+          : { usuarioId: `cuenta:${remoteAccount.id}`, tenantId: String(remoteAccount.id), rol: remoteAccount.superAdmin ? "Administrador de la app" : "Dueño", nombre: remoteAccount.nombre, superAdmin: !!remoteAccount.superAdmin, adminId: remoteAccount.superAdmin ? remoteAccount.id : null };
+        setLoginError("");
+        setView("home");
+        setCurrentUserId(remoteAccount.id);
+        setIdentidad(identity);
+        startAuthenticatedCloudSync(remoteAccount);
+        const session = createSession(remoteAccount.id, identity);
+        const access = trialAccessStatus(remoteAccount);
+        setSessionExpiresAt(access.active && new Date(access.expiresAt) < new Date(session.expiresAt) ? access.expiresAt : session.expiresAt);
+        setAuthSecurity((previous) => clearLoginFailures(previous, normalizedUser));
+        return;
+      } catch (error) {
+        setAuthSecurity((previous) => registerLoginFailure(previous, normalizedUser));
+        setLoginError(error?.message || "Usuario o contraseña incorrectos.");
+        return;
+      }
+    }
+
     setAuthSecurity((prev) => registerLoginFailure(prev, normalizedUser));
     setLoginError("Usuario o contraseña incorrectos.");
   };
@@ -934,33 +1060,35 @@ export default function KioscoApp() {
       setLoginError("Ese usuario ya existe, elegí otro.");
       return;
     }
-    const id = Date.now();
-    const secured = grantTrialAccess(await secureSubject({
-        id,
-        tenantId: String(id),
-        nombre,
-        usuario: normalizedUser,
+    const cloudConfig = loadCloudConfig();
+    if (!cloudConfig.enabled || !cloudConfig.apiUrl) {
+      setLoginError("Esta instalación no está conectada a la nube. Revisá tu conexión e intentá nuevamente.");
+      return;
+    }
+    if (!navigator.onLine) {
+      setLoginError("Necesitás Internet para enviar la solicitud de cuenta.");
+      return;
+    }
+    try {
+      const result = await registerCloudAccount(cloudConfig.apiUrl, {
+        deviceId: cloudConfig.deviceId,
+        name: nombre,
+        username: normalizedUser,
         password: normalizedPassword,
-        nombreNegocio,
-        modoNegocio,
-        superAdmin: false,
-        estado: "pendiente",
-        roles: rolesPorDefecto(),
-        empleados: [],
-      }), 1);
-    setCuentas((prev) => [
-      ...prev,
-      secured,
-    ]);
-    setDatos((prev) => ({ ...prev, [id]: { ...defaultDataset(false), tenantId: String(id) } }));
-    const identity = { usuarioId: `cuenta:${id}`, tenantId: String(id), rol: "Dueño", nombre, superAdmin: false, trial: true };
-    setLoginError("");
-    setCurrentUserId(id);
-    setIdentidad(identity);
-    setView("home");
-    connectLocalCloud({ businessId: id, username: normalizedUser, password: normalizedPassword, name: nombre });
-    const session = createSession(id, identity);
-    setSessionExpiresAt(new Date(secured.trialExpiresAt) < new Date(session.expiresAt) ? secured.trialExpiresAt : session.expiresAt);
+        businessName: nombreNegocio,
+        businessMode: modoNegocio,
+      });
+      const account = await prepareCloudAccount(result.account);
+      if (!account) throw new Error("La nube no devolvió la cuenta creada.");
+      saveCloudAccountLocally(account);
+      setLoginError("");
+      setLoginNotice("Solicitud enviada. La cuenta quedó pendiente; vas a poder entrar con este usuario y contraseña cuando el administrador la habilite.");
+      return { ok: true };
+    } catch (error) {
+      setLoginNotice("");
+      setLoginError(error?.message || "No se pudo enviar la solicitud de cuenta.");
+      return { ok: false };
+    }
   };
 
   const handleLogout = () => {
@@ -984,8 +1112,8 @@ export default function KioscoApp() {
     await Promise.allSettled([
       repository.delete("cuentas"), repository.delete("datos"), repository.delete("sesion"), repository.delete("identidad"), repository.delete("notasAdmin"), repository.delete("authSecurity"), repository.delete("reportesProblemas"), repository.delete("menuPreferences"), repository.delete("userPreferences"),
     ]);
-    setCuentas(await secureAccounts(seedCuentas()));
-    setDatos(seedDatos());
+    setCuentas(PUBLIC_DEMO_MODE ? await secureAccounts(seedCuentas()) : []);
+    setDatos(PUBLIC_DEMO_MODE ? seedDatos() : {});
     setCurrentUserId(null);
     setIdentidad(null);
     setNotasAdmin([]);
@@ -1023,7 +1151,9 @@ export default function KioscoApp() {
         onLogin={handleLogin}
         onRegister={handleRegister}
         error={loginError}
+        notice={loginNotice}
         onReset={handleReset}
+        showDemoAccounts={PUBLIC_DEMO_MODE}
       />
     );
   }

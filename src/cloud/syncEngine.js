@@ -185,6 +185,14 @@ export const syncEngine = {
       throw new Error(`No se pudo preparar la copia de nube (${response.status}).`);
     }
     const remote = await response.json();
+    const queuedBeforeBootstrap = await readJson(QUEUE_KEY, []);
+    const hasQueuedAccountUpdate = queuedBeforeBootstrap.some(
+      (item) => belongsToTenant(item, tenantId) && item.type === "system_set" && item.key === "cuentas",
+    );
+    if (Array.isArray(remote.accounts) && !hasQueuedAccountUpdate) {
+      await writeJson("cuentas", remote.accounts);
+      window.dispatchEvent(new CustomEvent("kiosco-cloud-update", { detail: { tenantId, bootstrap: true, accounts: true } }));
+    }
     if (!remote.hasData) return { hasRemoteData: false, cursor: Number(remote.cursor || 0) };
 
     // Una carga inicial es sólo una propuesta para una nube vacía. Si el
@@ -350,7 +358,11 @@ export const syncEngine = {
       }
       const remote = await pull.json();
       for (const operation of remote.operations || []) {
-        const normalized = normalizeOperation(operation); if (!normalized || normalized.tenantId !== tenantId) continue;
+        const normalized = normalizeOperation(operation);
+        const isAdminAccountUpdate = normalized?.type === "system_set"
+          && normalized.key === "cuentas"
+          && cloudSession(config.apiUrl)?.user?.role === "superAdmin";
+        if (!normalized || (normalized.tenantId !== tenantId && !isAdminAccountUpdate)) continue;
         if (["entity_upsert","entity_delete"].includes(normalized.type)) {
           await withDataStorageLock(async () => {
             const conflicts = await readJson(CONFLICTS_KEY, []);

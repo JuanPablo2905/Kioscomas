@@ -114,6 +114,41 @@ try {
     body: JSON.stringify({ deviceId: "other-activation-pc", code: createdActivationCode.value.code }),
   });
   test("una clave de una sola PC no se puede compartir", reusedActivationCode.response.status === 409);
+  const unactivatedRegistration = await request("/v1/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "not-activated-pc", name: "Cliente", businessName: "Kiosco sin activar", businessMode: "solo", username: "not-activated-owner", password: "1234" }),
+  });
+  test("una PC sin clave de instalación no puede solicitar una cuenta", unactivatedRegistration.response.status === 403);
+  const registration = await request("/v1/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Cliente Nuevo", businessName: "Kiosco Nuevo", businessMode: "solo", username: "new-owner", password: "new-secret" }),
+  });
+  const registeredAccount = registration.value.account;
+  test("una PC activada envía el alta como pendiente", registration.response.status === 201 && registeredAccount?.estado === "pendiente" && !registeredAccount?.trialExpiresAt);
+  const duplicateRegistration = await request("/v1/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Otro", businessName: "Otro", username: "new-owner", password: "new-secret" }),
+  });
+  test("no se puede registrar dos veces el mismo usuario", duplicateRegistration.response.status === 409);
+  const pendingLogin = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "new-owner", password: "new-secret", deviceId: "activation-pc" }),
+  });
+  test("el inicio de sesión devuelve el estado actualizado de la cuenta", pendingLogin.value.account?.id === registeredAccount.id && pendingLogin.value.account?.estado === "pendiente");
+  const pendingHeaders = {
+    "content-type": "application/json",
+    "x-device-id": "activation-pc",
+    "x-tenant-id": registeredAccount.id,
+    authorization: `Bearer ${pendingLogin.value.accessToken}`,
+  };
+  const pendingWrite = await request("/v1/sync/push", { method: "POST", headers: pendingHeaders, body: JSON.stringify({ operations: [] }) });
+  test("una cuenta pendiente no puede escribir datos antes del pago", pendingWrite.response.status === 403);
+  const centralRegistrationPull = await request("/v1/sync/pull?since=0", { headers: centralHeaders });
+  test("el administrador recibe la nueva solicitud en su padrón", centralRegistrationPull.value.operations?.some((item) => item.type === "system_set" && item.value?.some((account) => account.id === registeredAccount.id)));
   const activationDirectory = await request("/v1/admin/activation-codes", { headers: centralHeaders });
   const savedActivationCode = activationDirectory.value.codes?.find((item) => item.id === createdActivationCode.value.item?.id);
   test("el panel muestra usos y equipos sin exponer la clave completa", savedActivationCode?.uses === 1 && !JSON.stringify(savedActivationCode).includes(createdActivationCode.value.code) && activationDirectory.value.activations?.some((item) => item.deviceId === "activation-pc"));
@@ -134,10 +169,19 @@ try {
       tenantId: "system-admin",
       type: "system_set",
       key: "cuentas",
-      value: [{ id: "business-lazy", usuario: "lazy-owner", nombre: "Dueño migrado", estado: "aprobada", passwordHash: portableHash, passwordSalt: portableSalt, passwordVersion: 1 }],
+      value: [
+        { ...registeredAccount, estado: "aprobada", subscriptionExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
+        { id: "business-lazy", usuario: "lazy-owner", nombre: "Dueño migrado", estado: "aprobada", passwordHash: portableHash, passwordSalt: portableSalt, passwordVersion: 1 },
+      ],
     }] }),
   });
   test("el administrador publica el padrón de cuentas", accountDirectory.value.acceptedIds?.includes("seed-lazy-cloud-user"));
+  const approvedLogin = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "new-owner", password: "new-secret", deviceId: "activation-pc" }),
+  });
+  test("después del pago la PC recibe la cuenta habilitada", approvedLogin.value.account?.estado === "aprobada" && Date.parse(approvedLogin.value.account?.subscriptionExpiresAt) > Date.now());
   const rejectedLazyLogin = await request("/v1/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },

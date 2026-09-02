@@ -122,7 +122,7 @@ export const seedCuentas = () => [
   },
 ];
 
-export const migrarCuentasDemo = (cuentasGuardadas) => {
+export const migrarCuentasDemo = (cuentasGuardadas, { includeSeeds = true } = {}) => {
   const cuentas = Array.isArray(cuentasGuardadas) ? cuentasGuardadas : [];
   const seeds = seedCuentas();
   const admin = seeds.find((cuenta) => cuenta.id === 1);
@@ -136,12 +136,20 @@ export const migrarCuentasDemo = (cuentasGuardadas) => {
     ...cuenta,
     estado: cuenta.estado || "aprobada",
     modoNegocio: cuenta.modoNegocio || ((cuenta.empleados || []).length > 0 ? "equipo" : "solo"),
-    roles: (cuenta.roles || rolesPorDefecto()).map((rol) =>
+    roles: (Array.isArray(cuenta.roles) && cuenta.roles.length ? cuenta.roles : rolesPorDefecto()).map((rol) =>
       rol.nombre === "Administrador"
         ? { ...rol, permisos: [...new Set([...(rol.permisos || []), "notificaciones", "gastos", "administracion", "editar_precios", "corregir_caja", "aplicar_descuentos"])] }
         : rol
     ),
   });
+  if (!includeSeeds) {
+    return cuentas
+      .filter((cuenta) => !(
+        (String(cuenta.id) === "2" && String(cuenta.usuario || "").toLowerCase() === "sur" && /demo/i.test(String(cuenta.nombreNegocio || "")))
+        || (String(cuenta.id) === "3" && String(cuenta.usuario || "").toLowerCase() === "pruebas" && /negocio de pruebas/i.test(String(cuenta.nombreNegocio || "")))
+      ))
+      .map(normalizar);
+  }
   const adminNormalizada = { ...admin, ...adminGuardada, superAdmin: true, tipo: "administrador_app" };
   if (adminNormalizada.passwordHash) delete adminNormalizada.password;
   return [
@@ -162,11 +170,13 @@ const migrarCodigosConocidos = (products = []) => products.map((product) =>
     : product
 );
 
-export const migrarDatosDemo = (datosGuardados) => {
+export const migrarDatosDemo = (datosGuardados, { includeSeeds = true } = {}) => {
   const datos = datosGuardados && typeof datosGuardados === "object" ? { ...datosGuardados } : {};
-  if (!datos[3] && datos[1]) datos[3] = datos[1];
-  delete datos[1];
-  const combinados = { ...seedDatos(), ...datos };
+  if (includeSeeds) {
+    if (!datos[3] && datos[1]) datos[3] = datos[1];
+    delete datos[1];
+  }
+  const combinados = includeSeeds ? { ...seedDatos(), ...datos } : datos;
   return Object.fromEntries(Object.entries(combinados).map(([id, dataset]) => {
     const savedProducts = migrarCodigosConocidos(dataset.products || []);
     const products = id === "2"

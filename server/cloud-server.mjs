@@ -451,6 +451,25 @@ const verifyAppPassword = (password, subject) => {
     return typeof subject?.password === "string" && safeEqual(password, subject.password);
   } catch { return false; }
 };
+const appPasswordFields = (password) => {
+  const salt = crypto.randomBytes(16);
+  return {
+    passwordHash: crypto.pbkdf2Sync(String(password), salt, 210000, 32, "sha256").toString("base64"),
+    passwordSalt: salt.toString("base64"),
+    passwordVersion: 1,
+  };
+};
+const accountForLogin = (db, user) => {
+  const account = tenantAccount(db, user?.businessId);
+  if (!account) return null;
+  if (user.role !== "employee") return account;
+  const normalizedUsername = String(user.username || "").trim().toLowerCase();
+  const employee = (account.empleados || []).find(
+    (entry) => String(entry?.usuario || "").trim().toLowerCase() === normalizedUsername,
+  );
+  const { passwordHash: _ownerHash, passwordSalt: _ownerSalt, password: _ownerPassword, ...safeAccount } = account;
+  return { ...safeAccount, empleados: employee ? [employee] : [] };
+};
 const accountCredential = (db, username) => {
   const normalized = String(username || "").trim().toLowerCase();
   for (const account of db.system?.cuentas || []) {
@@ -529,8 +548,11 @@ const accountCanWrite = (db, tenantId) => {
   const account = tenantAccount(db, tenantId);
   if (!account || account.superAdmin) return true;
   if (account.estado === "bloqueada") return false;
-  if (!account.subscriptionExpiresAt) return true;
-  return new Date(account.subscriptionExpiresAt).getTime() > Date.now();
+  const subscriptionExpiresAt = Date.parse(account.subscriptionExpiresAt || "");
+  if (Number.isFinite(subscriptionExpiresAt)) return subscriptionExpiresAt > Date.now();
+  const trialExpiresAt = Date.parse(account.trialExpiresAt || "");
+  if (Number.isFinite(trialExpiresAt) && trialExpiresAt > Date.now()) return true;
+  return account.estado === "aprobada";
 };
 const isLoopback = (req) => {
   const address = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
@@ -685,6 +707,79 @@ const handleRequest = async (req, res) => {
       await writeDb(db);
       return send(res, 200, { activated: true, activation: activationView(activation) });
     }
+    if (req.method === "POST" && req.url === "/v1/auth/register") {
+      const payload = await body(req);
+      const deviceId = cleanActivationDeviceId(payload.deviceId);
+      const username = cleanCatalogText(payload.username, 80);
+      const password = String(payload.password || "");
+      const name = cleanCatalogText(payload.name, 100);
+      const businessName = cleanCatalogText(payload.businessName, 140);
+      const businessMode = payload.businessMode === "equipo" ? "equipo" : "solo";
+      if (!deviceId || !username || password.length < 4 || !name || !businessName) {
+        return send(res, 400, { error: "Completá el nombre, negocio, usuario y una contraseña de al menos 4 caracteres" });
+      }
+      const db = await readDb();
+      const activation = db.activations?.[deviceId];
+      if (!activation || activation.revokedAt) {
+        return send(res, 403, { error: "Esta PC todavía no fue activada con una clave de instalación" });
+      }
+      const normalizedUsername = username.toLowerCase();
+      const usernameExists = Object.values(db.users || {}).some(
+        (entry) => String(entry?.username || "").trim().toLowerCase() === normalizedUsername,
+      ) || (db.system?.cuentas || []).some((account) => (
+        String(account?.usuario || "").trim().toLowerCase() === normalizedUsername
+        || (account?.empleados || []).some((employee) => String(employee?.usuario || "").trim().toLowerCase() === normalizedUsername)
+      ));
+      if (usernameExists) return send(res, 409, { error: "Ese usuario ya existe, elegí otro" });
+
+      const businessId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const account = {
+        id: businessId,
+        tenantId: businessId,
+        nombre: name,
+        usuario: username,
+        nombreNegocio: businessName,
+        modoNegocio: businessMode,
+        superAdmin: false,
+        estado: "pendiente",
+        roles: [],
+        empleados: [],
+        pagos: [],
+        createdAt: now,
+        registrationDeviceId: deviceId,
+        ...appPasswordFields(password),
+      };
+      const secured = hashPassword(password);
+      db.system ||= {};
+      db.system.cuentas = [...(db.system.cuentas || []), account];
+      db.users[username] = {
+        id: crypto.randomUUID(),
+        businessId,
+        username,
+        name,
+        role: "owner",
+        salt: secured.salt,
+        passwordHash: secured.hash,
+        status: "active",
+      };
+      db.tenants[businessId] ||= { entities: {}, sections: {} };
+      db.devices[deviceId] = { ...(db.devices[deviceId] || {}), tenantId: businessId, userId: db.users[username].id, lastSeenAt: now, revokedAt: null };
+      db.cursor += 1;
+      db.changes.push({
+        id: `registration:${businessId}`,
+        deviceId: "kiosco-cloud",
+        tenantId: "system-admin",
+        type: "system_set",
+        key: "cuentas",
+        value: db.system.cuentas,
+        cursor: db.cursor,
+        serverAt: now,
+      });
+      db.changes = db.changes.slice(-10000);
+      await writeDb(db);
+      return send(res, 201, { ok: true, businessId, account });
+    }
     if (req.method === "POST" && req.url === "/v1/auth/register-local") {
       if (!localMode || !isLoopback(req)) return send(res, 404, { error: "Ruta inexistente" });
       const payload = await body(req);
@@ -786,7 +881,13 @@ const handleRequest = async (req, res) => {
       };
       db.devices[payload.deviceId] = { tenantId: user.businessId, userId: user.id, lastSeenAt: new Date().toISOString(), revokedAt: null };
       await writeDb(db);
-      return send(res, 200, { accessToken, refreshToken, expiresAt, user: { id: user.id, name: user.name, role: user.role, businessId: user.businessId } });
+      return send(res, 200, {
+        accessToken,
+        refreshToken,
+        expiresAt,
+        user: { id: user.id, name: user.name, role: user.role, businessId: user.businessId },
+        account: accountForLogin(db, user),
+      });
     }
     if (req.method === "POST" && req.url === "/v1/auth/refresh") {
       const payload = await body(req);
@@ -999,6 +1100,15 @@ const handleRequest = async (req, res) => {
             continue;
           }
           db.cursor += 1;
+          if (operation.key === "cuentas" && Array.isArray(operation.value)) {
+            const operationCreatedAt = Date.parse(operation.createdAt || "") || Date.now();
+            const newerRegistrations = (db.system.cuentas || []).filter((account) => (
+              account?.registrationDeviceId
+              && Date.parse(account.createdAt || "") > operationCreatedAt
+              && !operation.value.some((incoming) => String(incoming?.id) === String(account.id))
+            ));
+            operation = { ...operation, value: [...operation.value, ...newerRegistrations] };
+          }
           db.system[operation.key] = operation.value;
           db.accepted[operation.id] = db.cursor;
           acceptedIds.push(operation.id);
@@ -1078,7 +1188,11 @@ const handleRequest = async (req, res) => {
       const since = Number(new URL(req.url, "http://localhost").searchParams.get("since") || 0);
       return send(res, 200, {
         cursor: db.cursor,
-        operations: db.changes.filter((item) => item.tenantId === tenantId && item.cursor > since && item.deviceId !== deviceId),
+        operations: db.changes.filter((item) => (
+          (item.tenantId === tenantId || (session?.role === "superAdmin" && item.type === "system_set"))
+          && item.cursor > since
+          && item.deviceId !== deviceId
+        )),
       });
     }
     if (req.method === "GET" && req.url === "/v1/devices") {

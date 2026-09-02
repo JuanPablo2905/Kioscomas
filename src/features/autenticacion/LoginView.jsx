@@ -10,7 +10,7 @@ import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money 
 import { SectionHeader } from "../../shared/layout";
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 
-export function LoginView({ onLogin, onRegister, error, onReset }) {
+export function LoginView({ onLogin, onRegister, error, notice, onReset, showDemoAccounts = false }) {
   const [modo, setModo] = useState("login");
   const [nombre, setNombre] = useState("");
   const [usuario, setUsuario] = useState("");
@@ -20,6 +20,7 @@ export function LoginView({ onLogin, onRegister, error, onReset }) {
   const [confirmarReset, setConfirmarReset] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installHelp, setInstallHelp] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const standalone = typeof window !== "undefined" && (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true);
   useEffect(() => {
     const capture = (event) => { event.preventDefault(); setInstallPrompt(event); };
@@ -27,19 +28,28 @@ export function LoginView({ onLogin, onRegister, error, onReset }) {
     return () => window.removeEventListener("beforeinstallprompt", capture);
   }, []);
 
-  const handleSubmit = () => {
-    if (modo === "login") {
-      onLogin({ usuario, password });
-    } else {
-      if (!nombre.trim() || !usuario.trim() || !password.trim() || !nombreNegocio.trim())
-        return;
-      onRegister({
-        nombre: nombre.trim(),
-        usuario: usuario.trim(),
-        password,
-        nombreNegocio: nombreNegocio.trim(),
-        modoNegocio,
-      });
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      if (modo === "login") {
+        await onLogin({ usuario, password });
+      } else {
+        if (!nombre.trim() || !usuario.trim() || !password.trim() || !nombreNegocio.trim()) return;
+        const result = await onRegister({
+          nombre: nombre.trim(),
+          usuario: usuario.trim(),
+          password,
+          nombreNegocio: nombreNegocio.trim(),
+          modoNegocio,
+        });
+        if (result?.ok) {
+          setModo("login");
+          setPassword("");
+        }
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -82,7 +92,7 @@ export function LoginView({ onLogin, onRegister, error, onReset }) {
         {modo === "registro" && (
           <>
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-              Al crearla vas a poder usar la cuenta durante <b>1 día</b> mientras espera aprobación. El administrador puede extender la prueba a una semana.
+              La solicitud se enviará al administrador de Kiosco+. Podrás entrar cuando la apruebe y habilite el abono.
             </div>
             <label className="text-sm text-gray-700 block mb-1">Tu nombre</label>
             <input
@@ -137,12 +147,14 @@ export function LoginView({ onLogin, onRegister, error, onReset }) {
         />
 
         {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
+        {notice && <p className="mb-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs leading-5 text-green-800">{notice}</p>}
 
         <button
           onClick={handleSubmit}
-          className="brand-cta min-h-11 w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800"
+          disabled={submitting}
+          className="brand-cta min-h-11 w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-wait disabled:opacity-60"
         >
-          {modo === "login" ? "Entrar" : "Crear cuenta y entrar"}
+          {submitting ? "Conectando..." : modo === "login" ? "Entrar" : "Enviar solicitud"}
         </button>
 
         {!standalone && <div className="pwa-install-card mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-blue-900">
@@ -150,7 +162,7 @@ export function LoginView({ onLogin, onRegister, error, onReset }) {
           {installHelp && <p className="mt-2 text-xs leading-relaxed"><Share2 size={14} className="mr-1 inline"/>En iPhone: abrí esta página en Safari, tocá <b>Compartir</b> y después <b>Agregar a inicio</b>.</p>}
         </div>}
 
-        <p className="text-xs text-gray-400 mt-4 text-center">
+        {showDemoAccounts && <p className="text-xs text-gray-400 mt-4 text-center">
           Cuentas de prueba:
           <br />
           <b>demo</b>/<b>1234</b> — vos, Administrador de la app
@@ -158,7 +170,7 @@ export function LoginView({ onLogin, onRegister, error, onReset }) {
           <b>sur</b>/<b>1234</b> — Dueña de Kiosco Sur
           <br />
           <b>lucia</b>/<b>1234</b> — Cajera de Mi Negocio de Pruebas
-        </p>
+        </p>}
 
         <div className="mt-4 pt-4 border-t border-gray-100 text-center">
           {!confirmarReset ? (
