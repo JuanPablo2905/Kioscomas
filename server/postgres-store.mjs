@@ -1,5 +1,20 @@
 const STATE_ID = "primary";
 
+const normalizePayload = (value) => {
+  let current = value;
+  // Older imports passed JSON.stringify(value) to a jsonb parameter. Depending
+  // on the driver inference this produced a JSON string instead of an object.
+  // Decode that legacy representation without ever spreading its characters.
+  for (let depth = 0; depth < 2 && typeof current === "string"; depth += 1) {
+    try { current = JSON.parse(current); }
+    catch { break; }
+  }
+  if (!current || typeof current !== "object" || Array.isArray(current)) {
+    throw new Error("El estado PostgreSQL de Kiosco+ no contiene un objeto JSON válido");
+  }
+  return current;
+};
+
 const parseDatabaseUrl = (value) => {
   const url = String(value || "").trim();
   if (!/^postgres(ql)?:\/\//i.test(url)) {
@@ -68,7 +83,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
       WHERE id = ${STATE_ID}
     `;
     if (!row?.payload) throw new Error("La base PostgreSQL no contiene el estado inicial de Kiosco+");
-    return row.payload;
+    return normalizePayload(row.payload);
   };
 
   const probe = async () => {
