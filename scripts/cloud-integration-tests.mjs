@@ -72,6 +72,59 @@ try {
     "x-tenant-id": "system-admin",
     authorization: `Bearer ${configuredAdminLogin.value.accessToken}`,
   };
+  const existingDeviceActivation = await request("/v1/activation/status", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "paired-pc", appVersion: "0.1.4" }),
+  });
+  test("una instalación anterior reconocida por la nube no vuelve a pedir clave", existingDeviceActivation.value.activated === true && existingDeviceActivation.value.activation?.deviceId === "paired-pc");
+  const createdActivationCode = await request("/v1/admin/activation-codes", {
+    method: "POST",
+    headers: centralHeaders,
+    body: JSON.stringify({ label: "PC de prueba", expiresInDays: 7, maxUses: 1 }),
+  });
+  test("el administrador genera una clave de instalación", createdActivationCode.response.status === 201 && /^KIOSCO-(?:[A-Z0-9]{4}-){3}[A-Z0-9]{4}$/.test(createdActivationCode.value.code));
+  const activationBeforeRedeem = await request("/v1/activation/status", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc" }),
+  });
+  test("una PC nueva empieza sin autorización", activationBeforeRedeem.value.activated === false);
+  const wrongActivationCode = await request("/v1/activation/redeem", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", code: "KIOSCO-AAAA-BBBB-CCCC-DDDD" }),
+  });
+  test("una clave inventada no activa la aplicación", wrongActivationCode.response.status === 401);
+  const redeemedActivation = await request("/v1/activation/redeem", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", code: createdActivationCode.value.code, appVersion: "0.1.5" }),
+  });
+  test("la clave válida queda vinculada a una PC", redeemedActivation.response.ok && redeemedActivation.value.activation?.deviceId === "activation-pc");
+  const repeatedActivation = await request("/v1/activation/redeem", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", code: createdActivationCode.value.code }),
+  });
+  test("repetir la activación en la misma PC no consume otro uso", repeatedActivation.response.ok);
+  const reusedActivationCode = await request("/v1/activation/redeem", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "other-activation-pc", code: createdActivationCode.value.code }),
+  });
+  test("una clave de una sola PC no se puede compartir", reusedActivationCode.response.status === 409);
+  const activationDirectory = await request("/v1/admin/activation-codes", { headers: centralHeaders });
+  const savedActivationCode = activationDirectory.value.codes?.find((item) => item.id === createdActivationCode.value.item?.id);
+  test("el panel muestra usos y equipos sin exponer la clave completa", savedActivationCode?.uses === 1 && !JSON.stringify(savedActivationCode).includes(createdActivationCode.value.code) && activationDirectory.value.activations?.some((item) => item.deviceId === "activation-pc"));
+  const revokedActivation = await request("/v1/admin/activations/activation-pc/revoke", { method: "POST", headers: centralHeaders });
+  test("el administrador puede desactivar una PC", revokedActivation.response.ok && !!revokedActivation.value.activation?.revokedAt);
+  const activationAfterRevoke = await request("/v1/activation/status", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc" }),
+  });
+  test("una PC desactivada deja de estar autorizada", activationAfterRevoke.value.activated === false);
   const accountDirectory = await request("/v1/sync/push", {
     method: "POST",
     headers: centralHeaders,

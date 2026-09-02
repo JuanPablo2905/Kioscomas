@@ -140,7 +140,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
   };
 
   return (
-    <div className="app-sidebar w-56 shrink-0 border-r border-gray-200 flex flex-col h-full bg-white">
+    <div className="app-sidebar h-full min-h-0 w-56 shrink-0 overflow-hidden border-r border-gray-200 bg-white flex flex-col">
       <ConfirmDialog open={Boolean(pendingDiscardId)} title="Descartar cambio pendiente" message="Se eliminará únicamente este intento trabado. Los datos que ya llegaron a la nube no se modificarán." confirmLabel="Descartar cambio" danger onCancel={()=>setPendingDiscardId(null)} onConfirm={discardPendingSync}/>
       <ConfirmDialog open={discardPendingBatchOpen} title="Limpiar cambios antiguos" message={`Se quitarán los ${syncReview.pending.length} intentos revisados de la cola. No se borrarán cuentas, reportes, menús ni preferencias guardadas.`} confirmLabel="Limpiar este lote" danger onCancel={()=>setDiscardPendingBatchOpen(false)} onConfirm={discardPendingBatch}/>
       <PendingSyncDetail operation={pendingDetail} title={pendingDetail ? pendingTitle(pendingDetail) : ""} onClose={()=>setPendingDetailId(null)}/>
@@ -157,14 +157,14 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
           <button onClick={onLogout} aria-label={demoMode ? "Restablecer demostración" : "Cerrar sesión"} className="mobile-header-action"><LogOut size={18}/></button>
         </div>
       </div>
-      <div className="sidebar-brand px-5 py-5 flex items-center gap-2">
+      <div className="sidebar-brand shrink-0 px-5 py-5 flex items-center gap-2">
         {cuenta?.imagenNegocio ? <span className="flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-white p-1"><img src={cuenta.imagenNegocio} alt="" className="max-h-full max-w-full object-contain"/></span> : <img src={kioscoPlusMark} alt="Kiosco+" className="h-9 w-9 shrink-0 object-contain"/>}
         <span className="font-semibold text-gray-900 truncate">
           {cuenta?.nombreNegocio || "Kiosco+"}
         </span>
       </div>
 
-      <nav data-tour="main-navigation" className="app-sidebar-nav flex-1 px-3 space-y-1">
+      <nav data-tour="main-navigation" className="app-sidebar-nav min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 space-y-1">
         {onReturnAdmin && (
           <button
             onClick={onReturnAdmin}
@@ -236,7 +236,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
         )}
       </nav>
 
-      <div className="sidebar-footer relative px-4 py-4 border-t border-gray-100 text-sm">
+      <div className="sidebar-footer relative shrink-0 px-4 py-4 border-t border-gray-100 text-sm">
         {syncReviewOpen && <div className="absolute bottom-[calc(100%-8px)] left-3 right-3 z-40 max-h-80 overflow-y-auto rounded-xl border bg-white p-3 text-gray-900 shadow-xl"><div className="mb-2 flex items-start justify-between gap-2"><div><b className="text-sm">Pendiente de sincronización</b><p className="mt-0.5 text-[11px] text-gray-500">Destino: {syncTargetName}. Revisá los cambios que todavía no llegaron.</p></div><button onClick={()=>setSyncReviewOpen(false)} aria-label="Cerrar" className="rounded p-1 hover:bg-gray-100"><X size={15}/></button></div>{syncStatus?.error&&<div className="mb-2 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] leading-4 text-red-800"><b>No se pudieron enviar todavía.</b><p className="mt-0.5">{syncStatus.error}</p>{/sesión|permiso/i.test(syncStatus.error)&&<button onClick={()=>{setSyncReviewOpen(false);onOpenSettings?.();}} className="mt-2 rounded-md bg-red-700 px-2 py-1.5 font-semibold text-white">Abrir configuración</button>}</div>}<div className="space-y-2">{syncReview.conflicts.map((conflict)=><div key={conflict.operationId} className="rounded-lg border border-purple-200 bg-purple-50 p-2"><div className="flex items-center gap-1.5 text-xs font-semibold text-purple-900"><span className="h-2 w-2 rounded-full bg-purple-500"/>{entityLabel(conflict.entity)} en conflicto</div><p className="mt-1 break-words text-xs font-medium">{conflictTitle(conflict)}</p><p className="mt-1 text-[10px] leading-4 text-gray-600">Se modificó también desde otro dispositivo. Elegí la versión de la nube o reenviá la de este equipo.</p>{conflict.detectedAt&&<p className="mt-1 text-[10px] text-gray-500">Detectado: {new Date(conflict.detectedAt).toLocaleString("es-AR")}</p>}<div className="mt-2 grid grid-cols-2 gap-1"><button onClick={()=>resolveSyncConflict(conflict.operationId,"cloud")} className="rounded-md border bg-white px-2 py-1.5 text-[10px] font-semibold">Usar la nube</button><button onClick={()=>resolveSyncConflict(conflict.operationId,"local")} className="rounded-md bg-purple-700 px-2 py-1.5 text-[10px] font-semibold text-white">Conservar este equipo</button></div></div>)}{syncReview.pending.map((operation)=><div key={operation.id} role="button" tabIndex={0} onClick={()=>setPendingDetailId(operation.id)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();setPendingDetailId(operation.id);}}} className="cursor-pointer rounded-lg border border-amber-200 bg-amber-50 p-2 transition-colors hover:border-amber-400"><div className="text-xs font-semibold text-amber-900">Cambio esperando envío</div><p className="mt-1 break-words text-xs">{pendingTitle(operation)}</p><div className="mt-2 flex items-center justify-between text-[10px] font-semibold text-amber-800"><span>Tocá para ver qué contiene</span><ChevronRight size={13}/></div><button onClick={(event)=>{event.stopPropagation();setPendingDiscardId(operation.id);}} className="mt-2 w-full rounded-md border border-amber-300 bg-white px-2 py-1.5 text-[10px] font-semibold text-amber-900">Descartar este cambio trabado</button></div>)}{!syncReview.conflicts.length&&!syncReview.pending.length&&<p className="rounded-lg bg-green-50 p-2 text-xs text-green-800">Ya no quedan cambios pendientes.</p>}</div><button onClick={async()=>{await onSyncNow?.();await refreshSyncReview(true);}} className="mt-3 w-full rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white">Volver a sincronizar</button></div>}
         {syncReviewOpen && syncReview.pending.length > 1 && <button onClick={()=>setDiscardPendingBatchOpen(true)} className="mb-2 w-full rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">Limpiar este lote revisado ({syncReview.pending.length})</button>}
         {syncStatus?.error && <div className="mb-2 rounded-lg border border-red-200 bg-red-50 p-2 text-[10px] leading-4 text-red-800"><b className="block">No se pudo sincronizar con {syncTargetName}</b><span className="break-words">{syncStatus.error}</span></div>}

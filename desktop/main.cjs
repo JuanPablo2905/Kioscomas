@@ -278,6 +278,10 @@ function createWindow() {
 }
 
 ipcMain.handle("kiosco:updates:get-state", () => updateState);
+ipcMain.handle("kiosco:runtime:get", () => ({
+  requiresActivation: app.isPackaged && !isDevelopmentLauncher(),
+  version: app.getVersion(),
+}));
 ipcMain.handle("kiosco:updates:check", () => checkDesktopUpdates({ manual: true }));
 ipcMain.handle("kiosco:updates:configure", (_event, policy) => applyUpdatePolicy(policy));
 ipcMain.handle("kiosco:updates:install", () => {

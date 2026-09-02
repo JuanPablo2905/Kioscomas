@@ -523,6 +523,17 @@ body[data-tutorial-active="true"] .app-date-menu {
 [data-sidebar-size="ancho"] .kiosco-themed > div:first-child { width: 18rem !important; }
 [data-sidebar-size] .admin-app-shell > div:first-child { width: 100% !important; max-width: none !important; }
 [data-sidebar-size] .admin-catalog-shell > div:first-child { width: 100% !important; max-width: none !important; }
+/* El pie del menú siempre debe quedar dentro de la ventana. Cuando falta alto,
+   se desplaza solamente la lista de secciones y no toda la barra lateral. */
+.app-sidebar { min-height: 0; max-height: 100%; overflow: hidden; }
+.app-sidebar-nav { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; }
+.sidebar-brand, .sidebar-footer { flex-shrink: 0; }
+@media (min-width: 801px) and (max-height: 760px) {
+  .sidebar-brand { padding-top: .75rem !important; padding-bottom: .75rem !important; }
+  .app-sidebar-nav { padding-bottom: .5rem !important; }
+  .sidebar-home-nav, .sidebar-nav-item > button, .sidebar-admin-nav > button { padding-top: .375rem !important; padding-bottom: .375rem !important; }
+  .sidebar-footer { padding-top: .65rem !important; padding-bottom: .65rem !important; }
+}
 [data-color-scope="completa"] .admin-app-shell > div:first-child { background: transparent !important; }
 [data-home-columns="2"] .home-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 [data-home-columns="3"] .home-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }

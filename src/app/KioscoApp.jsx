@@ -22,6 +22,7 @@ import { ReportesView } from "../features/reportes/ReportesView";
 import { AdministracionView } from "../features/administracion/AdministracionView";
 import { AdminAppPanel } from "../features/administracion/AdminAppPanel";
 import { GestionView } from "../features/gestion/GestionView";
+import { ActivationView } from "../features/autenticacion/ActivationView";
 import { LoginView } from "../features/autenticacion/LoginView";
 import { SettingsModal, applyPreferences, DEFAULT_PREFERENCES, migrateBrandPreferences } from "../shared/SettingsModal";
 import { useInteractionFeedback } from "../shared/useInteractionFeedback";
@@ -40,6 +41,7 @@ import { lookupBarcode } from "../shared/productLookup";
 import { cloudFetch, cloudSession } from "../cloud/cloudAuth";
 import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
 import { PromptDialog } from "../shared/controls";
+import { clearInstallationReceipt, loadInstallationReceipt, markLegacyInstallation, redeemInstallationCode, saveInstallationReceipt, verifyInstallationActivation } from "../security/installationActivation";
 import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, rolesPorDefecto, seedCuentas, seedDatos } from "./data";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
@@ -235,6 +237,9 @@ export default function KioscoApp() {
   useAutoContrast();
   const [view, setView] = useState("home");
   const [cargando, setCargando] = useState(true);
+  const [activationStatus, setActivationStatus] = useState("checking");
+  const [activationDeviceId, setActivationDeviceId] = useState("");
+  const [activationAppVersion, setActivationAppVersion] = useState("");
   const [cuentas, setCuentas] = useState(seedCuentas());
   const [datos, setDatos] = useState(seedDatos());
   const [currentUserId, setCurrentUserId] = useState(null);
@@ -294,6 +299,45 @@ export default function KioscoApp() {
         repository.get("cuentas", []), repository.get("datos", {}), repository.get("sesion", null), repository.get("notasAdmin", []), repository.get("authSecurity", {}), repository.get("reportesProblemas", []), repository.get("menuPreferences", {}), repository.get("userPreferences", {}),
       ]);
       if (!activo) return;
+      let requiresActivation = false;
+      let runtime = null;
+      if (!PUBLIC_DEMO_MODE && window.kioscoDesktop?.runtime?.get) {
+        try { runtime = await window.kioscoDesktop.runtime.get(); } catch {}
+      }
+      if (runtime?.requiresActivation) {
+        const config = loadCloudConfig();
+        const receipt = loadInstallationReceipt();
+        const hasExistingInstallation = Boolean(
+          validSession(sesion)
+          || (Array.isArray(cuentasGuardadas) && cuentasGuardadas.some((account) => ![1, 2, 3].includes(account.id)))
+          || (datosGuardados && Object.keys(datosGuardados).some((id) => !["1", "2", "3"].includes(String(id)))),
+        );
+        setActivationDeviceId(config.deviceId);
+        setActivationAppVersion(runtime.version || "");
+        if (receipt?.activated && receipt.deviceId === config.deviceId) {
+          if (receipt.mode === "code") {
+            try {
+              const verified = await verifyInstallationActivation(config.apiUrl, config.deviceId, runtime.version);
+              if (!verified.activated) {
+                clearInstallationReceipt();
+                requiresActivation = true;
+              }
+            } catch {
+              // Una caída temporal de Internet no bloquea una PC que ya fue
+              // activada correctamente. Se volverá a comprobar al abrirla.
+            }
+          }
+        } else {
+          let knownByCloud = false;
+          try {
+            const verified = await verifyInstallationActivation(config.apiUrl, config.deviceId, runtime.version);
+            knownByCloud = Boolean(verified.activated);
+            if (knownByCloud) saveInstallationReceipt({ activated: true, mode: "code", deviceId: config.deviceId, activationId: verified.activation?.id || null, activatedAt: verified.activation?.activatedAt || new Date().toISOString() });
+          } catch {}
+          if (!knownByCloud && hasExistingInstallation) markLegacyInstallation(config.deviceId);
+          else if (!knownByCloud) requiresActivation = true;
+        }
+      }
       let loadedAccounts;
       try { loadedAccounts = await secureAccounts(migrarCuentasDemo(cuentasGuardadas)); } catch { loadedAccounts = await secureAccounts(seedCuentas()); }
       setCuentas(loadedAccounts);
@@ -318,6 +362,11 @@ export default function KioscoApp() {
       setReportesProblemas(reportes || []);
       setMenuPreferences(menuPrefs || {});
       setUserPreferences(Object.fromEntries(Object.entries(userPrefs || {}).map(([key, preferences]) => [key, migrateBrandPreferences(preferences)])));
+      if (requiresActivation) {
+        setActivationStatus("required");
+        return;
+      }
+      setActivationStatus("activated");
       setCargando(false);
     })().catch((error) => {
       console.error("No se pudo iniciar Kiosco+", error);
@@ -946,6 +995,18 @@ export default function KioscoApp() {
     setMenuPreferences({});
     setUserPreferences({});
   };
+
+  const handleInstallationActivation = async (code) => {
+    const config = loadCloudConfig();
+    const result = await redeemInstallationCode(config.apiUrl, code, activationDeviceId || config.deviceId, activationAppVersion);
+    if (!result.activated) throw new Error("La nube no confirmó la activación.");
+    setActivationStatus("activated");
+    setCargando(false);
+  };
+
+  if (activationStatus === "required") {
+    return <ActivationView deviceId={activationDeviceId} onActivate={handleInstallationActivation}/>;
+  }
 
   if (cargando) {
     return (

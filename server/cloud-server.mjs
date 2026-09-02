@@ -26,7 +26,7 @@ const accessTokenTtlMs = (Number.isFinite(configuredAccessTokenHours) && configu
   : 24) * 60 * 60 * 1000;
 const refreshRetryGraceMs = 5 * 60 * 1000;
 const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISOString();
-const emptyDb = () => ({ schemaVersion: 3, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {} });
+const emptyDb = () => ({ schemaVersion: 3, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {} });
 const cleanBarcode = (value) => String(value || "").replace(/\D/g, "").slice(0, 18);
 const cleanCatalogText = (value, max = 160) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
 const externalLookupInFlight = new Map();
@@ -335,14 +335,14 @@ const materializeTenantSnapshot = (tenant = {}) => {
 const readJsonDb = async () => {
   try {
     const saved = JSON.parse(await fs.readFile(databasePath, "utf8"));
-    return applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {} }));
+    return applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {}, activationCodes: saved.activationCodes || {}, activations: saved.activations || {} }));
   } catch {
     return applyConfiguredSuperAdmin(emptyDb());
   }
 };
 const readDb = async () => {
   const saved = postgresStore ? await postgresStore.read() : await readJsonDb();
-  return applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {} }));
+  return applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {}, activationCodes: saved.activationCodes || {}, activations: saved.activations || {} }));
 };
 const safeName = (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "_");
 const writeJson = async (file, value) => {
@@ -407,6 +407,35 @@ const safeEqual = (left, right) => {
   const second = Buffer.from(String(right || ""));
   return first.length === second.length && crypto.timingSafeEqual(first, second);
 };
+const activationAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const normalizeActivationCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const activationCodeHash = (value) => crypto.createHash("sha256").update(normalizeActivationCode(value)).digest("hex");
+const generateActivationCode = () => {
+  const bytes = crypto.randomBytes(16);
+  const characters = Array.from(bytes, (value) => activationAlphabet[value % activationAlphabet.length]).join("");
+  return `KIOSCO-${characters.match(/.{1,4}/g).join("-")}`;
+};
+const activationCodeView = (entry = {}) => ({
+  id: entry.id,
+  maskedCode: entry.maskedCode,
+  label: entry.label || "",
+  createdAt: entry.createdAt,
+  expiresAt: entry.expiresAt,
+  maxUses: Number(entry.maxUses || 1),
+  uses: Number(entry.uses || 0),
+  revokedAt: entry.revokedAt || null,
+  createdBy: entry.createdBy || null,
+});
+const activationView = (entry = {}) => ({
+  id: entry.id,
+  deviceId: entry.deviceId,
+  codeId: entry.codeId,
+  activatedAt: entry.activatedAt,
+  lastSeenAt: entry.lastSeenAt || entry.activatedAt,
+  appVersion: entry.appVersion || null,
+  revokedAt: entry.revokedAt || null,
+});
+const cleanActivationDeviceId = (value) => String(value || "").trim().slice(0, 160);
 const verifyAppPassword = (password, subject) => {
   try {
     if (subject?.passwordHash && subject?.passwordSalt) {
@@ -590,6 +619,71 @@ const handleRequest = async (req, res) => {
       touchCatalogLookup(db, codigo, !!found);
       await writeDb(db);
       return send(res, 200, { product: found, found: !!found, cached: false });
+    }
+    if (req.method === "POST" && req.url === "/v1/activation/status") {
+      const payload = await body(req);
+      const deviceId = cleanActivationDeviceId(payload.deviceId);
+      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del equipo no es válido" });
+      const db = await readDb();
+      db.activations ||= {};
+      let current = db.activations[deviceId];
+      const knownDevice = db.devices?.[deviceId];
+      if (!current && knownDevice && !knownDevice.revokedAt) {
+        const now = new Date().toISOString();
+        current = {
+          id: crypto.randomUUID(),
+          deviceId,
+          codeId: null,
+          activatedAt: now,
+          lastSeenAt: now,
+          appVersion: cleanCatalogText(payload.appVersion || "", 40) || null,
+          legacy: true,
+          revokedAt: null,
+        };
+        db.activations[deviceId] = current;
+      }
+      if (!current || current.revokedAt) return send(res, 200, { activated: false });
+      current.lastSeenAt = new Date().toISOString();
+      current.appVersion = cleanCatalogText(payload.appVersion || current.appVersion || "", 40) || null;
+      await writeDb(db);
+      return send(res, 200, { activated: true, activation: activationView(current) });
+    }
+    if (req.method === "POST" && req.url === "/v1/activation/redeem") {
+      const payload = await body(req);
+      const deviceId = cleanActivationDeviceId(payload.deviceId);
+      const normalizedCode = normalizeActivationCode(payload.code);
+      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del equipo no es válido" });
+      const db = await readDb();
+      db.activationCodes ||= {};
+      db.activations ||= {};
+      const existingActivation = db.activations[deviceId];
+      if (existingActivation && !existingActivation.revokedAt) {
+        existingActivation.lastSeenAt = new Date().toISOString();
+        await writeDb(db);
+        return send(res, 200, { activated: true, activation: activationView(existingActivation) });
+      }
+      if (normalizedCode.length < 12) return send(res, 400, { error: "La clave de instalación no es válida" });
+      const codeHash = activationCodeHash(normalizedCode);
+      const code = Object.values(db.activationCodes).find((entry) => safeEqual(entry?.hash, codeHash));
+      if (!code) return send(res, 401, { error: "La clave de instalación no existe" });
+      if (code.revokedAt) return send(res, 403, { error: "Esta clave fue desactivada" });
+      if (Date.parse(code.expiresAt || "") <= Date.now()) return send(res, 403, { error: "Esta clave ya venció" });
+      if (Number(code.uses || 0) >= Number(code.maxUses || 1)) return send(res, 409, { error: "Esta clave ya fue utilizada" });
+      const now = new Date().toISOString();
+      code.uses = Number(code.uses || 0) + 1;
+      code.lastUsedAt = now;
+      const activation = {
+        id: crypto.randomUUID(),
+        deviceId,
+        codeId: code.id,
+        activatedAt: now,
+        lastSeenAt: now,
+        appVersion: cleanCatalogText(payload.appVersion || "", 40) || null,
+        revokedAt: null,
+      };
+      db.activations[deviceId] = activation;
+      await writeDb(db);
+      return send(res, 200, { activated: true, activation: activationView(activation) });
     }
     if (req.method === "POST" && req.url === "/v1/auth/register-local") {
       if (!localMode || !isLoopback(req)) return send(res, 404, { error: "Ruta inexistente" });
@@ -787,6 +881,56 @@ const handleRequest = async (req, res) => {
         alreadyKnown: !!current.product,
         item: catalogAdminView(current),
       });
+    }
+
+    if (req.url?.startsWith("/v1/admin/activation-codes") || req.url?.startsWith("/v1/admin/activations")) {
+      if (session?.role !== "superAdmin") return send(res, 403, { error: "Se requiere la cuenta administradora de Kiosco+" });
+      db.activationCodes ||= {};
+      db.activations ||= {};
+      if (req.method === "GET" && req.url === "/v1/admin/activation-codes") {
+        const codes = Object.values(db.activationCodes).map(activationCodeView).sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+        const activations = Object.values(db.activations).map(activationView).sort((left, right) => String(right.activatedAt || "").localeCompare(String(left.activatedAt || "")));
+        return send(res, 200, { codes, activations });
+      }
+      if (req.method === "POST" && req.url === "/v1/admin/activation-codes") {
+        const payload = await body(req);
+        const expiresInDays = Math.min(90, Math.max(1, Number(payload.expiresInDays) || 7));
+        const maxUses = Math.min(25, Math.max(1, Number(payload.maxUses) || 1));
+        const rawCode = generateActivationCode();
+        const id = crypto.randomUUID();
+        const now = new Date();
+        db.activationCodes[id] = {
+          id,
+          hash: activationCodeHash(rawCode),
+          maskedCode: `${rawCode.slice(0, 11)}-••••-••••`,
+          label: cleanCatalogText(payload.label || "", 80),
+          createdAt: now.toISOString(),
+          expiresAt: new Date(now.getTime() + expiresInDays * 24 * 60 * 60 * 1000).toISOString(),
+          maxUses,
+          uses: 0,
+          revokedAt: null,
+          createdBy: session.userId,
+        };
+        await writeDb(db);
+        return send(res, 201, { code: rawCode, item: activationCodeView(db.activationCodes[id]) });
+      }
+      const codeRevokeMatch = req.url.match(/^\/v1\/admin\/activation-codes\/([^/?]+)\/revoke$/);
+      if (req.method === "POST" && codeRevokeMatch) {
+        const id = decodeURIComponent(codeRevokeMatch[1]);
+        if (!db.activationCodes[id]) return send(res, 404, { error: "Clave inexistente" });
+        db.activationCodes[id].revokedAt = db.activationCodes[id].revokedAt || new Date().toISOString();
+        await writeDb(db);
+        return send(res, 200, { ok: true, item: activationCodeView(db.activationCodes[id]) });
+      }
+      const activationRevokeMatch = req.url.match(/^\/v1\/admin\/activations\/([^/?]+)\/revoke$/);
+      if (req.method === "POST" && activationRevokeMatch) {
+        const deviceIdToRevoke = cleanActivationDeviceId(decodeURIComponent(activationRevokeMatch[1]));
+        if (!db.activations[deviceIdToRevoke]) return send(res, 404, { error: "Equipo inexistente" });
+        db.activations[deviceIdToRevoke].revokedAt = db.activations[deviceIdToRevoke].revokedAt || new Date().toISOString();
+        await writeDb(db);
+        return send(res, 200, { ok: true, activation: activationView(db.activations[deviceIdToRevoke]) });
+      }
+      return send(res, 404, { error: "Ruta administrativa inexistente" });
     }
 
     if (req.url?.startsWith("/v1/admin/catalog")) {

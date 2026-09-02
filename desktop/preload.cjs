@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld("kioscoDesktop", {
   openCashDrawer: (options) => ipcRenderer.invoke("kiosco:open-cash-drawer", options),
   captureScreenshot: () => ipcRenderer.invoke("kiosco:capture-screenshot"),
   localCloudUrl: "http://127.0.0.1:8787",
+  runtime: {
+    get: () => ipcRenderer.invoke("kiosco:runtime:get"),
+  },
   updates: {
     getState: () => ipcRenderer.invoke("kiosco:updates:get-state"),
     check: () => ipcRenderer.invoke("kiosco:updates:check"),
