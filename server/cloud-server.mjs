@@ -938,7 +938,7 @@ const handleRequest = async (req, res) => {
 // this queue also protects the local JSON fallback and prevents two requests
 // in the same Render instance from calculating over stale state.
 let databaseRequestMutation = Promise.resolve();
-const DATABASE_REQUEST_TIMEOUT_MS = 30_000;
+const DATABASE_REQUEST_TIMEOUT_MS = 50_000;
 const bypassDatabaseQueue = (req) => req.method === "OPTIONS"
   || req.url === "/v1/health"
   || req.url === "/v1/ready"

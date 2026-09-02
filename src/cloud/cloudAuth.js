@@ -1,7 +1,7 @@
 import { CLOUD_CONFIG_KEY, isLocalCloudApiUrl, normalizeCloudApiUrl } from "./config.js";
 
 const SESSION_KEY = "kiosco_cloud_session";
-const CLOUD_REQUEST_TIMEOUT_MS = 20000;
+const CLOUD_REQUEST_TIMEOUT_MS = 50000;
 const refreshPromises = new Map();
 const cloudRequest = async (url, options = {}) => {
   if (options.signal) return fetch(url, options);

@@ -3,6 +3,8 @@ import { isLocalCloudApiUrl, loadCloudConfig } from "./config.js";
 import { mergeTenantDataset, normalizeOperation } from "./protocol.js";
 import { applyAcceptedEntityVersions, applyEntityOperations, applySectionOperations, rebasePendingEntityOperations } from "./entitySync.js";
 import { cloudFetch, cloudSession } from "./cloudAuth.js";
+
+const SYNC_PUSH_BATCH_SIZE = 20;
 import { withDataStorageLock } from "./dataStorageLock.js";
 import { isSameEntity, mergeConcurrentEntity } from "./conflictMerge.js";
 
@@ -276,7 +278,7 @@ export const syncEngine = {
     const operationsToPush = [
       ...activeQueue,
       ...retryableConflicts.map((item) => item.localOperation).filter((operation) => !activeQueue.some((queued) => queued.id === operation.id)),
-    ];
+    ].slice(0, SYNC_PUSH_BATCH_SIZE);
     publish({ state: "syncing", error: null, pending: activeQueue.length });
     try {
       const headers = { "content-type": "application/json", "x-device-id": config.deviceId, "x-tenant-id": tenantId };
