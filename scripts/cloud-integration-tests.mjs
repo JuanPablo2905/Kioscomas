@@ -52,6 +52,18 @@ try {
     body: JSON.stringify({ username: "central-admin", password: "central-admin-secret", deviceId: "central-pc" }),
   });
   test("la cuenta central configurada inicia como superadministrador", configuredAdminLogin.value.user?.role === "superAdmin");
+  const rejectedPair = await request("/v1/auth/pair-device", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceKey: "incorrecta", deviceId: "paired-pc" }),
+  });
+  test("una clave privada incorrecta no autoriza el dispositivo", rejectedPair.response.status === 401);
+  const pairedDevice = await request("/v1/auth/pair-device", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceKey: "central-admin-secret", deviceId: "paired-pc" }),
+  });
+  test("la clave privada autoriza el dispositivo una sola vez", pairedDevice.response.ok && pairedDevice.value.user?.role === "superAdmin" && !!pairedDevice.value.refreshToken);
   const portableSalt = crypto.randomBytes(16).toString("base64");
   const portableHash = crypto.pbkdf2Sync("lazy-secret", Buffer.from(portableSalt, "base64"), 210000, 32, "sha256").toString("base64");
   const centralHeaders = {

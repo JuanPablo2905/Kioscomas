@@ -69,6 +69,23 @@ export async function loginCloud(apiUrl, username, password, deviceId) {
   return session;
 }
 
+export async function pairCloudDevice(apiUrl, deviceKey, deviceId) {
+  const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/pair-device`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceKey, deviceId }),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    const error = new Error(detail.error || `No se pudo autorizar este equipo (${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
+  const session = await response.json();
+  save({ ...session, apiUrl });
+  return session;
+}
+
 export async function ensureLocalCloudSession(apiUrl, { businessId, username, password, name, superAdmin = false, deviceId }) {
   if (!isLocalCloudApiUrl(apiUrl)) return null;
   let lastError = null;

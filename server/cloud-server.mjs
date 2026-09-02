@@ -576,6 +576,41 @@ const handleRequest = async (req, res) => {
       await writeDb(db);
       return send(res, 200, { ok: true, businessId: String(payload.businessId) });
     }
+    if (req.method === "POST" && req.url === "/v1/auth/pair-device") {
+      const payload = await body(req);
+      const deviceId = String(payload.deviceId || "").trim();
+      if (!configuredSuperAdminUsername || configuredSuperAdminPassword.length < 10) {
+        return send(res, 503, { error: "La clave privada del dispositivo no está configurada en Render" });
+      }
+      if (!deviceId || !safeEqual(payload.deviceKey, configuredSuperAdminPassword)) {
+        return send(res, 401, { error: "La clave privada del dispositivo no es correcta" });
+      }
+      const db = await readDb();
+      const user = db.users[configuredSuperAdminUsername];
+      if (!user || user.status !== "active" || user.role !== "superAdmin") {
+        return send(res, 503, { error: "La cuenta administradora de nube no está disponible" });
+      }
+      const accessToken = token();
+      const refreshToken = token();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      db.sessions[accessToken] = {
+        userId: user.id,
+        businessId: user.businessId,
+        deviceId,
+        role: user.role,
+        expiresAt,
+        refreshHash: crypto.createHash("sha256").update(refreshToken).digest("hex"),
+        revokedAt: null,
+      };
+      db.devices[deviceId] = { tenantId: user.businessId, userId: user.id, lastSeenAt: new Date().toISOString(), revokedAt: null };
+      await writeDb(db);
+      return send(res, 200, {
+        accessToken,
+        refreshToken,
+        expiresAt,
+        user: { id: user.id, name: user.name, role: user.role, businessId: user.businessId },
+      });
+    }
     if (req.method === "POST" && req.url === "/v1/auth/bootstrap") {
       const payload = await body(req);
       const db = await readDb();
