@@ -366,6 +366,14 @@ export const syncEngine = {
         throw new Error(`No se pudieron descargar cambios (${pull.status}).`);
       }
       const remote = await pull.json();
+      if (remote.resetRequired) {
+        // Este equipo estuvo desconectado más tiempo que el historial
+        // incremental conservado por la nube. Volver a descargar una foto
+        // completa evita continuar con datos incompletos; los cambios locales
+        // que siguen en cola se aplican encima durante el bootstrap.
+        await this.bootstrapTenant();
+        return status;
+      }
       for (const operation of remote.operations || []) {
         const normalized = normalizeOperation(operation);
         const isAdminAccountUpdate = normalized?.type === "system_set"

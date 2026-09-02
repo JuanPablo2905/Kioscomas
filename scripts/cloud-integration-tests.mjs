@@ -78,6 +78,18 @@ try {
     body: JSON.stringify({ deviceId: "paired-pc", appVersion: "0.1.4" }),
   });
   test("una instalación anterior reconocida por la nube no vuelve a pedir clave", existingDeviceActivation.value.activated === true && existingDeviceActivation.value.activation?.deviceId === "paired-pc");
+  const rejectedAdminActivation = await request("/v1/activation/admin", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "admin-recovery-pc", deviceKey: "incorrecta", appVersion: "0.2.0" }),
+  });
+  test("una clave privada incorrecta no activa una PC administradora", rejectedAdminActivation.response.status === 401);
+  const adminActivation = await request("/v1/activation/admin", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "admin-recovery-pc", deviceKey: "central-admin-secret", appVersion: "0.2.0" }),
+  });
+  test("el administrador puede recuperar la activación de su propia PC", adminActivation.response.ok && adminActivation.value.activation?.deviceId === "admin-recovery-pc");
   const createdActivationCode = await request("/v1/admin/activation-codes", {
     method: "POST",
     headers: centralHeaders,
@@ -286,6 +298,13 @@ try {
     "x-device-id": "pc-2",
     authorization: `Bearer ${loginSecondDevice.value.accessToken}`,
   };
+  const concurrentTickets = await Promise.all([
+    request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [{ id: "ticket-pc-1", deviceId: "pc-1", tenantId: "business-a", type: "entity_upsert", entity: "tickets", entityId: "ticket-1", baseVersion: null, value: { id: "ticket-1", total: 1000 } }] }) }),
+    request("/v1/sync/push", { method: "POST", headers: secondDeviceHeaders, body: JSON.stringify({ operations: [{ id: "ticket-pc-2", deviceId: "pc-2", tenantId: "business-a", type: "entity_upsert", entity: "tickets", entityId: "ticket-2", baseVersion: null, value: { id: "ticket-2", total: 2000 } }] }) }),
+  ]);
+  test("dos cajas pueden guardar tickets simultáneos", concurrentTickets.every((result) => result.value.acceptedIds?.length === 1));
+  const ticketsAfterConcurrentSales = await request("/v1/sync/bootstrap", { headers });
+  test("ninguna venta simultánea reemplaza a la otra", ticketsAfterConcurrentSales.value.dataset?.tickets?.length === 2);
   const productBase = operation.value;
   const saleFromFirstDevice = {
     ...operation,

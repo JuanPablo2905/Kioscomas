@@ -67,3 +67,17 @@ export const redeemInstallationCode = async (apiUrl, code, deviceId, appVersion 
   }
   return result;
 };
+
+export const activateAdministratorInstallation = async (apiUrl, deviceKey, deviceId, appVersion = "") => {
+  const result = await activationRequest(apiUrl, "/v1/activation/admin", { deviceKey, deviceId, appVersion });
+  if (result.activated) {
+    saveInstallationReceipt({
+      activated: true,
+      mode: "administrator",
+      deviceId,
+      activationId: result.activation?.id || null,
+      activatedAt: result.activation?.activatedAt || new Date().toISOString(),
+    });
+  }
+  return result;
+};

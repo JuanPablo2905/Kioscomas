@@ -1,4 +1,6 @@
-export const SYNC_ENTITIES = ["products", "proveedores", "auditoria", "tutorialProgress"];
+import { SYNCABLE_ENTITIES } from "./protocol.js";
+
+export const SYNC_ENTITIES = [...SYNCABLE_ENTITIES];
 
 const byId = (items = []) => new Map(items.map((item) => [String(item.id), item]));
 const comparable = (item) => { const { _syncVersion, ...value } = item || {}; return value; };

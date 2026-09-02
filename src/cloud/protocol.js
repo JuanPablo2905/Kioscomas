@@ -1,6 +1,38 @@
 export const CLOUD_SCHEMA_VERSION = 1;
 export const SYNCABLE_KEYS = new Set(["datos", "reportesProblemas", "menuPreferences", "userPreferences"]);
-export const SYNCABLE_ENTITIES = new Set(["products", "proveedores", "auditoria", "tutorialProgress"]);
+// Las colecciones con identidad propia viajan registro por registro. Así dos
+// cajas pueden crear ventas distintas sin reemplazarse mutuamente con una
+// copia completa de la lista.
+export const SYNCABLE_ENTITIES = new Set([
+  "products",
+  "tickets",
+  "clientes",
+  "comprasItems",
+  "proveedores",
+  "perdidas",
+  "sugerencias",
+  "pedidos",
+  "gastos",
+  "ventasSuspendidas",
+  "auditoria",
+  "inventarios",
+  "tareas",
+  "metas",
+  "promociones",
+  "reservas",
+  "presupuestos",
+  "arqueos",
+  "comprobantes",
+  "listaCompras",
+  "retornables",
+  "autoconsumos",
+  "turnos",
+  "recordatoriosProveedor",
+  "movimientosStock",
+  "historialLimpiezas",
+  "labelTemplates",
+  "tutorialProgress",
+]);
 
 export function normalizeOperation(operation) {
   if (!operation || typeof operation !== "object") return null;

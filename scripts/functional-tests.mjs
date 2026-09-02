@@ -175,6 +175,9 @@ try {
   const entityOps=entitySync.diffTenantEntities({products:[{id:1,nombre:"A",_syncVersion:2}],proveedores:[{id:5,nombre:"P"}]},{products:[{id:1,nombre:"B",_syncVersion:2},{id:2,nombre:"C"}],proveedores:[]},"negocio-1","pc-1",()=>"2026-01-01");
   test("sincronización incremental detecta altas, cambios y bajas", entityOps.filter((x)=>x.type==="entity_upsert").length===2 && entityOps.filter((x)=>x.type==="entity_delete").length===1);
   test("cambio incremental conserva base para resolver conflictos", entityOps.find((x)=>x.entity==="products"&&x.entityId==="1")?.baseVersion===2 && entityOps.find((x)=>x.entity==="products"&&x.entityId==="1")?.baseValue?.nombre==="A");
+  const ticketOps = entitySync.diffTenantEntities({ tickets: [] }, { tickets: [{ id: "ticket-a", total: 1000 }, { id: "ticket-b", total: 2000 }] }, "negocio-1", "pc-1");
+  test("cada venta se sincroniza como un registro independiente", ticketOps.length === 2 && ticketOps.every((item) => item.entity === "tickets" && item.type === "entity_upsert"));
+  test("la lista completa de ventas ya no viaja como una sección reemplazable", entitySync.diffTenantSections({ tickets: [] }, { tickets: [{ id: "ticket-a" }] }, "negocio-1", "pc-1").every((item) => item.section !== "tickets"));
   const remoteApplied=entitySync.applyEntityOperations({products:[{id:1,nombre:"A"}]},[{type:"entity_upsert",entity:"products",entityId:"1",value:{id:1,nombre:"B"},version:3}]);
   test("cambio remoto conserva versión del registro", remoteApplied.products[0].nombre==="B" && remoteApplied.products[0]._syncVersion===3);
   const burstDataset = { products: [{ id: 1, nombre: "Alfajor", deposito: 25, _syncVersion: 4 }] };

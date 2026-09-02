@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { createPostgresStore } from "../server/postgres-store.mjs";
+import { createPostgresStore } from "../server/postgres-record-store.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const sourcePath = path.resolve(

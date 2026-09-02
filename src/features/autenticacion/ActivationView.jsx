@@ -5,20 +5,29 @@ const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 
 const formatCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
 
-export function ActivationView({ deviceId, onActivate }) {
+export function ActivationView({ deviceId, onActivate, onAdminActivate }) {
   const [code, setCode] = useState("");
+  const [adminKey, setAdminKey] = useState("");
+  const [adminMode, setAdminMode] = useState(false);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
 
   const submit = async (event) => {
     event.preventDefault();
-    if (code.replace(/[^A-Z0-9]/g, "").length < 12) {
+    if (adminMode && adminKey.length < 10) {
+      setError("Escribí la clave privada completa configurada en Render.");
+      return;
+    }
+    if (!adminMode && code.replace(/[^A-Z0-9]/g, "").length < 12) {
       setError("Escribí la clave completa que te dio el administrador.");
       return;
     }
     setWorking(true);
     setError("");
-    try { await onActivate(code); }
+    try {
+      if (adminMode) await onAdminActivate(adminKey);
+      else await onActivate(code);
+    }
     catch (activationError) { setError(activationError?.message || "No se pudo activar esta PC."); }
     finally { setWorking(false); }
   };
@@ -39,22 +48,42 @@ export function ActivationView({ deviceId, onActivate }) {
         <section className="flex items-center p-7 sm:p-10 lg:p-14">
           <form onSubmit={submit} className="w-full">
             <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-100 text-amber-700"><KeyRound size={24}/></span>
-            <h2 className="mt-6 text-2xl font-bold">Clave de instalación</h2>
-            <p className="mt-2 text-sm leading-6 text-gray-500">Pedile una clave al administrador de Kiosco+ y pegala acá.</p>
-            <label className="mt-7 block text-xs font-bold uppercase tracking-wide text-gray-600" htmlFor="installation-code">Clave</label>
-            <input
-              id="installation-code"
-              value={code}
-              onChange={(event) => { setCode(formatCode(event.target.value)); setError(""); }}
-              autoFocus
-              autoComplete="off"
-              spellCheck="false"
-              placeholder="KIOSCO-XXXX-XXXX-XXXX-XXXX"
-              className="mt-2 min-h-14 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 font-mono text-base font-semibold uppercase tracking-wide outline-none transition focus:border-[#1C4A44] focus:ring-4 focus:ring-[#1C4A44]/10"
-            />
+            <h2 className="mt-6 text-2xl font-bold">{adminMode ? "Activar PC administradora" : "Clave de instalación"}</h2>
+            <p className="mt-2 text-sm leading-6 text-gray-500">{adminMode ? "Usá la clave privada configurada en Render para recuperar tu computadora administradora." : "Pedile una clave al administrador de Kiosco+ y pegala acá."}</p>
+            <label className="mt-7 block text-xs font-bold uppercase tracking-wide text-gray-600" htmlFor="installation-code">{adminMode ? "Clave privada de Render" : "Clave"}</label>
+            {adminMode ? (
+              <input
+                id="installation-code"
+                type="password"
+                value={adminKey}
+                onChange={(event) => { setAdminKey(event.target.value); setError(""); }}
+                autoFocus
+                autoComplete="current-password"
+                placeholder="Clave privada del administrador"
+                className="mt-2 min-h-14 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 text-base outline-none transition focus:border-[#1C4A44] focus:ring-4 focus:ring-[#1C4A44]/10"
+              />
+            ) : (
+              <input
+                id="installation-code"
+                value={code}
+                onChange={(event) => { setCode(formatCode(event.target.value)); setError(""); }}
+                autoFocus
+                autoComplete="off"
+                spellCheck="false"
+                placeholder="KIOSCO-XXXX-XXXX-XXXX-XXXX"
+                className="mt-2 min-h-14 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 font-mono text-base font-semibold uppercase tracking-wide outline-none transition focus:border-[#1C4A44] focus:ring-4 focus:ring-[#1C4A44]/10"
+              />
+            )}
             {error && <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>}
             <button type="submit" disabled={working} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 font-semibold text-white transition hover:bg-[#163d38] disabled:cursor-wait disabled:opacity-60">
-              {working ? <><Loader2 size={18} className="animate-spin"/>Comprobando...</> : <><CheckCircle2 size={18}/>Activar esta PC</>}
+              {working ? <><Loader2 size={18} className="animate-spin"/>Comprobando...</> : <><CheckCircle2 size={18}/>{adminMode ? "Activar como administrador" : "Activar esta PC"}</>}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAdminMode((value) => !value); setError(""); }}
+              className="mt-3 min-h-11 w-full rounded-xl border border-gray-200 px-4 text-sm font-semibold text-[#1C4A44] hover:bg-gray-50"
+            >
+              {adminMode ? "Volver a la clave de instalación" : "Esta es mi PC administradora"}
             </button>
             <p className="mt-5 text-center text-xs leading-5 text-gray-400">Necesitás Internet únicamente para validar la clave por primera vez.</p>
           </form>
@@ -63,4 +92,3 @@ export function ActivationView({ deviceId, onActivate }) {
     </main>
   );
 }
-

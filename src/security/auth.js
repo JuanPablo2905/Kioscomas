@@ -1,4 +1,7 @@
-const SESSION_HOURS = 8;
+// Una terminal de comercio debe seguir operativa entre jornadas. La sesión
+// local acompaña la duración del token renovable de nube; cerrar sesión sigue
+// siendo una acción explícita y el administrador puede bloquear el equipo.
+const SESSION_DAYS = 30;
 const MAX_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 
@@ -37,7 +40,7 @@ export async function secureAccounts(accounts) {
 }
 
 export function createSession(accountId, identity, now = Date.now()) {
-  return { accountId, identity, createdAt: new Date(now).toISOString(), expiresAt: new Date(now + SESSION_HOURS * 3600000).toISOString() };
+  return { accountId, identity, createdAt: new Date(now).toISOString(), expiresAt: new Date(now + SESSION_DAYS * 24 * 3600000).toISOString() };
 }
 
 export function validSession(session, now = Date.now()) {

@@ -1,7 +1,7 @@
 {
   "name": "kiosco-app",
   "private": true,
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "Gestión simple de stock, ventas, caja y compras para comercios.",
   "author": "Kiosco+",
   "repository": {
@@ -24,8 +24,9 @@
     "test:functions": "node scripts/functional-tests.mjs",
     "test:cloud": "node scripts/cloud-integration-tests.mjs",
     "test:cloud-config": "node scripts/cloud-config-tests.mjs",
+    "test:postgres-records": "node scripts/postgres-record-store-tests.mjs",
     "test:tutorials": "node scripts/tutorial-target-tests.mjs",
-    "test:all": "node scripts/cloud-config-tests.mjs && node scripts/tutorial-target-tests.mjs && node scripts/smoke-views.mjs && node scripts/functional-tests.mjs && vite build",
+    "test:all": "node scripts/cloud-config-tests.mjs && node scripts/postgres-record-store-tests.mjs && node scripts/tutorial-target-tests.mjs && node scripts/smoke-views.mjs && node scripts/functional-tests.mjs && vite build",
     "desktop": "electron .",
     "desktop:build": "vite build --mode cloud && electron-builder --win nsis --publish never",
     "desktop:portable": "vite build --mode cloud && electron-builder --win portable --publish never",

@@ -4,7 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { mergeConcurrentEntity } from "../src/cloud/conflictMerge.js";
-import { createPostgresStore } from "./postgres-store.mjs";
+import { createPostgresStore } from "./postgres-record-store.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 let appVersion = "0.0.0";
@@ -24,9 +24,32 @@ const configuredAccessTokenHours = Number(process.env.KIOSCO_ACCESS_TOKEN_HOURS 
 const accessTokenTtlMs = (Number.isFinite(configuredAccessTokenHours) && configuredAccessTokenHours > 0
   ? Math.min(configuredAccessTokenHours, 24 * 30)
   : 24) * 60 * 60 * 1000;
+const refreshTokenTtlMs = 30 * 24 * 60 * 60 * 1000;
 const refreshRetryGraceMs = 5 * 60 * 1000;
 const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISOString();
-const emptyDb = () => ({ schemaVersion: 3, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {} });
+const refreshTokenExpiresAt = () => new Date(Date.now() + refreshTokenTtlMs).toISOString();
+const emptyDb = () => ({ schemaVersion: 4, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {} });
+const compactChangeLog = (changes = []) => {
+  let latestAccountDirectoryKept = false;
+  return [...changes].reverse().filter((change) => {
+    const accountDirectory = change?.type === "system_set" && change?.key === "cuentas";
+    if (!accountDirectory) return true;
+    if (latestAccountDirectoryKept) return false;
+    latestAccountDirectoryKept = true;
+    return true;
+  }).reverse().slice(-10000);
+};
+const compactAcceptedOperations = (accepted = {}, cursor = 0) => {
+  const oldestUsefulCursor = Math.max(0, Number(cursor || 0) - 20000);
+  return Object.fromEntries(Object.entries(accepted).filter(([, acceptedCursor]) => Number(acceptedCursor || 0) >= oldestUsefulCursor));
+};
+const compactSessions = (sessions = {}, now = Date.now()) => Object.fromEntries(
+  Object.entries(sessions).filter(([, session]) => {
+    if (!session) return false;
+    if (!session.revokedAt) return !session.refreshExpiresAt || Date.parse(session.refreshExpiresAt) > now;
+    return session.revokedReason === "refreshed" && Date.parse(session.refreshGraceUntil || "") > now;
+  }),
+);
 const cleanBarcode = (value) => String(value || "").replace(/\D/g, "").slice(0, 18);
 const cleanCatalogText = (value, max = 160) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
 const externalLookupInFlight = new Map();
@@ -373,6 +396,7 @@ const writeMirrors = async (db) => {
   await writeJson(path.join(dataDirectory, "backups", day, "database.json"), db);
 };
 const writeDb = async (db) => {
+  db.sessions = compactSessions(db.sessions);
   if (postgresStore) {
     await postgresStore.write(db);
     return;
@@ -565,7 +589,7 @@ const handleRequest = async (req, res) => {
     if (req.url === "/v1/health") return send(res, 200, {
       ok: true,
       service: "kiosco-cloud-local",
-      schemaVersion: 3,
+      schemaVersion: 4,
       localMode,
       persistence: postgresStore ? "postgresql" : "json",
       revision: String(process.env.RENDER_GIT_COMMIT || "local").slice(0, 12),
@@ -707,6 +731,43 @@ const handleRequest = async (req, res) => {
       await writeDb(db);
       return send(res, 200, { activated: true, activation: activationView(activation) });
     }
+    if (req.method === "POST" && req.url === "/v1/activation/admin") {
+      const payload = await body(req);
+      const deviceId = cleanActivationDeviceId(payload.deviceId);
+      if (!configuredSuperAdminUsername || configuredSuperAdminPassword.length < 10) {
+        return send(res, 503, { error: "La cuenta administradora todavía no está configurada en Render" });
+      }
+      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del equipo no es válido" });
+      if (!safeEqual(payload.deviceKey, configuredSuperAdminPassword)) {
+        return send(res, 401, { error: "La clave privada de administrador no es correcta" });
+      }
+      const db = await readDb();
+      const admin = db.users[configuredSuperAdminUsername];
+      if (!admin || admin.role !== "superAdmin") {
+        return send(res, 503, { error: "La cuenta administradora de nube no está disponible" });
+      }
+      const now = new Date().toISOString();
+      const activation = {
+        id: db.activations?.[deviceId]?.id || crypto.randomUUID(),
+        deviceId,
+        codeId: null,
+        activatedAt: db.activations?.[deviceId]?.activatedAt || now,
+        lastSeenAt: now,
+        appVersion: cleanCatalogText(payload.appVersion || "", 40) || null,
+        administrator: true,
+        revokedAt: null,
+      };
+      db.activations ||= {};
+      db.activations[deviceId] = activation;
+      db.devices[deviceId] = {
+        tenantId: "system-admin",
+        userId: admin.id,
+        lastSeenAt: now,
+        revokedAt: null,
+      };
+      await writeDb(db);
+      return send(res, 200, { activated: true, activation: activationView(activation) });
+    }
     if (req.method === "POST" && req.url === "/v1/auth/register") {
       const payload = await body(req);
       const deviceId = cleanActivationDeviceId(payload.deviceId);
@@ -776,7 +837,7 @@ const handleRequest = async (req, res) => {
         cursor: db.cursor,
         serverAt: now,
       });
-      db.changes = db.changes.slice(-10000);
+      db.changes = compactChangeLog(db.changes);
       await writeDb(db);
       return send(res, 201, { ok: true, businessId, account });
     }
@@ -824,6 +885,7 @@ const handleRequest = async (req, res) => {
         deviceId,
         role: user.role,
         expiresAt,
+        refreshExpiresAt: refreshTokenExpiresAt(),
         refreshHash: crypto.createHash("sha256").update(refreshToken).digest("hex"),
         revokedAt: null,
       };
@@ -876,6 +938,7 @@ const handleRequest = async (req, res) => {
         deviceId: payload.deviceId,
         role: user.role,
         expiresAt,
+        refreshExpiresAt: refreshTokenExpiresAt(),
         refreshHash: crypto.createHash("sha256").update(refreshToken).digest("hex"),
         revokedAt: null,
       };
@@ -896,6 +959,7 @@ const handleRequest = async (req, res) => {
       const now = Date.now();
       const entry = Object.entries(db.sessions).find(([, session]) => {
         if (session.refreshHash !== hash) return false;
+        if (session.refreshExpiresAt && Date.parse(session.refreshExpiresAt) <= now) return false;
         if (!session.revokedAt) return true;
         return session.revokedReason === "refreshed" && Date.parse(session.refreshGraceUntil || "") > now;
       });
@@ -913,6 +977,7 @@ const handleRequest = async (req, res) => {
       db.sessions[accessToken] = {
         ...old,
         expiresAt,
+        refreshExpiresAt: refreshTokenExpiresAt(),
         refreshHash: crypto.createHash("sha256").update(refreshToken).digest("hex"),
         revokedAt: null,
         revokedReason: null,
@@ -1191,15 +1256,26 @@ const handleRequest = async (req, res) => {
         else db.tenants[tenantId][operation.key] = { value: operation.value, version: db.cursor, updatedAt: new Date().toISOString(), deviceId };
         db.changes.push({ ...operation, cursor: db.cursor, serverAt: new Date().toISOString() });
       }
-      db.changes = db.changes.slice(-10000);
+      db.changes = compactChangeLog(db.changes);
+      db.accepted = compactAcceptedOperations(db.accepted, db.cursor);
       await writeDb(db);
       return send(res, 200, { acceptedIds, acceptedEntityVersions, conflicts, rejected, cursor: db.cursor });
     }
     if (req.method === "GET" && req.url?.startsWith("/v1/sync/pull")) {
       const since = Number(new URL(req.url, "http://localhost").searchParams.get("since") || 0);
+      const oldestAvailableCursor = db.changes.reduce(
+        (oldest, item) => Math.min(oldest, Number(item?.cursor || Number.POSITIVE_INFINITY)),
+        Number.POSITIVE_INFINITY,
+      );
+      const resetRequired = since > 0
+        && Number.isFinite(oldestAvailableCursor)
+        && since < oldestAvailableCursor - 1;
       return send(res, 200, {
         cursor: db.cursor,
+        resetRequired,
         operations: db.changes.filter((item) => (
+          !resetRequired
+          &&
           (item.tenantId === tenantId || (session?.role === "superAdmin" && item.type === "system_set"))
           && item.cursor > since
           && item.deviceId !== deviceId
@@ -1222,7 +1298,7 @@ const handleRequest = async (req, res) => {
     return send(res, 404, { error: "Ruta inexistente" });
   } catch (error) {
     console.error(error);
-    return send(res, 500, { error: "Error interno del servidor local" });
+    return send(res, 500, { error: localMode ? "Error interno del servidor local" : "La nube tuvo un problema temporal al guardar. Intentá nuevamente." });
   }
 };
 

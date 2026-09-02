@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { repository } from "../cloud/repository";
 import { loadCloudConfig } from "../cloud/config";
-import { ensureLocalCloudSession, loginCloud, logoutCloud, registerCloudAccount } from "../cloud/cloudAuth";
+import { ensureLocalCloudSession, loginCloud, logoutCloud, pairCloudDevice, registerCloudAccount } from "../cloud/cloudAuth";
 import { clearLoginFailures, createSession, loginGuard, registerLoginFailure, secureAccounts, secureSubject, validSession, verifyPassword } from "../security/auth";
 import { accountAccessMessage, canAccessAccount, formatAccessExpiration, trialAccessStatus } from "../security/trialAccess";
 import { Sidebar } from "../shared/layout";
@@ -41,7 +41,7 @@ import { lookupBarcode } from "../shared/productLookup";
 import { cloudFetch, cloudSession } from "../cloud/cloudAuth";
 import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
 import { PromptDialog } from "../shared/controls";
-import { clearInstallationReceipt, loadInstallationReceipt, markLegacyInstallation, redeemInstallationCode, saveInstallationReceipt, verifyInstallationActivation } from "../security/installationActivation";
+import { activateAdministratorInstallation, clearInstallationReceipt, loadInstallationReceipt, markLegacyInstallation, redeemInstallationCode, saveInstallationReceipt, verifyInstallationActivation } from "../security/installationActivation";
 import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, seedCuentas, seedDatos } from "./data";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
@@ -335,7 +335,7 @@ export default function KioscoApp() {
           if (receipt.mode === "legacy" && !hasExistingInstallation) {
             clearInstallationReceipt();
             requiresActivation = true;
-          } else if (receipt.mode === "code") {
+          } else if (["code", "administrator"].includes(receipt.mode)) {
             try {
               const verified = await verifyInstallationActivation(config.apiUrl, config.deviceId, runtime.version);
               if (!verified.activated) {
@@ -1132,8 +1132,46 @@ export default function KioscoApp() {
     setCargando(false);
   };
 
+  const handleAdministratorActivation = async (deviceKey) => {
+    const config = loadCloudConfig();
+    const deviceId = activationDeviceId || config.deviceId;
+    const result = await activateAdministratorInstallation(config.apiUrl, deviceKey, deviceId, activationAppVersion);
+    if (!result.activated) throw new Error("La nube no confirmó la activación administradora.");
+    const remoteSession = await pairCloudDevice(config.apiUrl, deviceKey, deviceId);
+    const adminAccount = await prepareCloudAccount({
+      id: remoteSession.user?.businessId || "system-admin",
+      tenantId: String(remoteSession.user?.businessId || "system-admin"),
+      nombre: remoteSession.user?.name || "Administrador de Kiosco+",
+      nombreNegocio: "Administración de Kiosco+",
+      usuario: "administrador",
+      superAdmin: true,
+      tipo: "administrador_app",
+      estado: "aprobada",
+      modoNegocio: "equipo",
+      roles: [],
+      empleados: [],
+    });
+    if (!adminAccount) throw new Error("La nube activó la PC, pero no devolvió la cuenta administradora.");
+    const identity = {
+      usuarioId: `cuenta:${adminAccount.id}`,
+      tenantId: String(adminAccount.id),
+      rol: "Administrador de la app",
+      nombre: adminAccount.nombre,
+      superAdmin: true,
+      adminId: adminAccount.id,
+    };
+    saveCloudAccountLocally(adminAccount);
+    setCurrentUserId(adminAccount.id);
+    setIdentidad(identity);
+    setSessionExpiresAt(createSession(adminAccount.id, identity).expiresAt);
+    setView("home");
+    startAuthenticatedCloudSync(adminAccount);
+    setActivationStatus("activated");
+    setCargando(false);
+  };
+
   if (activationStatus === "required") {
-    return <ActivationView deviceId={activationDeviceId} onActivate={handleInstallationActivation}/>;
+    return <ActivationView deviceId={activationDeviceId} onActivate={handleInstallationActivation} onAdminActivate={handleAdministratorActivation}/>;
   }
 
   if (cargando) {

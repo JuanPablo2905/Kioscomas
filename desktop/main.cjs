@@ -286,7 +286,10 @@ ipcMain.handle("kiosco:updates:check", () => checkDesktopUpdates({ manual: true 
 ipcMain.handle("kiosco:updates:configure", (_event, policy) => applyUpdatePolicy(policy));
 ipcMain.handle("kiosco:updates:install", () => {
   if (!desktopUpdater || updateState.status !== "downloaded") return { ok: false };
-  setImmediate(() => desktopUpdater.quitAndInstall(false, true));
+  // Las actualizaciones automáticas deben usar el modo silencioso. Con el
+  // instalador asistido Windows podía dejar el diálogo detrás de la app y
+  // volver a abrir la versión anterior sin completar el reemplazo.
+  setImmediate(() => desktopUpdater.quitAndInstall(true, true));
   return { ok: true };
 });
 

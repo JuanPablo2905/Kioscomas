@@ -1,92 +1,62 @@
-# Actualización de arquitectura cloud — 22 de agosto de 2026
+# Nube de Kiosco+ — generación 2
 
-## PostgreSQL/Supabase preparado
+## Objetivo
 
-La API conserva el mismo contrato de sincronización, pero ahora puede elegir la persistencia según el entorno:
+La aplicación sigue siendo *local-first*: primero guarda en el dispositivo y después sincroniza. La API HTTPS conserva el mismo contrato utilizado por las pantallas, pero la persistencia de producción ya no reescribe un único documento JSON con toda la aplicación.
 
-- Con `DATABASE_URL`: PostgreSQL administrado (Supabase).
-- Sin `DATABASE_URL`: archivos JSON locales, para desarrollo y recuperación.
+## Persistencia en Supabase
 
-Esta primera fase guarda el estado compatible actual dentro de una columna `jsonb`. Así se elimina el riesgo del disco efímero de Render sin reescribir al mismo tiempo ventas, caja, usuarios y sincronización. El esquema vive en `server/sql/002_runtime_state.sql` y usa `kiosco_private`, un esquema que no se expone directamente al navegador.
+Con `DATABASE_URL`, Render utiliza `kiosco_private.cloud_records_v2`. Cada fila tiene un alcance y una clave. Los alcances actuales son:
 
-El servidor crea una copia diaria en PostgreSQL y conserva siete días por defecto. La retención se controla con `KIOSCO_BACKUP_RETENTION_DAYS`.
+- `tenant`: valores generales independientes por negocio.
+- `tenant_entity`: un registro por producto, venta u otra entidad sincronizable.
+- `tenant_section`: un registro por cada sección restante del negocio.
+- `account`: una cuenta comercial independiente por negocio.
+- `user` y `session`: usuarios y sesiones separados.
+- `device`, `activation` y `activation_code`: licencias y equipos separados.
+- `change` y `accepted`: historial incremental e idempotencia por operación.
+- `catalog`: un registro por código de barras.
+- `system`: configuración administrativa que no pertenece a una cuenta.
+- `meta`: versión del esquema y cursor de sincronización.
 
-### Activación segura
+El servidor carga esos registros una vez al iniciar y mantiene una copia rápida en memoria. Cada petición persiste sólo las filas modificadas. Una venta no vuelve a escribir el negocio completo, los demás negocios, las sesiones, las claves ni todo el historial.
 
-1. En Supabase, copiar la conexión **Session pooler** del proyecto.
-2. En el servicio `kiosco-plus-api` de Render, crear el secreto `DATABASE_URL`.
-3. Configurar `KIOSCO_BACKUP_RETENTION_DAYS=7`.
-4. Importar los datos actuales antes de sustituir el servidor JSON, si se desea conservarlos.
-5. Desplegar la API y abrir `/v1/health`.
-6. Confirmar que la respuesta indique `"persistence":"postgresql"`.
+La API continúa procesando mutaciones en orden dentro de una única instancia de Render. No se debe aumentar a más de una instancia sin agregar coordinación distribuida.
 
-La URI de conexión contiene la contraseña: no se pega en chats, no se guarda en `.env` versionados y no se incorpora al frontend.
+## Corte limpio desde la generación anterior
 
-El comando `pnpm cloud:import` carga `cloud-dev-data/database.json` en una base vacía. Si el destino ya tiene otros datos, se detiene sin reemplazarlos. `--replace` existe sólo para una restauración deliberada.
+La tabla nueva se crea automáticamente durante el primer despliegue. Si existe `kiosco_private.cloud_state`, solamente se intenta conservar la activación vigente de computadoras administradoras. No se importan negocios, usuarios comerciales, sesiones ni movimientos anteriores.
 
-## Despliegue actual
+Esto es deliberado para la versión `0.2.0`: los datos existentes eran ficticios y la prioridad es comenzar con una base coherente.
 
-- Frontend público: https://kiosco-plus.onrender.com
-- API Node: https://kiosco-plus-api.onrender.com
-- Health check: https://kiosco-plus-api.onrender.com/v1/health
-- Repositorio: https://github.com/JuanPablo2905/Kioscomas
+No hace falta eliminar las tablas viejas. Se conservan como referencia hasta comprobar el funcionamiento de la generación 2.
 
-La API ya está desplegada con `KIOSCO_LOCAL_MODE=0`, escucha el puerto de Render y fue probada desde escritorio e iPhone. La sincronización incremental, la idempotencia, los conflictos por versión, las sesiones y el aislamiento por negocio tienen cobertura automática; las 36 pruebas cloud pasan.
+## Copias de seguridad
 
-## Riesgo anterior
+Antes de modificar una fila por primera vez cada día, el servidor guarda su valor anterior en `kiosco_private.daily_record_backups_v2`. Los respaldos son por registro y se conservan 14 días por defecto.
 
-Sin `DATABASE_URL`, la persistencia continúa basada en JSON. En Render ese disco es efímero. Al activar `DATABASE_URL`, el adaptador PostgreSQL reemplaza ese disco sin modificar el contrato de sincronización.
+La retención se configura mediante `KIOSCO_BACKUP_RETENTION_DAYS`, entre 1 y 90 días.
 
-## Próxima etapa
+## Autenticación y activaciones
 
-1. PostgreSQL administrado y `DATABASE_URL` secreta.
-2. Esquema con `tenant_id`, claves únicas y migraciones versionadas.
-3. Importación inicial de los JSON existentes.
-4. Copias automáticas y restauración ensayada.
-5. Pruebas de reinicio, reconexión, concurrencia y separación entre negocios.
-6. Monitoreo, alertas y política de retención.
+- La cuenta central se define sólo en Render mediante `KIOSCO_SUPERADMIN_USERNAME` y `KIOSCO_SUPERADMIN_PASSWORD`.
+- Una PC comercial usa una clave `KIOSCO-...` generada por el administrador.
+- Una PC administradora que perdió su activación puede elegir **Esta es mi PC administradora** e ingresar la clave privada de Render.
+- Los clientes no reciben secretos de Supabase ni de Render dentro del instalador.
+- Una lista vacía enviada por una versión vieja no puede borrar el padrón de negocios.
 
----
+## Diagnóstico
 
-# Base de nube de KioscoApp
+- `/v1/health`: confirma que Node/Render está funcionando y debe informar `schemaVersion: 4`.
+- `/v1/ready`: comprueba PostgreSQL y debe informar `storageGeneration: 2` y `payloadType: "records"`.
+- `/v1/ready/sections`: muestra cantidad y tamaño de registros por alcance sin exponer su contenido.
 
-## Estado actual
+La URI `DATABASE_URL` contiene una contraseña. Nunca debe guardarse en Git, pegarse en el frontend ni incorporarse al instalador.
 
-La aplicación usa un repositorio híbrido *local-first*. Cada cambio se guarda primero en el dispositivo. Si la nube está habilitada, también se agrega a una cola persistente y se reintenta cuando vuelve la conexión.
+## Publicación
 
-La nube permanece desactivada hasta configurar una URL HTTPS. Ningún dato actual sale de la computadora.
-
-## Contrato inicial del servidor
-
-### `POST /v1/sync/push`
-
-Recibe `{ "operations": [...] }`. Cada operación incluye `id`, `deviceId`, `createdAt`, `schemaVersion`, `type`, `key` y opcionalmente `value`.
-
-Responde `{ "acceptedIds": ["..."] }`. El servidor debe hacer `id` único para que un reintento nunca duplique ventas o movimientos.
-
-## Requisitos antes de producción
-
-- PostgreSQL con `tenant_id` obligatorio en cada tabla operativa.
-- Autenticación mediante tokens cortos y renovación segura.
-- Autorización por rol del lado del servidor.
-- HTTPS, rate limiting, auditoría y copias de seguridad.
-- Conflictos resueltos por versión de registro, no reemplazando todo el negocio.
-- Separar entornos de desarrollo, pruebas y producción.
-- Migraciones versionadas y reversibles.
-
-## Próxima etapa
-
-Implementar el servidor de desarrollo, sincronización incremental de productos/proveedores y descarga de cambios remotos.
-
-## Prueba local completa
-
-1. Ejecutar `INICIAR-NUBE-LOCAL.cmd`.
-2. Abrir Configurar → Nube y dispositivos.
-3. Usar `http://127.0.0.1:8787` y Probar conexión.
-4. Para ejecutar la batería del backend: `npm run test:cloud` (o el runtime Node incluido si npm no está disponible).
-
-Productos y proveedores se sincronizan como operaciones por registro. Las ventas y caja siguen locales hasta completar el protocolo inmutable de movimientos.
-
-## Actualizaciones
-
-`GET /v1/releases/latest?channel=stable` entrega el manifiesto de versión. La descarga e instalación permanecerán deshabilitadas hasta contar con HTTPS, firma de código y verificación SHA-256. Habrá canales `stable` y `beta`.
+1. Subir el código de `0.2.0` a `main`.
+2. Esperar que Render termine de desplegar y comprobar `/v1/ready`.
+3. Crear la etiqueta y release `v0.2.0`.
+4. Esperar que la acción de Windows publique `KioscoPlus-Setup.exe`, `latest.yml` y el archivo `.blockmap`.
+5. Probar una instalación administradora y una instalación comercial en equipos distintos antes de entregar el instalador.
