@@ -114,10 +114,9 @@ export const repository = {
       ...diffTenantSections({}, dataset, tenantId, config.deviceId),
     ].map((operation) => ({ ...operation, seedOnly: true }));
     if (operations.length) await syncEngine.enqueueMany(operations);
-    if (context.isSystemAdmin && canSyncSystemData()) {
-      const accounts = await this.get("cuentas", []);
-      await syncEngine.enqueue({ type: "system_set", key: "cuentas", tenantId, value: accounts });
-    }
+    // El padrón global de negocios nunca se usa como semilla. Al iniciar una
+    // instalación nueva el administrador sólo existe localmente; publicar esa
+    // lista parcial podía reemplazar el padrón real de la nube.
     const result = await syncEngine.flush();
     bootstrapResult = { hasRemoteData: true, seeded: true };
     return result;
@@ -145,7 +144,22 @@ export const repository = {
         ];
         if(operations.length) { await syncEngine.enqueueMany(operations); scheduleSync(); }
       } else if (context.tenantId && key === "cuentas" && context.isSystemAdmin && canSyncSystemData()) {
-        await syncEngine.enqueue({ type: "system_set", key: "cuentas", tenantId: String(context.tenantId), value });
+        const previousBusinesses = (Array.isArray(previous) ? previous : []).filter((account) => !account?.superAdmin);
+        const businesses = (Array.isArray(value) ? value : []).filter((account) => !account?.superAdmin);
+        // Una identidad administradora sintética se crea al entrar desde una
+        // PC limpia. No es una modificación del padrón y no debe subir sola.
+        if (!businesses.length && !previousBusinesses.length) return;
+        const nextIds = new Set(businesses.map((account) => String(account.id)));
+        const removedAccountIds = previousBusinesses
+          .filter((account) => !nextIds.has(String(account.id)))
+          .map((account) => String(account.id));
+        await syncEngine.enqueue({
+          type: "system_set",
+          key: "cuentas",
+          tenantId: String(context.tenantId),
+          value: businesses,
+          removedAccountIds,
+        });
         scheduleSync();
       } else if (context.tenantId && SYNCABLE_KEYS.has(key)) {
         await syncEngine.enqueue({ type: "set", key, tenantId: String(context.tenantId), value: extractTenantValue(key, value, String(context.tenantId)) });

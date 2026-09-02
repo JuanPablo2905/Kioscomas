@@ -1102,12 +1102,23 @@ const handleRequest = async (req, res) => {
           db.cursor += 1;
           if (operation.key === "cuentas" && Array.isArray(operation.value)) {
             const operationCreatedAt = Date.parse(operation.createdAt || "") || Date.now();
-            const newerRegistrations = (db.system.cuentas || []).filter((account) => (
-              account?.registrationDeviceId
-              && Date.parse(account.createdAt || "") > operationCreatedAt
-              && !operation.value.some((incoming) => String(incoming?.id) === String(account.id))
-            ));
-            operation = { ...operation, value: [...operation.value, ...newerRegistrations] };
+            const incomingAccounts = operation.value.filter((account) => account && !account.superAdmin);
+            const incomingIds = new Set(incomingAccounts.map((account) => String(account.id)));
+            const removedIds = new Set(
+              (Array.isArray(operation.removedAccountIds) ? operation.removedAccountIds : [])
+                .map((id) => String(id)),
+            );
+            // Las versiones viejas publicaban la lista completa y una PC sin
+            // datos podía mandar un arreglo vacío. Sólo se elimina un negocio
+            // cuando la operación nueva declara su id expresamente.
+            const preservedAccounts = (db.system.cuentas || []).filter((account) => {
+              const id = String(account?.id);
+              if (account?.superAdmin || incomingIds.has(id)) return false;
+              const registeredAfterOperation = account?.registrationDeviceId
+                && Date.parse(account.createdAt || "") > operationCreatedAt;
+              return !removedIds.has(id) || registeredAfterOperation;
+            });
+            operation = { ...operation, value: [...incomingAccounts, ...preservedAccounts] };
           }
           db.system[operation.key] = operation.value;
           db.accepted[operation.id] = db.cursor;

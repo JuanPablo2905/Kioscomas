@@ -67,13 +67,22 @@ const compactPendingQueue = (queue = []) => {
   }
   return compacted.reverse();
 };
+const isUnsafeAccountReplacement = (item) => item?.type === "system_set"
+  && item.key === "cuentas"
+  && Array.isArray(item.value)
+  && !item.value.some((account) => account && !account.superAdmin)
+  && !Array.isArray(item.removedAccountIds);
 const removeUnsyncableSystemOperations = (queue = []) => {
   const session = cloudSession();
-  if (session?.user?.role === "superAdmin") return queue;
+  // Descarta la operación defectuosa generada por 0.1.8 al iniciar el panel
+  // desde una PC limpia. Esa operación contenía sólo el administrador local
+  // y podía vaciar el padrón remoto.
+  const safeQueue = queue.filter((item) => !isUnsafeAccountReplacement(item));
+  if (session?.user?.role === "superAdmin") return safeQueue;
   // Una sesión de negocio nunca puede publicar datos globales de cuentas.
   // Versiones anteriores los dejaban en espera para siempre. Se descartan al
   // iniciar sin modificar los datos locales ni la cola normal del negocio.
-  return queue.filter((item) => item.type !== "system_set");
+  return safeQueue.filter((item) => item.type !== "system_set");
 };
 const canonicalJson = (value) => {
   if (Array.isArray(value)) return value.map(canonicalJson);

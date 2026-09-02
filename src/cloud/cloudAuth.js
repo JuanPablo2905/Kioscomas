@@ -2,11 +2,15 @@ import { CLOUD_CONFIG_KEY, isLocalCloudApiUrl, normalizeCloudApiUrl } from "./co
 
 const SESSION_KEY = "kiosco_cloud_session";
 const CLOUD_REQUEST_TIMEOUT_MS = 50000;
+// Render puede tardar más de un minuto en despertar una instancia inactiva.
+// Las operaciones de acceso toleran ese primer arranque sin alargar las
+// peticiones normales de sincronización.
+const CLOUD_AUTH_TIMEOUT_MS = 120000;
 const refreshPromises = new Map();
-const cloudRequest = async (url, options = {}) => {
+const cloudRequest = async (url, options = {}, timeoutMs = CLOUD_REQUEST_TIMEOUT_MS) => {
   if (options.signal) return fetch(url, options);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CLOUD_REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try { return await fetch(url, { ...options, signal: controller.signal }); }
   catch (error) {
     if (controller.signal.aborted) throw new Error("El servidor de nube tardó demasiado en responder.");
@@ -59,7 +63,7 @@ export async function bootstrapCloud(apiUrl, payload) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }, CLOUD_AUTH_TIMEOUT_MS);
 }
 
 export async function registerCloudAccount(apiUrl, payload) {
@@ -67,7 +71,7 @@ export async function registerCloudAccount(apiUrl, payload) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
-  });
+  }, CLOUD_AUTH_TIMEOUT_MS);
   const detail = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(detail.error || `No se pudo crear la cuenta en la nube (${response.status}).`);
@@ -82,7 +86,7 @@ export async function loginCloud(apiUrl, username, password, deviceId) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username, password, deviceId }),
-  });
+  }, CLOUD_AUTH_TIMEOUT_MS);
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     const error = new Error(detail.error || `No se pudo iniciar sesión en la nube (${response.status}).`);
@@ -99,7 +103,7 @@ export async function pairCloudDevice(apiUrl, deviceKey, deviceId) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ deviceKey, deviceId }),
-  });
+  }, CLOUD_AUTH_TIMEOUT_MS);
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     const error = new Error(detail.error || `No se pudo autorizar este equipo (${response.status}).`);

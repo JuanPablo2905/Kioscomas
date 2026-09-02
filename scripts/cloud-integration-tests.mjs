@@ -176,6 +176,25 @@ try {
     }] }),
   });
   test("el administrador publica el padrón de cuentas", accountDirectory.value.acceptedIds?.includes("seed-lazy-cloud-user"));
+  const staleEmptyDirectory = await request("/v1/sync/push", {
+    method: "POST",
+    headers: centralHeaders,
+    body: JSON.stringify({ operations: [{
+      id: "stale-empty-account-directory",
+      deviceId: "old-admin-pc",
+      tenantId: "system-admin",
+      type: "system_set",
+      key: "cuentas",
+      value: [],
+    }] }),
+  });
+  const directoryAfterStalePush = await request("/v1/sync/bootstrap", { headers: centralHeaders });
+  test(
+    "una lista vacía de una versión anterior no borra los negocios",
+    staleEmptyDirectory.value.acceptedIds?.includes("stale-empty-account-directory")
+      && directoryAfterStalePush.value.accounts?.some((account) => account.id === registeredAccount.id)
+      && directoryAfterStalePush.value.accounts?.some((account) => account.id === "business-lazy"),
+  );
   const approvedLogin = await request("/v1/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },

@@ -1,5 +1,6 @@
 const RECEIPT_KEY = "kiosco_installation_activation_v1";
-const REQUEST_TIMEOUT_MS = 20000;
+// La primera consulta también puede ser la que despierte el servicio de Render.
+const REQUEST_TIMEOUT_MS = 120000;
 
 const activationRequest = async (apiUrl, path, payload) => {
   const base = String(apiUrl || "").trim().replace(/\/+$/, "");
@@ -15,13 +16,14 @@ const activationRequest = async (apiUrl, path, payload) => {
     });
     const detail = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const error = new Error(detail.error || "No se pudo comprobar la clave de instalación.");
+      const error = new Error(detail.error || `No se pudo comprobar la clave de instalación (error ${response.status}).`);
       error.status = response.status;
       throw error;
     }
     return detail;
   } catch (error) {
     if (controller.signal.aborted) throw new Error("La nube tardó demasiado en responder. Revisá Internet e intentá otra vez.");
+    if (!error?.status) throw new Error("No se pudo conectar con la nube. Abrí la dirección de estado de Render en esta misma PC y volvé a intentarlo.");
     throw error;
   } finally {
     clearTimeout(timer);
@@ -65,4 +67,3 @@ export const redeemInstallationCode = async (apiUrl, code, deviceId, appVersion 
   }
   return result;
 };
-
