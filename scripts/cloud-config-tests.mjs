@@ -21,6 +21,7 @@ const {
   resolveCloudConfig,
 } = await import("../src/cloud/config.js");
 const {
+  cloudFetch,
   cloudSession,
   cloudSessionBelongsToApi,
 } = await import("../src/cloud/cloudAuth.js");
@@ -75,6 +76,29 @@ assert.equal(cloudSession()?.refreshToken, "remote-refresh", "a local session mu
 assert.equal(cloudSession(localUrl)?.accessToken, "local-token");
 assert.equal(cloudSessionBelongsToApi({ apiUrl: localUrl }, remoteUrl), false);
 
+sessionStorage.clear();
+localStorage.setItem("kiosco_cloud_session", JSON.stringify({ apiUrl: remoteUrl, refreshToken: "keep-on-temporary-error" }));
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async () => new Response(JSON.stringify({ error: "Servicio temporalmente no disponible" }), {
+  status: 503,
+  headers: { "content-type": "application/json" },
+});
+await assert.rejects(
+  cloudFetch(remoteUrl, "/v1/sync/pull"),
+  /temporalmente no disponible/,
+  "a temporary refresh error must reach the sync engine",
+);
+assert.equal(cloudSession(remoteUrl)?.refreshToken, "keep-on-temporary-error", "a temporary cloud error must preserve the renewable session");
+
+globalThis.fetch = async () => new Response(JSON.stringify({ error: "Sesión inválida" }), {
+  status: 401,
+  headers: { "content-type": "application/json" },
+});
+const unauthorized = await cloudFetch(remoteUrl, "/v1/sync/pull");
+assert.equal(unauthorized.status, 401);
+assert.equal(cloudSession(remoteUrl), null, "an invalid refresh token must clear the saved session");
+globalThis.fetch = originalFetch;
+
 const remoteSnapshot = {
   dataset: {
     products: [{ id: 1, nombre: "Coca-Cola", deposito: 12, _syncVersion: 4 }],
@@ -95,4 +119,4 @@ assert.equal(cloudSession(), null, "a mismatched local session must look disconn
 sessionStorage.setItem("kiosco_cloud_session", "{broken-json");
 assert.equal(cloudSession(), null, "corrupt saved sessions must not crash startup");
 
-console.log("cloud-config-tests: 23 assertions passed");
+console.log("cloud-config-tests: 28 assertions passed");

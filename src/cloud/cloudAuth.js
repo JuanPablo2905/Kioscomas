@@ -140,10 +140,18 @@ async function refreshCloud(apiUrl) {
   if (!response.ok) {
     const latest = read(normalizedApiUrl);
     if (latest?.refreshToken && latest.refreshToken !== current.refreshToken) return latest;
+    const detail = await response.json().catch(() => ({}));
+    if (![401, 403].includes(response.status)) {
+      const error = new Error(detail.error || `La nube no pudo renovar la sesión temporalmente (${response.status}).`);
+      error.status = response.status;
+      error.temporary = true;
+      throw error;
+    }
     const volatile = parseStoredSession(globalThis.sessionStorage);
     const durable = parseStoredSession(globalThis.localStorage);
     if (cloudSessionBelongsToApi(volatile, normalizedApiUrl)) globalThis.sessionStorage?.removeItem(SESSION_KEY);
     if (cloudSessionBelongsToApi(durable, normalizedApiUrl)) globalThis.localStorage?.removeItem(SESSION_KEY);
+    globalThis.window?.dispatchEvent?.(new Event("kiosco-cloud-session-changed"));
     return null;
   }
   const renewed = await response.json();
