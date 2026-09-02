@@ -69,7 +69,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
       `;
       await tx`
         INSERT INTO kiosco_private.cloud_state (id, schema_version, payload)
-        VALUES (${STATE_ID}, ${Number(seedValue?.schemaVersion || 3)}, ${JSON.stringify(seedValue)})
+        VALUES (${STATE_ID}, ${Number(seedValue?.schemaVersion || 3)}, ${seedValue})
         ON CONFLICT (id) DO NOTHING
       `;
     });
@@ -119,14 +119,13 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
   };
 
   const write = async (value) => {
-    const serialized = JSON.stringify(value);
     await sql.begin(async (tx) => {
       // Render usa una sola instancia actualmente. Este bloqueo también evita
       // que dos instancias futuras escriban el snapshot al mismo tiempo.
       await tx`SELECT pg_advisory_xact_lock(hashtext('kiosco-plus-cloud-state'))`;
       const [saved] = await tx`
         UPDATE kiosco_private.cloud_state
-        SET payload = ${serialized},
+        SET payload = ${value},
             schema_version = ${Number(value?.schemaVersion || 3)},
             revision = revision + 1,
             updated_at = now()
@@ -136,7 +135,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
       if (!saved) throw new Error("No se pudo guardar el estado de Kiosco+ en PostgreSQL");
       await tx`
         INSERT INTO kiosco_private.daily_backups (backup_day, schema_version, revision, payload)
-        VALUES (CURRENT_DATE, ${Number(value?.schemaVersion || 3)}, ${Number(saved.revision)}, ${serialized})
+        VALUES (CURRENT_DATE, ${Number(value?.schemaVersion || 3)}, ${Number(saved.revision)}, ${value})
         ON CONFLICT (backup_day) DO UPDATE
         SET schema_version = EXCLUDED.schema_version,
             revision = EXCLUDED.revision,
@@ -151,12 +150,11 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
   };
 
   const replace = async (value) => {
-    const serialized = JSON.stringify(value);
     await sql.begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtext('kiosco-plus-cloud-state'))`;
       const [saved] = await tx`
         UPDATE kiosco_private.cloud_state
-        SET payload = ${serialized},
+        SET payload = ${value},
             schema_version = ${Number(value?.schemaVersion || 3)},
             revision = revision + 1,
             updated_at = now()
@@ -166,7 +164,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
       if (!saved) throw new Error("No se pudo reemplazar el estado de Kiosco+ en PostgreSQL");
       await tx`
         INSERT INTO kiosco_private.daily_backups (backup_day, schema_version, revision, payload)
-        VALUES (CURRENT_DATE, ${Number(value?.schemaVersion || 3)}, ${Number(saved.revision)}, ${serialized})
+        VALUES (CURRENT_DATE, ${Number(value?.schemaVersion || 3)}, ${Number(saved.revision)}, ${value})
         ON CONFLICT (backup_day) DO UPDATE
         SET schema_version = EXCLUDED.schema_version,
             revision = EXCLUDED.revision,
