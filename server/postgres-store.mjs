@@ -71,6 +71,11 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
     return row.payload;
   };
 
+  const probe = async () => {
+    const [row] = await sql`SELECT 1 AS ok`;
+    return Number(row?.ok) === 1;
+  };
+
   const write = async (value) => {
     const serialized = JSON.stringify(value);
     await sql.begin(async (tx) => {
@@ -131,5 +136,5 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
 
   const close = () => sql.end({ timeout: 5 });
 
-  return { initialize, read, write, replace, close };
+  return { initialize, read, probe, write, replace, close };
 }

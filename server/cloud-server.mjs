@@ -511,6 +511,20 @@ const handleRequest = async (req, res) => {
       revision: String(process.env.RENDER_GIT_COMMIT || "local").slice(0, 12),
       time: new Date().toISOString(),
     });
+    if (req.method === "GET" && req.url === "/v1/ready") {
+      if (!postgresStore) return send(res, 200, { ok: true, persistence: "json" });
+      try {
+        const ready = await postgresStore.probe();
+        return send(res, ready ? 200 : 503, { ok: ready, persistence: "postgresql" });
+      } catch (error) {
+        console.error("PostgreSQL no respondió a la comprobación", error);
+        return send(res, 503, {
+          ok: false,
+          persistence: "postgresql",
+          error: error?.code || error?.name || "database_unavailable",
+        });
+      }
+    }
     if (req.url?.startsWith("/v1/releases/latest")) {
       const channel = new URL(req.url, "http://localhost").searchParams.get("channel") || "stable";
       return send(res, 200, {
@@ -914,6 +928,7 @@ let databaseRequestMutation = Promise.resolve();
 const DATABASE_REQUEST_TIMEOUT_MS = 30_000;
 const bypassDatabaseQueue = (req) => req.method === "OPTIONS"
   || req.url === "/v1/health"
+  || req.url === "/v1/ready"
   || req.url?.startsWith("/v1/releases/latest")
   || req.url === "/v1/catalog/providers";
 
