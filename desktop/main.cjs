@@ -5,11 +5,18 @@ const { execFile, spawn } = require("child_process");
 
 let localCloudProcess = null;
 
+function isDevelopmentLauncher() {
+  return !app.isPackaged
+    || /Desarrollo/i.test(path.basename(process.execPath))
+    || process.env.KIOSCO_USE_EXTERNAL_PROJECT === "1";
+}
+
 function localCloudPaths() {
   const executableDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
   const developmentRoot = path.resolve(executableDir, "..");
   const externalServer = path.join(developmentRoot, "server", "cloud-server.mjs");
   const usesExternalProject = app.isPackaged
+    && isDevelopmentLauncher()
     && fs.existsSync(path.join(developmentRoot, "dist", "index.html"))
     && fs.existsSync(externalServer);
   const dataDir = app.isPackaged
@@ -61,7 +68,9 @@ function createWindow() {
     minHeight: 700,
     title: "Kiosco+",
     icon: path.join(__dirname, "icon.ico"),
-    show: false,
+    // Mostrar el marco inmediatamente evita que un fallo o una demora del
+    // renderer deje el proceso abierto sin ninguna ventana visible.
+    show: true,
     autoHideMenuBar: true,
     backgroundColor: "#F6F1E7",
     webPreferences: {
@@ -73,7 +82,6 @@ function createWindow() {
   });
 
   window.once("ready-to-show", () => {
-    window.show();
     window.focus();
   });
 
@@ -130,11 +138,35 @@ function createWindow() {
     path.resolve(executableDir, "..", "dist", "index.html"),
     path.resolve(executableDir, "..", "..", "dist", "index.html"),
   ];
-  const externalIndex = externalCandidates.find((candidate) => fs.existsSync(candidate));
+  const externalIndex = isDevelopmentLauncher()
+    ? externalCandidates.find((candidate) => fs.existsSync(candidate))
+    : null;
   const bundledIndex = path.join(__dirname, "..", "dist", "index.html");
   const indexToLoad = externalIndex || bundledIndex;
 
-  window.loadFile(indexToLoad).catch(console.error);
+  window.loadFile(indexToLoad).catch((error) => {
+    console.error("[startup] No se pudo cargar la aplicación", error);
+    if (window.isDestroyed()) return;
+    const message = String(error?.message || error || "Error desconocido");
+    const escapedMessage = message.replace(/[&<>]/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+    })[char]);
+    const errorPage = `
+      <!doctype html>
+      <html lang="es">
+        <meta charset="utf-8">
+        <title>Kiosco+ - Error al iniciar</title>
+        <body style="font-family:Arial,sans-serif;background:#f6f1e7;color:#172033;padding:48px">
+          <h1>Kiosco+ no pudo cargar la aplicación</h1>
+          <p>Cerrá esta ventana y compartí este detalle para poder corregirlo:</p>
+          <pre style="white-space:pre-wrap;background:#fff;padding:16px;border:1px solid #ddd;border-radius:8px">${escapedMessage}</pre>
+        </body>
+      </html>
+    `;
+    window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorPage)}`).catch(console.error);
+  });
 }
 
 ipcMain.handle("kiosco:open-cash-drawer", async (_event, { printerName = "" } = {}) => new Promise((resolve) => {
@@ -161,7 +193,7 @@ ipcMain.handle("kiosco:capture-screenshot", async (event) => {
 
 app.whenReady().then(() => {
   if (process.platform === "win32") app.setAppUserModelId("com.kioscoplus.desktop");
-  startLocalCloud();
+  if (isDevelopmentLauncher() || process.env.KIOSCO_ENABLE_LOCAL_CLOUD === "1") startLocalCloud();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

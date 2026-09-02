@@ -44,13 +44,23 @@ assert.equal(migratedLegacyDesktop.apiUrl, remoteUrl, "legacy local URLs must mi
 assert.equal(migratedLegacyDesktop.migratedFromLocal, true);
 assert.equal(migratedLegacyDesktop.deviceId, "desktop-1", "migration must preserve the device identity");
 
-const explicitLocal = resolveCloudConfig({
+const staleExplicitLocal = resolveCloudConfig({
   saved: { apiUrl: localUrl, enabled: true, serverMode: "local" },
   localUrl,
   publicApiUrl: remoteUrl,
   autoConnect: true,
 });
-assert.equal(explicitLocal.apiUrl, localUrl, "an explicit developer local selection must be preserved");
+assert.equal(staleExplicitLocal.apiUrl, remoteUrl, "a published build must replace even an explicitly saved legacy local URL");
+assert.equal(staleExplicitLocal.serverMode, "remote");
+assert.equal(staleExplicitLocal.migratedFromLocal, true);
+
+const developmentLocal = resolveCloudConfig({
+  saved: { apiUrl: localUrl, enabled: true, serverMode: "local" },
+  localUrl,
+  publicApiUrl: "",
+  autoConnect: false,
+});
+assert.equal(developmentLocal.apiUrl, localUrl, "a development build can still use its local server");
 
 const customRemote = resolveCloudConfig({
   saved: { apiUrl: "https://cloud.example.com/", enabled: true },
@@ -119,4 +129,4 @@ assert.equal(cloudSession(), null, "a mismatched local session must look disconn
 sessionStorage.setItem("kiosco_cloud_session", "{broken-json");
 assert.equal(cloudSession(), null, "corrupt saved sessions must not crash startup");
 
-console.log("cloud-config-tests: 28 assertions passed");
+console.log("cloud-config-tests: 30 assertions passed");

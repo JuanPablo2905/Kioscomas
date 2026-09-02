@@ -66,7 +66,15 @@ export const repository = {
             isSystemAdmin: !!(savedSession.identity?.superAdmin || savedSession.identity?.adminApp),
           };
           syncEngine.setContext(context);
-          await ensureCloudBootstrap().catch(() => {});
+          // La nube puede estar despertando, migrando datos o reintentando una
+          // sesión y tardar varios segundos. El arranque siempre debe terminar
+          // con la copia local disponible; la actualización remota continúa en
+          // segundo plano y notificará a la interfaz cuando esté lista.
+          setTimeout(() => {
+            ensureCloudBootstrap()
+              .then(() => syncEngine.flush())
+              .catch(() => {});
+          }, 0);
         }
       } catch {}
     }

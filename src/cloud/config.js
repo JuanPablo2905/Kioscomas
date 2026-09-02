@@ -21,8 +21,11 @@ export function resolveCloudConfig({ saved = {}, localUrl = "", publicApiUrl = p
   const normalizedLocalUrl = normalizeCloudApiUrl(localUrl);
   const savedApiUrl = normalizeCloudApiUrl(saved.apiUrl);
   const savedIsLocal = isLocalCloudApiUrl(savedApiUrl);
-  const explicitlyLocal = saved.serverMode === "local" && savedIsLocal;
-  const migrateLegacyLocal = Boolean(normalizedPublicUrl && autoConnect && savedIsLocal && !explicitlyLocal);
+  // Una compilación publicada con conexión automática nunca debe quedar
+  // atrapada en la URL local que guardaron las versiones de desarrollo. La
+  // edición de desarrollo no define publicApiUrl, por lo que sigue pudiendo
+  // utilizar el servidor local con normalidad.
+  const migrateLegacyLocal = Boolean(normalizedPublicUrl && autoConnect && savedIsLocal);
   let apiUrl = savedApiUrl;
 
   if (normalizedPublicUrl && autoConnect && (!savedApiUrl || migrateLegacyLocal)) apiUrl = normalizedPublicUrl;
@@ -56,11 +59,20 @@ export function loadCloudConfig() {
 }
 
 export function saveCloudConfig(config) {
-  const apiUrl = normalizeCloudApiUrl(config.apiUrl);
-  localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify({
+  const requestedApiUrl = normalizeCloudApiUrl(config.apiUrl);
+  const forcePublishedCloud = Boolean(
+    publishedApiUrl
+    && autoConnectPublishedCloud
+    && (!requestedApiUrl || isLocalCloudApiUrl(requestedApiUrl)),
+  );
+  const apiUrl = forcePublishedCloud ? publishedApiUrl : requestedApiUrl;
+  const saved = {
     ...defaultCloudConfig,
     ...config,
     apiUrl,
     serverMode: isLocalCloudApiUrl(apiUrl) ? "local" : "remote",
-  }));
+    migratedFromLocal: Boolean(config.migratedFromLocal || (forcePublishedCloud && requestedApiUrl)),
+  };
+  localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(saved));
+  return saved;
 }
