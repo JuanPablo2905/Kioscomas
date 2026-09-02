@@ -525,6 +525,15 @@ const handleRequest = async (req, res) => {
         });
       }
     }
+    if (req.method === "GET" && req.url === "/v1/ready/sections") {
+      if (!postgresStore) return send(res, 200, { ok: true, sections: [] });
+      try {
+        return send(res, 200, { ok: true, sections: await postgresStore.inspectSections() });
+      } catch (error) {
+        console.error("No se pudo medir el estado PostgreSQL", error);
+        return send(res, 503, { ok: false, error: error?.code || error?.name || "database_unavailable" });
+      }
+    }
     if (req.url?.startsWith("/v1/releases/latest")) {
       const channel = new URL(req.url, "http://localhost").searchParams.get("channel") || "stable";
       return send(res, 200, {
@@ -929,6 +938,7 @@ const DATABASE_REQUEST_TIMEOUT_MS = 30_000;
 const bypassDatabaseQueue = (req) => req.method === "OPTIONS"
   || req.url === "/v1/health"
   || req.url === "/v1/ready"
+  || req.url === "/v1/ready/sections"
   || req.url?.startsWith("/v1/releases/latest")
   || req.url === "/v1/catalog/providers";
 
