@@ -934,6 +934,7 @@ const bypassDatabaseQueue = (req) => req.method === "OPTIONS"
 
 const runQueuedRequest = async (req, res) => {
   let timeoutId;
+  let timedOut = false;
   try {
     await Promise.race([
       handleRequest(req, res),
@@ -942,6 +943,7 @@ const runQueuedRequest = async (req, res) => {
       }),
     ]);
   } catch (error) {
+    timedOut = error?.message === "database_request_timeout";
     console.error("La petición a la base excedió el tiempo permitido", {
       method: req.method,
       url: req.url,
@@ -952,6 +954,13 @@ const runQueuedRequest = async (req, res) => {
     }
   } finally {
     clearTimeout(timeoutId);
+    // Promise.race cannot cancel an already running PostgreSQL mutation. If
+    // that operation did not settle, continuing could leave zombie writes and
+    // an ever-growing queue. Render restarts failed services automatically;
+    // exiting is the safest way to discard the poisoned pool and reconnect.
+    if (timedOut && postgresStore && !localMode) {
+      setTimeout(() => process.exit(1), 100).unref();
+    }
   }
 };
 
