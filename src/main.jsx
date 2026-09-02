@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "./shared/pwaInstall";
 import KioscoApp from "./app/KioscoApp";
 import { NativeSelectBridge } from "./shared/controls";
 import "./styles.css";

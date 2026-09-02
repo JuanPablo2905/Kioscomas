@@ -1,10 +1,14 @@
-const CACHE_NAME = "kioscoplus-shell-v4";
+const CACHE_NAME = "kioscoplus-shell-v5";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll([
     "./",
     "./manifest.webmanifest",
     "./pwa-icon.svg",
+    "./pwa-icon-192.png",
+    "./pwa-icon-512.png",
+    "./pwa-icon-maskable-512.png",
+    "./apple-touch-icon.png",
     "./kiosco-plus-mark.svg",
     "./kiosco-plus-lockup.svg",
     "./kiosco-plus-lockup-principal.svg",

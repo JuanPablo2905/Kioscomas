@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
+import { getPwaInstallState, requestPwaInstall, subscribePwaInstall } from "../../shared/pwaInstall";
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 
 export function LoginView({ onLogin, onRegister, error, notice, onReset, showDemoAccounts = false }) {
@@ -18,15 +19,10 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
   const [nombreNegocio, setNombreNegocio] = useState("");
   const [modoNegocio, setModoNegocio] = useState("solo");
   const [confirmarReset, setConfirmarReset] = useState(false);
-  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installState, setInstallState] = useState(getPwaInstallState);
   const [installHelp, setInstallHelp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const standalone = typeof window !== "undefined" && (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true);
-  useEffect(() => {
-    const capture = (event) => { event.preventDefault(); setInstallPrompt(event); };
-    window.addEventListener("beforeinstallprompt", capture);
-    return () => window.removeEventListener("beforeinstallprompt", capture);
-  }, []);
+  useEffect(() => subscribePwaInstall(setInstallState), []);
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -157,9 +153,14 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
           {submitting ? "Conectando..." : modo === "login" ? "Entrar" : "Enviar solicitud"}
         </button>
 
-        {!standalone && <div className="pwa-install-card mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-blue-900">
-          <button type="button" onClick={async () => { if (installPrompt) { await installPrompt.prompt(); setInstallPrompt(null); } else setInstallHelp((value) => !value); }} className="flex min-h-10 w-full items-center justify-center gap-2 text-sm font-semibold"><Download size={16}/>Instalar en este celular</button>
-          {installHelp && <p className="mt-2 text-xs leading-relaxed"><Share2 size={14} className="mr-1 inline"/>En iPhone: abrí esta página en Safari, tocá <b>Compartir</b> y después <b>Agregar a inicio</b>.</p>}
+        {!installState.standalone && <div className="pwa-install-card mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-blue-900">
+          <button type="button" onClick={async () => {
+            if (!installState.canInstall) return setInstallHelp((value) => !value);
+            const result = await requestPwaInstall();
+            if (result.outcome !== "accepted") setInstallHelp(true);
+          }} className="flex min-h-10 w-full items-center justify-center gap-2 text-sm font-semibold"><Download size={16}/>Instalar Kiosco+ en este celular</button>
+          <p className="mt-1 text-center text-[11px] leading-relaxed opacity-75">Queda con su ícono y se actualiza automáticamente.</p>
+          {installHelp && <div className="mt-2 space-y-1 border-t border-current/15 pt-2 text-xs leading-relaxed"><p><Share2 size={14} className="mr-1 inline"/><b>iPhone:</b> abrí esta página en Safari, tocá Compartir y después Agregar a inicio.</p><p><b>Android:</b> abrí el menú del navegador y elegí Instalar aplicación o Agregar a pantalla principal.</p></div>}
         </div>}
 
         {showDemoAccounts && <p className="text-xs text-gray-400 mt-4 text-center">
