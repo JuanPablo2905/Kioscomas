@@ -514,8 +514,8 @@ const handleRequest = async (req, res) => {
     if (req.method === "GET" && req.url === "/v1/ready") {
       if (!postgresStore) return send(res, 200, { ok: true, persistence: "json" });
       try {
-        const ready = await postgresStore.probe();
-        return send(res, ready ? 200 : 503, { ok: ready, persistence: "postgresql" });
+        const database = await postgresStore.probe();
+        return send(res, database.ok ? 200 : 503, { ...database, persistence: "postgresql" });
       } catch (error) {
         console.error("PostgreSQL no respondió a la comprobación", error);
         return send(res, 503, {

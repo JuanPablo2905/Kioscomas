@@ -72,8 +72,20 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
   };
 
   const probe = async () => {
-    const [row] = await sql`SELECT 1 AS ok`;
-    return Number(row?.ok) === 1;
+    const [row] = await sql`
+      SELECT
+        pg_column_size(payload)::bigint AS state_bytes,
+        revision,
+        updated_at
+      FROM kiosco_private.cloud_state
+      WHERE id = ${STATE_ID}
+    `;
+    return {
+      ok: Boolean(row),
+      stateBytes: Number(row?.state_bytes || 0),
+      revision: Number(row?.revision || 0),
+      updatedAt: row?.updated_at || null,
+    };
   };
 
   const write = async (value) => {
