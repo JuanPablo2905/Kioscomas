@@ -90,6 +90,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
     const [row] = await sql`
       SELECT
         pg_column_size(payload)::bigint AS state_bytes,
+        jsonb_typeof(payload) AS payload_type,
         revision,
         updated_at
       FROM kiosco_private.cloud_state
@@ -98,6 +99,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 7
     return {
       ok: Boolean(row),
       stateBytes: Number(row?.state_bytes || 0),
+      payloadType: row?.payload_type || "unknown",
       revision: Number(row?.revision || 0),
       updatedAt: row?.updated_at || null,
     };
