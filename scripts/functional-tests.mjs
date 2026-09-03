@@ -31,6 +31,7 @@ try {
   const archive = await vite.ssrLoadModule("/src/shared/archive.js");
   const share = await vite.ssrLoadModule("/src/shared/share.js");
   const dataStorageLock = await vite.ssrLoadModule("/src/cloud/dataStorageLock.js");
+  const referrals = await vite.ssrLoadModule("/src/billing/referrals.js");
 
   test("redondeo de gramos", domain.roundQuantity(4.1000000000000005) === 4.1);
   test("precio sugerido por margen", pricing.calcularPrecioSugerido(1000, 1, 50) === 1500);
@@ -91,6 +92,18 @@ try {
   test("migración conserva cuentas reales", migratedAccounts.some((account) => account.id === 99 && account.estado === "pendiente"));
   test("una instalación comercial vacía no incorpora cuentas de demostración", dataModule.migrarCuentasDemo([], { includeSeeds: false }).length === 0);
   test("una instalación comercial vacía no incorpora datos de demostración", Object.keys(dataModule.migrarDatosDemo({}, { includeSeeds: false })).length === 0);
+  const referralAccounts = [
+    { id: "origin", planPrecio: 30000 },
+    ...Array.from({ length: 6 }, (_, index) => ({
+      id: `referred-${index}`,
+      referredByAccountId: "origin",
+      pagos: index < 5 ? [{ id: `payment-${index}` }] : [],
+    })),
+  ];
+  const referralBenefit = referrals.monthlyPriceFor(referralAccounts[0], referralAccounts);
+  test("cada referido con primer pago suma 20% y los pendientes no descuentan", referralBenefit.activeCount === 5 && referralBenefit.pendingCount === 1 && referralBenefit.discountPercent === 100);
+  test("cinco referidos activos dejan el abono en cero", referralBenefit.monthlyPrice === 0 && referralBenefit.totalPrice === 0);
+  test("el precio mensual usa 30.000 como valor central predeterminado", referrals.monthlyPriceFor({ id: "new" }, []).monthlyPrice === 30000);
   const storedAdmin = { id: 1, nombre: "Juan", usuario: "demo", passwordHash: "hash-existente", passwordSalt: "sal-existente", superAdmin: true, roles: [], empleados: [] };
   const migratedStoredAdmin = dataModule.migrarCuentasDemo([storedAdmin]).find((account) => account.id === 1);
   test("abrir la app conserva la credencial cifrada del administrador", migratedStoredAdmin?.passwordHash === "hash-existente" && migratedStoredAdmin?.passwordSalt === "sal-existente" && !migratedStoredAdmin?.password);

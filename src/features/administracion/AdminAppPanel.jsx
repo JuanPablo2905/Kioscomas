@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Barcode, Bug, CalendarDays, CheckCircle2, Cloud, Clock, CreditCard, History, KeyRound, Lightbulb, Pencil, Plus, Search, Settings2, Shield, Store, Trash2, UserRound, UsersRound, X, XCircle } from "lucide-react";
+import { ArrowLeft, Barcode, Bug, CalendarDays, CheckCircle2, Cloud, Clock, CreditCard, Gift, History, KeyRound, Lightbulb, Pencil, Plus, Search, Settings2, Shield, Store, Trash2, UserRound, UsersRound, X, XCircle } from "lucide-react";
 import { SectionHeader } from "../../shared/layout";
 import { secureSubject } from "../../security/auth";
 import { canAccessAccount, formatAccessExpiration, formatTrialExpiration, grantTrialAccess, trialAccessStatus } from "../../security/trialAccess";
@@ -7,6 +7,7 @@ import { AppSelect, ConfirmDialog } from "../../shared/controls";
 import { BarcodeCatalogAdmin } from "./BarcodeCatalogAdmin";
 import { loadCloudConfig } from "../../cloud/config";
 import { cloudFetch, cloudSession } from "../../cloud/cloudAuth";
+import { monthlyPriceFor, withReferralStats } from "../../billing/referrals";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 
@@ -26,11 +27,11 @@ function TrialStatus({ account }) {
   return <p className="mt-1 text-xs text-gray-500">Sin acceso temporal activo</p>;
 }
 
-const emptyPayment = () => ({
+const emptyPayment = (account, accounts = [], months = 1) => ({
   fecha: new Date().toISOString().slice(0, 10),
-  importe: "",
+  importe: account ? String(monthlyPriceFor(account, accounts, months).totalPrice) : "",
   medio: "Transferencia",
-  meses: 1,
+  meses: months,
   nota: "",
 });
 
@@ -42,6 +43,11 @@ function addCalendarMonths(value, months) {
   const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   date.setDate(Math.min(originalDay, lastDay));
   return date;
+}
+
+function ReferralAdminSummary({ account, accounts }) {
+  const pricing = monthlyPriceFor(account, accounts);
+  return <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]"><span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-800"><Gift size={12}/>{account.referralCode || "Código pendiente"}</span>{account.referredByCode && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">Llegó por {account.referredByCode}</span>}<span className="rounded-full bg-gray-100 px-2 py-1 text-gray-700">{pricing.activeCount} activos · {pricing.pendingCount} pendientes</span><span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">{pricing.discountPercent}% desc. · ${pricing.monthlyPrice.toLocaleString("es-AR")}/mes</span></div>;
 }
 
 export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, setNotas, reportes = [], setReportes, onOpenNegocio, onLogout, onOpenSettings, syncStatus, onSyncNow }) {
@@ -154,7 +160,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
   };
 
   const actualizarCuenta = (id, cambios) =>
-    setCuentas((prev) => prev.map((cuenta) => cuenta.id === id ? { ...cuenta, ...cambios } : cuenta));
+    setCuentas((prev) => withReferralStats(prev.map((cuenta) => cuenta.id === id ? { ...cuenta, ...cambios } : cuenta)));
 
   const guardarCuenta = async (cuenta) => {
     const cambios = { nombre: form.nombre, nombreNegocio: form.nombreNegocio, usuario: form.usuario, planNombre: form.planNombre || "Mensual", planPrecio: Number(form.planPrecio || 0) };
@@ -205,6 +211,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
     const currentExpiration = new Date(cuenta.subscriptionExpiresAt || 0);
     const base = Number.isFinite(currentExpiration.getTime()) && currentExpiration > now ? currentExpiration : now;
     const expiresAt = addCalendarMonths(base, pagoForm.meses);
+    const pricing = monthlyPriceFor(cuenta, negocios, pagoForm.meses);
     const payment = {
       id: globalThis.crypto?.randomUUID?.() || `pago-${Date.now()}`,
       fechaPago: new Date(`${pagoForm.fecha}T12:00:00`).toISOString(),
@@ -216,6 +223,9 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
       accesoDesde: base.toISOString(),
       accesoHasta: expiresAt.toISOString(),
       registradoPor: "Administrador de Kiosco+",
+      precioBaseMensual: pricing.baseMonthlyPrice,
+      descuentoReferidos: pricing.discountPercent,
+      referidosActivos: pricing.activeCount,
     };
     actualizarCuenta(cuenta.id, {
       estado: "aprobada",
@@ -366,11 +376,11 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                   </div>
                 ) : (
                   <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-                    <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{cuenta.nombreNegocio}</p><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADOS[cuenta.estado] || ESTADOS.pendiente}`}>{cuenta.estado || "pendiente"}</span></div><p className="mt-1 text-sm text-gray-500">{cuenta.nombre} · @{cuenta.usuario} · {(cuenta.empleados || []).length} empleado(s)</p><TrialStatus account={cuenta}/></div>
+                    <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{cuenta.nombreNegocio}</p><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADOS[cuenta.estado] || ESTADOS.pendiente}`}>{cuenta.estado || "pendiente"}</span></div><p className="mt-1 text-sm text-gray-500">{cuenta.nombre} · @{cuenta.usuario} · {(cuenta.empleados || []).length} empleado(s)</p><TrialStatus account={cuenta}/><ReferralAdminSummary account={cuenta} accounts={negocios}/></div>
                     <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
                       <button onClick={() => onOpenNegocio(cuenta.id)} disabled={!canAccessAccount(cuenta)} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-30">Entrar</button>
                       {cuenta.estado !== "aprobada" && <><button onClick={() => actualizarCuenta(cuenta.id, grantTrialAccess(cuenta, 1))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-medium text-amber-800">Dar 1 día</button><button onClick={() => actualizarCuenta(cuenta.id, grantTrialAccess(cuenta, 7))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-medium text-amber-800">Dar 1 semana</button></>}
-                      <button onClick={() => { setPagoCuentaId(pagoCuentaId === cuenta.id ? null : cuenta.id); setPagoForm(emptyPayment()); }} className="flex items-center justify-center gap-1 rounded-lg bg-[#1C4A44] px-3 py-2 text-xs font-semibold text-white"><CreditCard size={14}/>Registrar pago</button>
+                      <button onClick={() => { setPagoCuentaId(pagoCuentaId === cuenta.id ? null : cuenta.id); setPagoForm(emptyPayment(cuenta, negocios)); }} className="flex items-center justify-center gap-1 rounded-lg bg-[#1C4A44] px-3 py-2 text-xs font-semibold text-white"><CreditCard size={14}/>Registrar pago</button>
                       {(cuenta.pagos || []).length > 0 && <button onClick={() => setHistorialCuentaId(historialCuentaId === cuenta.id ? null : cuenta.id)} className="flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs"><History size={14}/>Historial</button>}
                       <button onClick={() => actualizarCuenta(cuenta.id, { estado: cuenta.estado === "bloqueada" ? "aprobada" : "bloqueada" })} className="rounded-lg border border-amber-300 px-3 py-2 text-xs text-amber-700">{cuenta.estado === "bloqueada" ? "Desbloquear" : "Bloquear"}</button>
                       <button onClick={() => setUsuariosCuentaId(usuariosCuentaId === cuenta.id ? null : cuenta.id)} className="flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium"><UsersRound size={14}/>{usuariosCuentaId === cuenta.id ? "Ocultar cuentas" : `Cuentas (${1 + (cuenta.empleados || []).length})`}</button>
@@ -403,11 +413,11 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                     <input type="date" value={pagoForm.fecha} onChange={(event) => setPagoForm({ ...pagoForm, fecha: event.target.value })} className="rounded-lg border bg-white px-3 py-2 text-sm"/>
                     <input type="number" min="0" step="0.01" value={pagoForm.importe} onChange={(event) => setPagoForm({ ...pagoForm, importe: event.target.value })} placeholder="Importe" className="rounded-lg border bg-white px-3 py-2 text-sm"/>
                     <AppSelect value={pagoForm.medio} onChange={(medio) => setPagoForm({ ...pagoForm, medio })} options={["Transferencia", "Efectivo", "Mercado Pago", "Otro"]}/>
-                    <label className="rounded-lg border bg-white px-3 py-1"><span className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Meses a habilitar</span><input type="number" min="1" max="24" value={pagoForm.meses} onChange={(event) => setPagoForm({ ...pagoForm, meses: event.target.value })} className="w-full bg-transparent py-0.5 text-sm outline-none"/></label>
+                    <label className="rounded-lg border bg-white px-3 py-1"><span className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Meses a habilitar</span><input type="number" min="1" max="24" value={pagoForm.meses} onChange={(event) => { const meses = Math.max(1, Number(event.target.value) || 1); setPagoForm({ ...pagoForm, meses, importe: String(monthlyPriceFor(cuenta, negocios, meses).totalPrice) }); }} className="w-full bg-transparent py-0.5 text-sm outline-none"/></label>
                     <button onClick={() => registrarPago(cuenta)} className="rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white">Confirmar pago</button>
                     <input value={pagoForm.nota} onChange={(event) => setPagoForm({ ...pagoForm, nota: event.target.value })} placeholder="Nota opcional" className="rounded-lg border bg-white px-3 py-2 text-sm sm:col-span-2 lg:col-span-5"/>
                   </div>
-                  <p className="mt-2 text-xs text-gray-600">El plazo se suma desde el vencimiento vigente; si ya vencio, empieza desde hoy.</p>
+                  <p className="mt-2 text-xs text-gray-600">Importe sugerido con {monthlyPriceFor(cuenta, negocios).discountPercent}% de descuento por {monthlyPriceFor(cuenta, negocios).activeCount} referido(s) activo(s). Podés corregirlo manualmente. El plazo se suma desde el vencimiento vigente; si ya venció, empieza desde hoy.</p>
                 </div>}
                 {historialCuentaId === cuenta.id && <div className="mt-4 overflow-hidden rounded-xl border">
                   <div className="bg-gray-50 px-4 py-2 text-sm font-bold">Historial de pagos</div>

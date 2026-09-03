@@ -41,7 +41,8 @@
 .referral-caption b{color:#173834}
 .referral-code{max-width:430px;margin:0 auto;text-align:center;padding:26px;border:1px dashed #c5d1cd;border-radius:16px;background:#fff}
 .referral-code label{display:block;font-size:13px;font-weight:800;color:#224841;margin-bottom:11px}
-.code-row{display:flex;gap:9px}
+.referral-code p{margin:0 0 15px;color:#607570;font-size:14px;line-height:1.55}
+.code-row{display:flex;justify-content:center;gap:9px}
 .code-row input{flex:1;min-width:0;border:1px solid #c5d1cd;border-radius:999px;padding:13px 18px;font-size:14px;color:#173834;background:#fbfcf9;outline:none}
 .code-row input:focus{border-color:#3b8274}
 .code-row .button{padding:12px 20px;white-space:nowrap}

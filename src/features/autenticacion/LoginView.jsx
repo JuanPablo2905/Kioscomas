@@ -11,6 +11,7 @@ import { SectionHeader } from "../../shared/layout";
 import { getPwaInstallState, requestPwaInstall, subscribePwaInstall } from "../../shared/pwaInstall";
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const formatActivationCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
+const formatReferralCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 14);
 
 export function LoginView({ onLogin, onRegister, error, notice, onReset, showDemoAccounts = false, requiresRegistrationCode = false }) {
   const [modo, setModo] = useState("login");
@@ -20,6 +21,7 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
   const [nombreNegocio, setNombreNegocio] = useState("");
   const [modoNegocio, setModoNegocio] = useState("solo");
   const [activationCode, setActivationCode] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [confirmarReset, setConfirmarReset] = useState(false);
   const [installState, setInstallState] = useState(getPwaInstallState);
   const [installHelp, setInstallHelp] = useState(false);
@@ -41,6 +43,7 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
           nombreNegocio: nombreNegocio.trim(),
           modoNegocio,
           activationCode,
+          referralCode,
         });
         if (result?.ok) {
           setModo("login");
@@ -140,6 +143,17 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
                 <span className="mt-1 block text-xs text-gray-500">Habilita usuarios, roles y turnos.</span>
               </button>
             </div>
+            <label className="block text-sm text-gray-700" htmlFor="registration-referral-code">Código de referido <span className="text-gray-400">(opcional)</span></label>
+            <input
+              id="registration-referral-code"
+              value={referralCode}
+              onChange={(event) => setReferralCode(formatReferralCode(event.target.value))}
+              autoComplete="off"
+              spellCheck="false"
+              placeholder="Ej.: KIOS-ABC123"
+              className="mb-1 mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm font-semibold uppercase"
+            />
+            <p className="mb-4 text-xs leading-relaxed text-gray-500">Si otro comercio te recomendó Kiosco+, ingresá acá su código.</p>
           </>
         )}
 

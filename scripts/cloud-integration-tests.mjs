@@ -139,6 +139,20 @@ try {
   });
   const registeredAccount = registration.value.account;
   test("una PC activada envía el alta como pendiente", registration.response.status === 201 && registeredAccount?.estado === "pendiente" && !registeredAccount?.trialExpiresAt);
+  test("la nube asigna un código de referido único al negocio", /^KIOS-[A-Z0-9]{6}$/.test(registeredAccount?.referralCode || ""));
+  const invalidReferralRegistration = await request("/v1/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Referido inválido", businessName: "Comercio inválido", username: "invalid-referral-owner", password: "new-secret", referralCode: "KIOS-NOEXISTE" }),
+  });
+  test("un código de referido inventado no crea una cuenta", invalidReferralRegistration.response.status === 400);
+  const referralRegistration = await request("/v1/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Cliente Referido", businessName: "Kiosco Referido", username: "referred-owner", password: "new-secret", referralCode: registeredAccount.referralCode }),
+  });
+  const referredAccount = referralRegistration.value.account;
+  test("una cuenta nueva queda vinculada al negocio que la recomendó", referralRegistration.response.status === 201 && referredAccount?.referredByAccountId === registeredAccount.id && referredAccount?.referralStatus === "pendiente");
   const duplicateRegistration = await request("/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -194,6 +208,25 @@ try {
     }] }),
   });
   test("el administrador publica el padrón de cuentas", accountDirectory.value.acceptedIds?.includes("seed-lazy-cloud-user"));
+  const paidReferralDirectory = await request("/v1/sync/push", {
+    method: "POST",
+    headers: centralHeaders,
+    body: JSON.stringify({ operations: [{
+      id: "activate-first-referral",
+      deviceId: "central-pc",
+      tenantId: "system-admin",
+      type: "system_set",
+      key: "cuentas",
+      value: [
+        { ...registeredAccount, estado: "aprobada", subscriptionExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
+        { ...referredAccount, estado: "aprobada", pagos: [{ id: "first-referral-payment", importe: 30000 }] },
+      ],
+    }] }),
+  });
+  const referralDirectory = await request("/v1/sync/bootstrap", { headers: centralHeaders });
+  const referrerAfterPayment = referralDirectory.value.accounts?.find((account) => account.id === registeredAccount.id);
+  const referredAfterPayment = referralDirectory.value.accounts?.find((account) => account.id === referredAccount.id);
+  test("el primer pago activa el 20% para quien recomendó", paidReferralDirectory.response.ok && referrerAfterPayment?.referralStats?.discountPercent === 20 && referredAfterPayment?.referralStatus === "activo");
   const staleEmptyDirectory = await request("/v1/sync/push", {
     method: "POST",
     headers: centralHeaders,

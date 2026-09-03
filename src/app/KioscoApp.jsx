@@ -1061,7 +1061,7 @@ export default function KioscoApp() {
     setLoginError("Usuario o contraseña incorrectos.");
   };
 
-  const handleRegister = async ({ nombre, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "" }) => {
+  const handleRegister = async ({ nombre, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "", referralCode = "" }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "").trim();
     if (cuentas.some((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())) {
@@ -1093,6 +1093,7 @@ export default function KioscoApp() {
         password: normalizedPassword,
         businessName: nombreNegocio,
         businessMode: modoNegocio,
+        referralCode,
       });
       const account = await prepareCloudAccount(result.account);
       if (!account) throw new Error("La nube no devolvió la cuenta creada.");

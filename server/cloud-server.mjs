@@ -365,7 +365,7 @@ const readJsonDb = async () => {
 };
 const readDb = async () => {
   const saved = postgresStore ? await postgresStore.read() : await readJsonDb();
-  return applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {}, activationCodes: saved.activationCodes || {}, activations: saved.activations || {} }));
+  return ensureReferralMetadata(applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {}, activationCodes: saved.activationCodes || {}, activations: saved.activations || {} })));
 };
 const safeName = (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "_");
 const writeJson = async (file, value) => {
@@ -396,6 +396,7 @@ const writeMirrors = async (db) => {
   await writeJson(path.join(dataDirectory, "backups", day, "database.json"), db);
 };
 const writeDb = async (db) => {
+  ensureReferralMetadata(db);
   db.sessions = compactSessions(db.sessions);
   if (postgresStore) {
     await postgresStore.write(db);
@@ -438,6 +439,49 @@ const generateActivationCode = () => {
   const bytes = crypto.randomBytes(16);
   const characters = Array.from(bytes, (value) => activationAlphabet[value % activationAlphabet.length]).join("");
   return `KIOSCO-${characters.match(/.{1,4}/g).join("-")}`;
+};
+const referralAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const normalizeReferralCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const generateReferralCode = (accounts = []) => {
+  const used = new Set(accounts.map((account) => normalizeReferralCode(account?.referralCode)).filter(Boolean));
+  for (;;) {
+    const bytes = crypto.randomBytes(6);
+    const token = Array.from(bytes, (value) => referralAlphabet[value % referralAlphabet.length]).join("");
+    const code = `KIOS-${token}`;
+    if (!used.has(normalizeReferralCode(code))) return code;
+  }
+};
+const referralQualifies = (account = {}) => Array.isArray(account.pagos) && account.pagos.length > 0;
+const ensureReferralMetadata = (db) => {
+  db.system ||= {};
+  const accounts = Array.isArray(db.system.cuentas) ? db.system.cuentas : [];
+  const seenCodes = new Set();
+  for (const account of accounts) {
+    if (!account || account.superAdmin) continue;
+    const normalized = normalizeReferralCode(account.referralCode);
+    if (!normalized || seenCodes.has(normalized)) account.referralCode = generateReferralCode(accounts);
+    seenCodes.add(normalizeReferralCode(account.referralCode));
+  }
+  const ids = new Set(accounts.map((account) => String(account?.id || "")));
+  for (const account of accounts) {
+    if (!account || account.superAdmin) continue;
+    if (account.referredByAccountId && (!ids.has(String(account.referredByAccountId)) || String(account.referredByAccountId) === String(account.id))) {
+      account.referredByAccountId = null;
+      account.referredByCode = null;
+    }
+    const referred = accounts.filter((candidate) => String(candidate?.referredByAccountId || "") === String(account.id));
+    const activeCount = Math.min(5, referred.filter(referralQualifies).length);
+    account.referralStats = {
+      activeCount,
+      pendingCount: referred.filter((candidate) => !referralQualifies(candidate)).length,
+      totalCount: referred.length,
+      discountPercent: Math.min(100, activeCount * 20),
+    };
+    if (account.referredByAccountId) account.referralStatus = referralQualifies(account) ? "activo" : "pendiente";
+    else delete account.referralStatus;
+  }
+  db.system.cuentas = accounts;
+  return db;
 };
 const activationCodeView = (entry = {}) => ({
   id: entry.id,
@@ -776,6 +820,7 @@ const handleRequest = async (req, res) => {
       const name = cleanCatalogText(payload.name, 100);
       const businessName = cleanCatalogText(payload.businessName, 140);
       const businessMode = payload.businessMode === "equipo" ? "equipo" : "solo";
+      const requestedReferralCode = normalizeReferralCode(payload.referralCode);
       if (!deviceId || !username || password.length < 4 || !name || !businessName) {
         return send(res, 400, { error: "Completá el nombre, negocio, usuario y una contraseña de al menos 4 caracteres" });
       }
@@ -793,6 +838,13 @@ const handleRequest = async (req, res) => {
       ));
       if (usernameExists) return send(res, 409, { error: "Ese usuario ya existe, elegí otro" });
 
+      const referrer = requestedReferralCode
+        ? (db.system?.cuentas || []).find((candidate) => normalizeReferralCode(candidate?.referralCode) === requestedReferralCode)
+        : null;
+      if (requestedReferralCode && !referrer) {
+        return send(res, 400, { error: "El código de referido no existe. Revisalo o dejá el campo vacío." });
+      }
+
       const businessId = crypto.randomUUID();
       const now = new Date().toISOString();
       const account = {
@@ -807,6 +859,9 @@ const handleRequest = async (req, res) => {
         roles: [],
         empleados: [],
         pagos: [],
+        referralCode: generateReferralCode(db.system?.cuentas || []),
+        referredByAccountId: referrer?.id || null,
+        referredByCode: referrer?.referralCode || null,
         createdAt: now,
         registrationDeviceId: deviceId,
         ...appPasswordFields(password),
@@ -1178,7 +1233,16 @@ const handleRequest = async (req, res) => {
           db.cursor += 1;
           if (operation.key === "cuentas" && Array.isArray(operation.value)) {
             const operationCreatedAt = Date.parse(operation.createdAt || "") || Date.now();
-            const incomingAccounts = operation.value.filter((account) => account && !account.superAdmin);
+            const currentById = new Map((db.system.cuentas || []).map((account) => [String(account?.id), account]));
+            const incomingAccounts = operation.value.filter((account) => account && !account.superAdmin).map((account) => {
+              const current = currentById.get(String(account.id));
+              return {
+                ...account,
+                referralCode: current?.referralCode || account.referralCode,
+                referredByAccountId: current?.referredByAccountId || account.referredByAccountId || null,
+                referredByCode: current?.referredByCode || account.referredByCode || null,
+              };
+            });
             const incomingIds = new Set(incomingAccounts.map((account) => String(account.id)));
             const removedIds = new Set(
               (Array.isArray(operation.removedAccountIds) ? operation.removedAccountIds : [])
