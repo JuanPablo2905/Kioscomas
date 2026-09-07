@@ -1,3 +1,5 @@
+import { waitForCloudReady } from "../cloud/cloudWarmup.js";
+
 const RECEIPT_KEY = "kiosco_installation_activation_v1";
 // La primera consulta también puede ser la que despierte el servicio de Render.
 const REQUEST_TIMEOUT_MS = 120000;
@@ -5,6 +7,7 @@ const REQUEST_TIMEOUT_MS = 120000;
 const activationRequest = async (apiUrl, path, payload) => {
   const base = String(apiUrl || "").trim().replace(/\/+$/, "");
   if (!base) throw new Error("La dirección de la nube no está configurada.");
+  await waitForCloudReady(base);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {

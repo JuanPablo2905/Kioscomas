@@ -1,4 +1,5 @@
 import { CLOUD_CONFIG_KEY, isLocalCloudApiUrl, normalizeCloudApiUrl } from "./config.js";
+import { waitForCloudReady } from "./cloudWarmup.js";
 
 const SESSION_KEY = "kiosco_cloud_session";
 const CLOUD_REQUEST_TIMEOUT_MS = 50000;
@@ -59,6 +60,7 @@ const save = (value) => {
 export const cloudSession = (apiUrl = configuredApiUrl()) => read(apiUrl);
 
 export async function bootstrapCloud(apiUrl, payload) {
+  await waitForCloudReady(apiUrl);
   return cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/bootstrap`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -67,6 +69,7 @@ export async function bootstrapCloud(apiUrl, payload) {
 }
 
 export async function registerCloudAccount(apiUrl, payload) {
+  await waitForCloudReady(apiUrl);
   const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -82,6 +85,7 @@ export async function registerCloudAccount(apiUrl, payload) {
 }
 
 export async function loginCloud(apiUrl, username, password, deviceId) {
+  await waitForCloudReady(apiUrl);
   const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -99,6 +103,7 @@ export async function loginCloud(apiUrl, username, password, deviceId) {
 }
 
 export async function pairCloudDevice(apiUrl, deviceKey, deviceId) {
+  await waitForCloudReady(apiUrl);
   const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/pair-device`, {
     method: "POST",
     headers: { "content-type": "application/json" },

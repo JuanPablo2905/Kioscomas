@@ -44,6 +44,8 @@ import { PromptDialog } from "../shared/controls";
 import { activateAdministratorInstallation, clearInstallationReceipt, loadInstallationReceipt, markLegacyInstallation, redeemInstallationCode, saveInstallationReceipt, verifyInstallationActivation } from "../security/installationActivation";
 import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, seedCuentas, seedDatos } from "./data";
 import { WifiOff } from "lucide-react";
+import { getCloudWarmupState, startCloudWarmup, subscribeCloudWarmup } from "../cloud/cloudWarmup";
+import { CloudWarmupStatus } from "../features/autenticacion/CloudWarmupStatus";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const PUBLIC_DEMO_MODE = import.meta.env.VITE_PUBLIC_DEMO === "true";
@@ -281,9 +283,31 @@ export default function KioscoApp() {
   const [tutorialPreferences, setTutorialPreferences] = useState(null);
   const [syncStatus, setSyncStatus] = useState(repository.getSyncStatus());
   const [networkOnline, setNetworkOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
+  const [cloudWarmupState, setCloudWarmupState] = useState(getCloudWarmupState);
   const scannerBufferRef = useRef("");
   const scannerLastKeyRef = useRef(0);
   const autoTutorialRef = useRef(false);
+
+  const warmCloud = ({ force = false } = {}) => {
+    if (PUBLIC_DEMO_MODE) return Promise.resolve();
+    const config = loadCloudConfig();
+    if (!config.enabled || !config.apiUrl) return Promise.resolve();
+    return startCloudWarmup(config.apiUrl, { force });
+  };
+
+  useEffect(() => {
+    if (PUBLIC_DEMO_MODE) return undefined;
+    const unsubscribe = subscribeCloudWarmup(setCloudWarmupState);
+    const begin = () => warmCloud({ force: true }).catch(() => {});
+    warmCloud().catch(() => {});
+    window.addEventListener("online", begin);
+    window.addEventListener("kiosco-cloud-config-changed", begin);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("online", begin);
+      window.removeEventListener("kiosco-cloud-config-changed", begin);
+    };
+  }, []);
 
   useEffect(() => {
     const updates = window.kioscoDesktop?.updates;
@@ -1208,7 +1232,7 @@ export default function KioscoApp() {
   };
 
   if (activationStatus === "required") {
-    return <ActivationView deviceId={activationDeviceId} onActivate={handleInstallationActivation} onAdminActivate={handleAdministratorActivation}/>;
+    return <ActivationView deviceId={activationDeviceId} onActivate={handleInstallationActivation} onAdminActivate={handleAdministratorActivation} cloudWarmupState={cloudWarmupState} onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}/>;
   }
 
   if (cargando) {
@@ -1216,6 +1240,7 @@ export default function KioscoApp() {
       <div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-gray-50 text-sm text-gray-400">
         <img src={kioscoPlusLockup} alt="Kiosco+" className="h-14 w-auto max-w-[240px] object-contain"/>
         <span>Cargando...</span>
+        <CloudWarmupStatus state={cloudWarmupState} onRetry={() => warmCloud({ force: true }).catch(() => {})} className="mx-4 max-w-md text-left"/>
       </div>
     );
   }
@@ -1232,6 +1257,8 @@ export default function KioscoApp() {
         onReset={handleReset}
         showDemoAccounts={PUBLIC_DEMO_MODE}
         requiresRegistrationCode={!PUBLIC_DEMO_MODE && !(installationReceipt?.activated && installationReceipt.deviceId === cloudDeviceId)}
+        cloudWarmupState={cloudWarmupState}
+        onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}
       />
     );
   }

@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { CheckCircle2, KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { CloudWarmupStatus } from "./CloudWarmupStatus";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 
 const formatCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
 
-export function ActivationView({ deviceId, onActivate, onAdminActivate }) {
+export function ActivationView({ deviceId, onActivate, onAdminActivate, cloudWarmupState, onRetryCloud }) {
   const [code, setCode] = useState("");
   const [adminKey, setAdminKey] = useState("");
   const [adminMode, setAdminMode] = useState(false);
@@ -50,6 +51,7 @@ export function ActivationView({ deviceId, onActivate, onAdminActivate }) {
             <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-100 text-amber-700"><KeyRound size={24}/></span>
             <h2 className="mt-6 text-2xl font-bold">{adminMode ? "Activar dispositivo administrador" : "Clave de instalación"}</h2>
             <p className="mt-2 text-sm leading-6 text-gray-500">{adminMode ? "Usá la clave privada configurada en Render para recuperar tu dispositivo administrador." : "Pedile una clave al administrador de Kiosco+ y pegala acá."}</p>
+            <CloudWarmupStatus state={cloudWarmupState} onRetry={onRetryCloud} className="mt-5"/>
             <label className="mt-7 block text-xs font-bold uppercase tracking-wide text-gray-600" htmlFor="installation-code">{adminMode ? "Clave privada de Render" : "Clave"}</label>
             {adminMode ? (
               <input

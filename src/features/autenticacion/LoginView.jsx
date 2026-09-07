@@ -10,11 +10,12 @@ import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money 
 import { SectionHeader } from "../../shared/layout";
 import { getPwaInstallState, requestPwaInstall, subscribePwaInstall } from "../../shared/pwaInstall";
 import { TERMS_VERSION } from "../../legal/terms";
+import { CloudWarmupStatus } from "./CloudWarmupStatus";
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const formatActivationCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
 const formatReferralCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 14);
 
-export function LoginView({ onLogin, onRegister, error, notice, onReset, showDemoAccounts = false, requiresRegistrationCode = false }) {
+export function LoginView({ onLogin, onRegister, error, notice, onReset, showDemoAccounts = false, requiresRegistrationCode = false, cloudWarmupState, onRetryCloud }) {
   const [modo, setModo] = useState("login");
   const [nombre, setNombre] = useState("");
   const [usuario, setUsuario] = useState("");
@@ -78,6 +79,8 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
             ? "Iniciá sesión para entrar a tu negocio."
             : "Creá una cuenta para un nuevo local."}
         </p>
+
+        <CloudWarmupStatus state={cloudWarmupState} onRetry={onRetryCloud} className="mb-4"/>
 
         <div className="mb-5 grid grid-cols-2 gap-2">
           <button
