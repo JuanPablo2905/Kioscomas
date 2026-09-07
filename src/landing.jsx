@@ -1,16 +1,20 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import {
-  ArrowRight, BarChart3, Check, ChevronDown, Clock3, CreditCard,
-  Download, Package, ShieldCheck, ShoppingCart, Sparkles, Store, Users,
+  ArrowRight, BarChart3, Check, ChevronDown, Clock3, Cloud, CreditCard,
+  Download, HardDrive, Package, RefreshCw, ShieldCheck, ShoppingCart,
+  Smartphone, Sparkles, Store, Users, WifiOff,
 } from "lucide-react";
 import "./landing.css";
 import "./landing-animations.css";
+import { normalizeWhatsAppPhone } from "./shared/share.js";
 
 const base = import.meta.env.BASE_URL;
 const appUrl = import.meta.env.VITE_PUBLIC_APP_URL || "./";
 const windowsDownloadUrl = import.meta.env.VITE_WINDOWS_DOWNLOAD_URL || "https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Setup.exe";
 const macDownloadUrl = import.meta.env.VITE_MAC_DOWNLOAD_URL || "https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Mac-universal.dmg";
+const whatsappNumber = normalizeWhatsAppPhone(import.meta.env.VITE_SALES_WHATSAPP || "1122502706");
+const wa = (message) => `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
 const visitorPlatform = typeof navigator === "undefined" ? "" : `${navigator.platform || ""} ${navigator.userAgent || ""}`;
 const visitorUsesMac = /Mac/i.test(visitorPlatform) && !/iPhone|iPad|iPod/i.test(visitorPlatform);
 const visitorUsesMobile = /Android|iPhone|iPad|iPod/i.test(visitorPlatform);
@@ -31,7 +35,8 @@ const features = [
 
 const faqs = [
   ["¿Sirve para un kiosco chico?", "Sí. Kiosco+ está pensado para kioscos, almacenes, minimarkets y comercios de barrio argentinos."],
-  ["¿Puedo usarlo sin internet?", "La app está diseñada para que puedas seguir trabajando localmente aun sin conexión."],
+  ["¿Puedo usarlo sin internet?", "Sí. Después de abrir la app e iniciar sesión una vez con conexión, podés seguir vendiendo y registrando movimientos sin Internet. Los cambios quedan guardados en el dispositivo y se envían a la nube cuando vuelve la conexión."],
+  ["¿Qué cosas necesitan conexión?", "La primera carga, la activación o creación de una cuenta, la sincronización entre dispositivos y las consultas externas necesitan Internet."],
   ["¿Puedo tener empleados?", "Sí. Podés crear roles, elegir permisos y conservar un historial de las acciones importantes."],
   ["¿Cómo la abro por primera vez en una Mac?", "Descargá el DMG, arrastrá Kiosco+ a Aplicaciones y abrila. Como esta primera versión todavía no tiene firma de Apple, si macOS la bloquea hacé Control + clic sobre Kiosco+, elegí Abrir y confirmá una vez."],
   ["¿Tengo que descargar algo en el celular?", "No. En iPhone y Android abrís la aplicación web y elegís Agregar a inicio o Instalar aplicación. Queda con su ícono y recibe las actualizaciones automáticamente."],
@@ -47,21 +52,23 @@ function DemoPanel() {
     { menu: "Reportes", greeting: "Resumen del negocio", title: "Tus números de la semana", action: "Ver reporte" },
   ];
   const [activeScreen, setActiveScreen] = useState(0);
+  const [demoPaused, setDemoPaused] = useState(false);
   useEffect(() => {
+    if (demoPaused) return undefined;
     const interval = window.setInterval(() => setActiveScreen((current) => (current + 1) % screens.length), 2800);
     return () => window.clearInterval(interval);
-  }, [screens.length]);
+  }, [demoPaused, screens.length]);
   const screen = screens[activeScreen];
   return (
-    <div className="demo-window" aria-label="Vista de ejemplo de Kiosco Plus">
+    <div className="demo-window" aria-label="Vista interactiva de Kiosco Plus" onPointerEnter={() => setDemoPaused(true)} onPointerLeave={() => setDemoPaused(false)}>
       <div className="demo-sidebar">
         <img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+" />
         {screens.map((item, index) => (
-          <div className={index === activeScreen ? "demo-nav active" : "demo-nav"} key={item.menu}>{item.menu}</div>
+          <button type="button" aria-pressed={index === activeScreen} className={index === activeScreen ? "demo-nav active" : "demo-nav"} onClick={() => setActiveScreen(index)} onFocus={() => setDemoPaused(true)} onBlur={() => setDemoPaused(false)} key={item.menu}>{item.menu}</button>
         ))}
         <div className="demo-user"><span>MS</span><div><b>María</b><small>Dueña</small></div></div>
       </div>
-      <div className="demo-content"><div className="demo-head" key={screen.menu}><div><small>{screen.greeting}</small><h3>{screen.title}</h3></div><button>{screen.action}</button></div><DemoScreen menu={screen.menu}/></div>
+      <div className="demo-content" aria-live="polite"><div className="demo-head" key={screen.menu}><div><small>{screen.greeting}</small><h3>{screen.title}</h3></div><button type="button">{screen.action}</button></div><DemoScreen menu={screen.menu}/></div>
     </div>
   );
 }
@@ -88,22 +95,26 @@ function App() {
     return () => observer.disconnect();
   }, []);
   return <main>
-    <nav className="nav"><a className="brand" href="#inicio"><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+" /></a><div className="nav-links"><a href="#funciones">Funciones</a><a href="#como-funciona">Cómo funciona</a><a href="./precios.html">Precios</a><a href={appUrl}>Abrir demo</a><a href="#preguntas">Preguntas</a></div><a className="nav-cta" href={preferredDownload.url}><Download size={16}/> {preferredDownload.label}</a></nav>
+    <nav className="nav"><a className="brand" href="#inicio"><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+" /></a><div className="nav-links"><a href="#funciones">Funciones</a><a href="#como-funciona">Cómo funciona</a><a href="#sin-internet">Sin Internet</a><a href="./precios.html">Precios</a><a href={appUrl}>Abrir demo</a><a href="#preguntas">Preguntas</a></div><a className="nav-cta" href={preferredDownload.url}><Download size={16}/> {preferredDownload.label}</a></nav>
 
-    <section className="hero" id="inicio"><div className="hero-copy hero-enter"><div className="eyebrow"><Sparkles size={15}/> Hecha para comercios reales</div><h1>Tu negocio, <i>más claro</i> todos los días.</h1><p>Stock, ventas, caja, compras y clientes en una sola herramienta simple de usar. Pensada para kioscos y comercios de barrio.</p><div className="hero-actions" style={{flexWrap:"wrap"}}><a className="button primary" href={windowsDownloadUrl}><Download size={18}/> Windows</a><a className="button ghost" href={macDownloadUrl}><Download size={18}/> Mac</a><a className="button ghost" href={appUrl}>Probar demo <ArrowRight size={18}/></a></div><div className="hero-trust"><span><Check size={15}/> Windows 10 y 11</span><span><Check size={15}/> Mac Intel y Apple Silicon</span><span><Check size={15}/> Hecha en Argentina</span></div></div><div className="hero-visual hero-device-enter"><div className="glow"/><DemoPanel/></div></section>
+    <section className="hero" id="inicio"><div className="hero-copy hero-enter"><div className="eyebrow"><Sparkles size={15}/> Hecha para comercios reales</div><h1>Tu negocio, <i>más claro</i> todos los días.</h1><p>Stock, ventas, caja, compras y clientes en una sola herramienta simple de usar. Pensada para kioscos y comercios de barrio.</p><div className="hero-actions" style={{flexWrap:"wrap"}}><a className="button primary" href={windowsDownloadUrl}><Download size={18}/> Windows</a><a className="button ghost" href={macDownloadUrl}><Download size={18}/> Mac</a><a className="button ghost" href={appUrl}>Probar demo <ArrowRight size={18}/></a></div><div className="hero-trust"><span><Check size={15}/> Windows 10 y 11</span><span><Check size={15}/> Mac Intel y Apple Silicon</span><span><Check size={15}/> Celular y computadora</span><span><Check size={15}/> Hecha en Argentina</span></div></div><div className="hero-visual hero-device-enter"><div className="glow"/><DemoPanel/><div className="demo-hint"><span><Sparkles size={14}/> Tocá las secciones para recorrer la app</span><a href={appUrl}>Abrir la demo completa <ArrowRight size={15}/></a></div></div></section>
 
     <section className="strip"><p>Menos planillas, menos cuentas de memoria, <b>más control.</b></p><div><Store/> Kioscos <span/> Almacenes <span/> Minimarkets <span/> Comercios de barrio</div></section>
+
+    <section className="consumer-actions" aria-label="Gestiones de contratación"><span>Gestiones directas, sin iniciar sesión</span><div><a href="./terminos.html">Términos y condiciones</a><a href={wa("Hola Kiosco+, solicito la baja de mi servicio. Necesito el código de identificación de la solicitud.")} target="_blank" rel="noopener noreferrer">BOTÓN DE BAJA DE SERVICIO</a><a href={wa("Hola Kiosco+, quiero ejercer el derecho de arrepentimiento respecto de la contratación del servicio. Necesito el código de identificación de la solicitud.")} target="_blank" rel="noopener noreferrer">BOTÓN DE ARREPENTIMIENTO</a></div></section>
 
     <section className="section features" id="funciones"><div className="section-intro reveal"><span className="eyebrow">Todo en un solo lugar</span><h2>La información que necesitás, cuando la necesitás.</h2><p>Kiosco+ acompaña el ritmo real del mostrador y te ayuda a detectar lo importante antes de que se convierta en un problema.</p></div><div className="feature-grid">{features.map(({icon: Icon, title, text}, index)=><article className="feature reveal" style={{"--delay":`${index * 80}ms`}} key={title}><div className="feature-icon"><Icon size={22}/></div><h3>{title}</h3><p>{text}</p></article>)}</div></section>
 
     <section className="section workflow" id="como-funciona"><div className="workflow-copy"><span className="eyebrow">Simple desde el primer día</span><h2>Tu negocio ordenado en tres pasos.</h2><div className="steps"><Step n="01" title="Cargá tus productos" text="Ingresá tu stock, precios y alertas. También podés usar los datos de demo para conocer la app."/><Step n="02" title="Trabajá como siempre" text="Vendé, mové stock, recibí compras y registrá los movimientos de caja."/><Step n="03" title="Tomá mejores decisiones" text="Consultá reportes y alertas para saber qué reponer, qué revisar y qué está funcionando."/></div></div><div className="workflow-card"><Clock3 size={30}/><h3>Una pantalla que te acompaña</h3><p>La vista de inicio reúne caja, ventas, alertas y accesos rápidos para no perder tiempo buscando información.</p><div className="mini-chart"><span/><span/><span/><span/><span/><span/><span/></div></div></section>
+
+    <section className="section offline-section" id="sin-internet"><div className="offline-copy reveal"><span className="eyebrow"><WifiOff size={15}/> Preparada para los cortes</span><h2>Si se corta Internet, el negocio sigue.</h2><p>Después de ingresar una vez con conexión, la operación diaria queda disponible en el dispositivo. Podés seguir trabajando y Kiosco+ se ocupa de enviar los cambios cuando vuelve la red.</p><div className="offline-points"><span><Check size={17}/> Ventas, caja y stock siguen disponibles</span><span><Check size={17}/> Los cambios quedan guardados localmente</span><span><Check size={17}/> La sincronización se retoma automáticamente</span></div><small>La primera carga, la activación y el alta de una cuenta nueva sí requieren Internet.</small></div><div className="offline-flow reveal" aria-label="Cómo funciona Kiosco Plus sin conexión"><article><div><HardDrive size={22}/></div><span>1</span><h3>Guardado en el dispositivo</h3><p>La venta no se pierde aunque la conexión se corte.</p></article><ArrowRight className="offline-arrow"/><article><div><RefreshCw size={22}/></div><span>2</span><h3>Vuelve Internet</h3><p>No hace falta repetir ni volver a cargar los datos.</p></article><ArrowRight className="offline-arrow"/><article><div><Cloud size={22}/></div><span>3</span><h3>Nube sincronizada</h3><p>Los demás dispositivos reciben los cambios.</p></article><div className="offline-device"><Smartphone size={20}/><b>También desde el celular</b></div></div></section>
 
     <section className="section testimonial"><blockquote>“La idea es que nadie tenga que acordarse de todo de memoria. Que el negocio te muestre qué necesita.”</blockquote><p>— La filosofía detrás de Kiosco+</p></section>
 
     <section className="section faq" id="preguntas"><div className="section-intro"><span className="eyebrow">Preguntas frecuentes</span><h2>Hecha para que sea fácil empezar.</h2></div><div className="faq-list">{faqs.map(([q,a],i)=><button className={openFaq===i?"faq-item open":"faq-item"} onClick={()=>setOpenFaq(openFaq===i?null:i)} key={q}><span><b>{q}</b>{openFaq===i&&<p>{a}</p>}</span><ChevronDown size={20}/></button>)}</div></section>
 
     <section className="closing"><div><span className="eyebrow">Empezá a ordenar tu negocio</span><h2>Menos vueltas. Más tiempo para vender.</h2><p>Instalá Kiosco+ en Windows o Mac. En iPhone y Android podés agregar la versión web a la pantalla de inicio.</p></div><div className="hero-actions" style={{margin:0,flexWrap:"wrap"}}><a className="button light" href={windowsDownloadUrl}><Download size={18}/> Windows</a><a className="button light" href={macDownloadUrl}><Download size={18}/> Mac</a><a className="button ghost" href={appUrl} style={{background:"#fff0e8"}}>Abrir app <ArrowRight size={18}/></a></div></section>
-    <footer><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+"/><span>Gestión simple para comercios reales.</span><span>© {new Date().getFullYear()} Kiosco+</span></footer>
+    <footer><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+"/><span>Gestión simple para comercios reales.</span><a href="./terminos.html">Términos y condiciones</a><span>© {new Date().getFullYear()} Kiosco+</span></footer>
   </main>;
 }
 function Step({n,title,text}) { return <div className="step"><span>{n}</span><div><h3>{title}</h3><p>{text}</p></div></div>; }

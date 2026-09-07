@@ -43,12 +43,20 @@ import { cleanOperationalDataset, exportCommercialArchive } from "../shared/arch
 import { PromptDialog } from "../shared/controls";
 import { activateAdministratorInstallation, clearInstallationReceipt, loadInstallationReceipt, markLegacyInstallation, redeemInstallationCode, saveInstallationReceipt, verifyInstallationActivation } from "../security/installationActivation";
 import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, seedCuentas, seedDatos } from "./data";
+import { WifiOff } from "lucide-react";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const PUBLIC_DEMO_MODE = import.meta.env.VITE_PUBLIC_DEMO === "true";
 const PUBLIC_DEMO_IDENTITY = { usuarioId: "cuenta:2", tenantId: "2", rol: "Dueño", nombre: "María", superAdmin: false, publicDemo: true };
 const DEMO_INTRO_TUTORIAL_KEY = "__demo_intro__";
 const TUTORIAL_VIEW_NAMES = { home: "Inicio", notificaciones: "Notificaciones", stock: "Stock", vitrina: "Vitrina", ventas: "Ventas y caja", compras: "Compras", gastos: "Gastos", clientes: "Clientes", reportes: "Reportes", gestion: "Gestión", administracion: "Administración" };
+
+function OfflineStatusBanner({ pending = 0, floating = false }) {
+  return <div role="status" className={`${floating ? "fixed left-4 right-4 top-3 z-[190] mx-auto max-w-2xl rounded-xl shadow-lg" : "sticky top-0 z-50"} flex flex-wrap items-center justify-between gap-2 border border-amber-300 bg-amber-50 px-4 py-3 text-amber-950`}>
+    <div className="flex min-w-0 items-start gap-3"><WifiOff className="mt-0.5 shrink-0 text-amber-700" size={20}/><div><b className="block text-sm">Modo sin conexión: podés seguir trabajando</b><span className="text-xs leading-5 text-amber-800">Los cambios se guardan en este dispositivo y se enviarán cuando vuelva Internet.</span></div></div>
+    <span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-bold">{pending > 0 ? `${pending} cambio${pending === 1 ? "" : "s"} pendiente${pending === 1 ? "" : "s"}` : "Guardado localmente"}</span>
+  </div>;
+}
 
 function DemoTutorialPrompt({ view, declined, onStart, onDecline, onClose }) {
   const sectionName = TUTORIAL_VIEW_NAMES[view] || "esta sección";
@@ -272,6 +280,7 @@ export default function KioscoApp() {
   const [tutorialAccounts, setTutorialAccounts] = useState(null);
   const [tutorialPreferences, setTutorialPreferences] = useState(null);
   const [syncStatus, setSyncStatus] = useState(repository.getSyncStatus());
+  const [networkOnline, setNetworkOnline] = useState(() => typeof navigator === "undefined" ? true : navigator.onLine);
   const scannerBufferRef = useRef("");
   const scannerLastKeyRef = useRef(0);
   const autoTutorialRef = useRef(false);
@@ -411,6 +420,12 @@ export default function KioscoApp() {
   }, []);
 
   useEffect(() => repository.subscribe(setSyncStatus), []);
+  useEffect(() => {
+    const updateNetworkStatus = () => setNetworkOnline(navigator.onLine);
+    window.addEventListener("online", updateNetworkStatus);
+    window.addEventListener("offline", updateNetworkStatus);
+    return () => { window.removeEventListener("online", updateNetworkStatus); window.removeEventListener("offline", updateNetworkStatus); };
+  }, []);
   useEffect(() => {
     repository.setContext({
       tenantId: currentUserId ? String(currentUserId) : null,
@@ -1061,7 +1076,7 @@ export default function KioscoApp() {
     setLoginError("Usuario o contraseña incorrectos.");
   };
 
-  const handleRegister = async ({ nombre, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "", referralCode = "" }) => {
+  const handleRegister = async ({ nombre, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "", referralCode = "", termsAccepted = false, termsVersion = "" }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "").trim();
     if (cuentas.some((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())) {
@@ -1094,6 +1109,8 @@ export default function KioscoApp() {
         businessName: nombreNegocio,
         businessMode: modoNegocio,
         referralCode,
+        termsAccepted,
+        termsVersion,
       });
       const account = await prepareCloudAccount(result.account);
       if (!account) throw new Error("La nube no devolvió la cuenta creada.");
@@ -1222,6 +1239,7 @@ export default function KioscoApp() {
   if (cuentaActual?.superAdmin && identidad?.superAdmin && !identidad?.operandoNegocio) {
     return (
       <>
+      {!PUBLIC_DEMO_MODE && (!networkOnline || syncStatus?.state === "offline") && <OfflineStatusBanner pending={syncStatus?.pending || 0} floating/>}
       <AdminAppPanel
         cuentas={cuentas}
         setCuentas={setCuentas}
@@ -1415,6 +1433,7 @@ export default function KioscoApp() {
         demoMode={PUBLIC_DEMO_MODE}
       />
       <div className="app-content flex-1 overflow-y-auto bg-white">
+        {!PUBLIC_DEMO_MODE && (!networkOnline || syncStatus?.state === "offline") && <OfflineStatusBanner pending={syncStatus?.pending || 0}/>}
         {accountAccess.readOnly && <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"><div><b>Abono vencido: modo consulta.</b> Podés revisar y exportar tus datos, pero los cambios quedan bloqueados hasta renovar.</div><span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-bold">Venció {formatAccessExpiration(cuentaActual)}</span></div>}
         <ViewErrorBoundary view={view} onRecover={() => setView("home")} onReport={abrirReporteProblema}>
           <div key={view} className="view-stage">{renderView()}</div>

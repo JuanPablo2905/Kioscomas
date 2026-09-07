@@ -3,11 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
+import { TERMS_VERSION } from "../src/legal/terms.js";
 
 const port = 8799;
 const dataDir = path.join(tmpdir(), `kiosco-cloud-test-${Date.now()}`);
 const dbPath = path.join(dataDir, "database.json");
 const base = `http://127.0.0.1:${port}`;
+const acceptedTerms = { termsAccepted: true, termsVersion: TERMS_VERSION };
 const child = spawn(process.execPath, ["server/cloud-server.mjs"], {
   env: {
     ...process.env,
@@ -129,34 +131,41 @@ try {
   const unactivatedRegistration = await request("/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ deviceId: "not-activated-pc", name: "Cliente", businessName: "Kiosco sin activar", businessMode: "solo", username: "not-activated-owner", password: "1234" }),
+    body: JSON.stringify({ deviceId: "not-activated-pc", name: "Cliente", businessName: "Kiosco sin activar", businessMode: "solo", username: "not-activated-owner", password: "1234", ...acceptedTerms }),
   });
   test("una PC sin clave de instalación no puede solicitar una cuenta", unactivatedRegistration.response.status === 403);
+  const missingTermsRegistration = await request("/v1/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Sin aceptar", businessName: "Kiosco sin términos", username: "missing-terms-owner", password: "new-secret" }),
+  });
+  test("el alta exige aceptar la versión vigente de los términos", missingTermsRegistration.response.status === 400);
   const registration = await request("/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ deviceId: "activation-pc", name: "Cliente Nuevo", businessName: "Kiosco Nuevo", businessMode: "solo", username: "new-owner", password: "new-secret" }),
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Cliente Nuevo", businessName: "Kiosco Nuevo", businessMode: "solo", username: "new-owner", password: "new-secret", ...acceptedTerms }),
   });
   const registeredAccount = registration.value.account;
   test("una PC activada envía el alta como pendiente", registration.response.status === 201 && registeredAccount?.estado === "pendiente" && !registeredAccount?.trialExpiresAt);
+  test("la nube conserva la aceptación contractual", registeredAccount?.termsVersion === TERMS_VERSION && Boolean(registeredAccount?.termsAcceptedAt));
   test("la nube asigna un código de referido único al negocio", /^KIOS-[A-Z0-9]{6}$/.test(registeredAccount?.referralCode || ""));
   const invalidReferralRegistration = await request("/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ deviceId: "activation-pc", name: "Referido inválido", businessName: "Comercio inválido", username: "invalid-referral-owner", password: "new-secret", referralCode: "KIOS-NOEXISTE" }),
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Referido inválido", businessName: "Comercio inválido", username: "invalid-referral-owner", password: "new-secret", referralCode: "KIOS-NOEXISTE", ...acceptedTerms }),
   });
   test("un código de referido inventado no crea una cuenta", invalidReferralRegistration.response.status === 400);
   const referralRegistration = await request("/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ deviceId: "activation-pc", name: "Cliente Referido", businessName: "Kiosco Referido", username: "referred-owner", password: "new-secret", referralCode: registeredAccount.referralCode }),
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Cliente Referido", businessName: "Kiosco Referido", username: "referred-owner", password: "new-secret", referralCode: registeredAccount.referralCode, ...acceptedTerms }),
   });
   const referredAccount = referralRegistration.value.account;
   test("una cuenta nueva queda vinculada al negocio que la recomendó", referralRegistration.response.status === 201 && referredAccount?.referredByAccountId === registeredAccount.id && referredAccount?.referralStatus === "pendiente");
   const duplicateRegistration = await request("/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ deviceId: "activation-pc", name: "Otro", businessName: "Otro", username: "new-owner", password: "new-secret" }),
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Otro", businessName: "Otro", username: "new-owner", password: "new-secret", ...acceptedTerms }),
   });
   test("no se puede registrar dos veces el mismo usuario", duplicateRegistration.response.status === 409);
   const pendingLogin = await request("/v1/auth/login", {

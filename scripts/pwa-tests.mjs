@@ -6,6 +6,7 @@ const main = fs.readFileSync("src/main.jsx", "utf8");
 const login = fs.readFileSync("src/features/autenticacion/LoginView.jsx", "utf8");
 const app = fs.readFileSync("src/app/KioscoApp.jsx", "utf8");
 const serviceWorker = fs.readFileSync("public/sw.js", "utf8");
+const terms = fs.readFileSync("src/terminos.jsx", "utf8");
 
 const checks = [
   [manifest.display === "standalone", "La app móvil debe abrir sin interfaz del navegador."],
@@ -19,6 +20,9 @@ const checks = [
   [login.includes("requiresRegistrationCode"), "La web debe ofrecer la clave al crear un negocio desde un dispositivo nuevo."],
   [app.includes("await redeemInstallationCode") && app.includes("activationCode"), "La clave móvil debe autorizar el dispositivo antes de registrar el negocio."],
   [serviceWorker.includes("pwa-icon-maskable-512.png"), "Los íconos deben estar disponibles sin conexión."],
+  [app.includes("Modo sin conexión: podés seguir trabajando") && app.includes('window.addEventListener("offline"'), "La app debe avisar claramente que puede seguir trabajando sin conexión."],
+  [fs.existsSync("terminos.html") && terms.includes("BOTÓN DE BAJA DE SERVICIO") && terms.includes("BOTÓN DE ARREPENTIMIENTO"), "El sitio debe publicar los términos y los accesos de baja y arrepentimiento."],
+  [login.includes("termsAccepted") && login.includes("Términos y Condiciones"), "El registro debe pedir aceptación expresa de los términos."],
 ];
 
 for (const [condition, message] of checks) {

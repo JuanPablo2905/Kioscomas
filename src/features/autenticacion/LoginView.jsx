@@ -9,6 +9,7 @@ import {
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
 import { getPwaInstallState, requestPwaInstall, subscribePwaInstall } from "../../shared/pwaInstall";
+import { TERMS_VERSION } from "../../legal/terms";
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const formatActivationCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
 const formatReferralCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 14);
@@ -22,6 +23,8 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
   const [modoNegocio, setModoNegocio] = useState("solo");
   const [activationCode, setActivationCode] = useState("");
   const [referralCode, setReferralCode] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsError, setTermsError] = useState("");
   const [confirmarReset, setConfirmarReset] = useState(false);
   const [installState, setInstallState] = useState(getPwaInstallState);
   const [installHelp, setInstallHelp] = useState(false);
@@ -36,6 +39,10 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
         await onLogin({ usuario, password });
       } else {
         if (!nombre.trim() || !usuario.trim() || !password.trim() || !nombreNegocio.trim()) return;
+        if (!termsAccepted) {
+          setTermsError("Tenés que leer y aceptar los Términos y Condiciones para crear la cuenta.");
+          return;
+        }
         const result = await onRegister({
           nombre: nombre.trim(),
           usuario: usuario.trim(),
@@ -44,10 +51,14 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
           modoNegocio,
           activationCode,
           referralCode,
+          termsAccepted: true,
+          termsVersion: TERMS_VERSION,
         });
         if (result?.ok) {
           setModo("login");
           setPassword("");
+          setTermsAccepted(false);
+          setTermsError("");
         }
       }
     } finally {
@@ -172,6 +183,14 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
           className="mb-4 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm"
         />
 
+        {modo === "registro" && <div className="mb-4">
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs leading-relaxed text-gray-700">
+            <input type="checkbox" checked={termsAccepted} onChange={(event) => { setTermsAccepted(event.target.checked); if (event.target.checked) setTermsError(""); }} className="mt-0.5 h-4 w-4 shrink-0 accent-[#1C4A44]"/>
+            <span>Leí y acepto los <a href="./terminos.html" target="_blank" rel="noopener noreferrer" className="font-semibold text-[#1C4A44] underline">Términos y Condiciones de Uso</a> (versión {TERMS_VERSION}).</span>
+          </label>
+          {termsError && <p className="mt-2 text-xs text-red-500">{termsError}</p>}
+        </div>}
+
         {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
         {notice && <p className="mb-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs leading-5 text-green-800">{notice}</p>}
 
@@ -204,6 +223,7 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
         </p>}
 
         <div className="mt-4 pt-4 border-t border-gray-100 text-center">
+          <a href="./terminos.html" target="_blank" rel="noopener noreferrer" className="mb-3 inline-block text-xs font-medium text-gray-500 underline">Términos y Condiciones</a>
           {!confirmarReset ? (
             <button
               onClick={() => setConfirmarReset(true)}

@@ -4,6 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { mergeConcurrentEntity } from "../src/cloud/conflictMerge.js";
+import { TERMS_VERSION } from "../src/legal/terms.js";
 import { createPostgresStore } from "./postgres-record-store.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -824,6 +825,9 @@ const handleRequest = async (req, res) => {
       if (!deviceId || !username || password.length < 4 || !name || !businessName) {
         return send(res, 400, { error: "Completá el nombre, negocio, usuario y una contraseña de al menos 4 caracteres" });
       }
+      if (payload.termsAccepted !== true || String(payload.termsVersion || "") !== TERMS_VERSION) {
+        return send(res, 400, { error: "Leé y aceptá la versión vigente de los Términos y Condiciones para crear la cuenta." });
+      }
       const db = await readDb();
       const activation = db.activations?.[deviceId];
       if (!activation || activation.revokedAt) {
@@ -864,6 +868,8 @@ const handleRequest = async (req, res) => {
         referredByCode: referrer?.referralCode || null,
         createdAt: now,
         registrationDeviceId: deviceId,
+        termsAcceptedAt: now,
+        termsVersion: TERMS_VERSION,
         ...appPasswordFields(password),
       };
       const secured = hashPassword(password);
@@ -1241,6 +1247,8 @@ const handleRequest = async (req, res) => {
                 referralCode: current?.referralCode || account.referralCode,
                 referredByAccountId: current?.referredByAccountId || account.referredByAccountId || null,
                 referredByCode: current?.referredByCode || account.referredByCode || null,
+                termsAcceptedAt: current?.termsAcceptedAt || account.termsAcceptedAt || null,
+                termsVersion: current?.termsVersion || account.termsVersion || null,
               };
             });
             const incomingIds = new Set(incomingAccounts.map((account) => String(account.id)));

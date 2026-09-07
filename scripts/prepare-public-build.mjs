@@ -32,3 +32,4 @@ await rm(sourceDir, { recursive: true, force: true });
 console.log("Sitio público preparado en dist-public:");
 console.log("- / abre la landing");
 console.log("- /app.html abre la demo");
+console.log("- /terminos.html muestra los términos y condiciones");
