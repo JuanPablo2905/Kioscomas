@@ -62,6 +62,13 @@ function configureDesktopUpdater() {
     publishUpdateState({ supported: false, status: "development" });
     return;
   }
+  // macOS exige que la aplicación esté firmada para aplicar actualizaciones
+  // automáticas. Hasta incorporar la firma de Apple, las versiones para Mac
+  // se actualizan descargando el DMG nuevo para evitar errores o bucles.
+  if (process.platform === "darwin") {
+    publishUpdateState({ supported: false, status: "manual", error: null });
+    return;
+  }
   try {
     ({ autoUpdater: desktopUpdater } = require("electron-updater"));
   } catch (error) {
@@ -175,7 +182,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: "Kiosco+",
-    icon: path.join(__dirname, "icon.ico"),
+    icon: path.join(__dirname, process.platform === "win32" ? "icon.ico" : "icon.png"),
     // Mostrar el marco inmediatamente evita que un fallo o una demora del
     // renderer deje el proceso abierto sin ninguna ventana visible.
     show: true,

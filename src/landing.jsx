@@ -10,6 +10,15 @@ import "./landing-animations.css";
 const base = import.meta.env.BASE_URL;
 const appUrl = import.meta.env.VITE_PUBLIC_APP_URL || "./";
 const windowsDownloadUrl = import.meta.env.VITE_WINDOWS_DOWNLOAD_URL || "https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Setup.exe";
+const macDownloadUrl = import.meta.env.VITE_MAC_DOWNLOAD_URL || "https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Mac-universal.dmg";
+const visitorPlatform = typeof navigator === "undefined" ? "" : `${navigator.platform || ""} ${navigator.userAgent || ""}`;
+const visitorUsesMac = /Mac/i.test(visitorPlatform) && !/iPhone|iPad|iPod/i.test(visitorPlatform);
+const visitorUsesMobile = /Android|iPhone|iPad|iPod/i.test(visitorPlatform);
+const preferredDownload = visitorUsesMobile
+  ? { url: appUrl, label: "Abrir app" }
+  : visitorUsesMac
+    ? { url: macDownloadUrl, label: "Descargar para Mac" }
+    : { url: windowsDownloadUrl, label: "Descargar" };
 
 const features = [
   { icon: Package, title: "Stock bajo control", text: "Sabé qué mercadería tenés guardada y qué falta en el mostrador. La app te avisa antes de que un producto se termine." },
@@ -24,6 +33,8 @@ const faqs = [
   ["¿Sirve para un kiosco chico?", "Sí. Kiosco+ está pensado para kioscos, almacenes, minimarkets y comercios de barrio argentinos."],
   ["¿Puedo usarlo sin internet?", "La app está diseñada para que puedas seguir trabajando localmente aun sin conexión."],
   ["¿Puedo tener empleados?", "Sí. Podés crear roles, elegir permisos y conservar un historial de las acciones importantes."],
+  ["¿Cómo la abro por primera vez en una Mac?", "Descargá el DMG, arrastrá Kiosco+ a Aplicaciones y abrila. Como esta primera versión todavía no tiene firma de Apple, si macOS la bloquea hacé Control + clic sobre Kiosco+, elegí Abrir y confirmá una vez."],
+  ["¿Tengo que descargar algo en el celular?", "No. En iPhone y Android abrís la aplicación web y elegís Agregar a inicio o Instalar aplicación. Queda con su ícono y recibe las actualizaciones automáticamente."],
 ];
 
 function DemoPanel() {
@@ -77,9 +88,9 @@ function App() {
     return () => observer.disconnect();
   }, []);
   return <main>
-    <nav className="nav"><a className="brand" href="#inicio"><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+" /></a><div className="nav-links"><a href="#funciones">Funciones</a><a href="#como-funciona">Cómo funciona</a><a href="./precios.html">Precios</a><a href={appUrl}>Abrir demo</a><a href="#preguntas">Preguntas</a></div><a className="nav-cta" href={windowsDownloadUrl}><Download size={16}/> Descargar</a></nav>
+    <nav className="nav"><a className="brand" href="#inicio"><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+" /></a><div className="nav-links"><a href="#funciones">Funciones</a><a href="#como-funciona">Cómo funciona</a><a href="./precios.html">Precios</a><a href={appUrl}>Abrir demo</a><a href="#preguntas">Preguntas</a></div><a className="nav-cta" href={preferredDownload.url}><Download size={16}/> {preferredDownload.label}</a></nav>
 
-    <section className="hero" id="inicio"><div className="hero-copy hero-enter"><div className="eyebrow"><Sparkles size={15}/> Hecha para comercios reales</div><h1>Tu negocio, <i>más claro</i> todos los días.</h1><p>Stock, ventas, caja, compras y clientes en una sola herramienta simple de usar. Pensada para kioscos y comercios de barrio.</p><div className="hero-actions"><a className="button primary" href={windowsDownloadUrl}><Download size={18}/> Descargar para Windows</a><a className="button ghost" href={appUrl}>Probar demo <ArrowRight size={18}/></a></div><div className="hero-trust"><span><Check size={15}/> Windows 10 y 11</span><span><Check size={15}/> Actualizaciones automáticas</span><span><Check size={15}/> Hecha en Argentina</span></div></div><div className="hero-visual hero-device-enter"><div className="glow"/><DemoPanel/></div></section>
+    <section className="hero" id="inicio"><div className="hero-copy hero-enter"><div className="eyebrow"><Sparkles size={15}/> Hecha para comercios reales</div><h1>Tu negocio, <i>más claro</i> todos los días.</h1><p>Stock, ventas, caja, compras y clientes en una sola herramienta simple de usar. Pensada para kioscos y comercios de barrio.</p><div className="hero-actions" style={{flexWrap:"wrap"}}><a className="button primary" href={windowsDownloadUrl}><Download size={18}/> Windows</a><a className="button ghost" href={macDownloadUrl}><Download size={18}/> Mac</a><a className="button ghost" href={appUrl}>Probar demo <ArrowRight size={18}/></a></div><div className="hero-trust"><span><Check size={15}/> Windows 10 y 11</span><span><Check size={15}/> Mac Intel y Apple Silicon</span><span><Check size={15}/> Hecha en Argentina</span></div></div><div className="hero-visual hero-device-enter"><div className="glow"/><DemoPanel/></div></section>
 
     <section className="strip"><p>Menos planillas, menos cuentas de memoria, <b>más control.</b></p><div><Store/> Kioscos <span/> Almacenes <span/> Minimarkets <span/> Comercios de barrio</div></section>
 
@@ -91,7 +102,7 @@ function App() {
 
     <section className="section faq" id="preguntas"><div className="section-intro"><span className="eyebrow">Preguntas frecuentes</span><h2>Hecha para que sea fácil empezar.</h2></div><div className="faq-list">{faqs.map(([q,a],i)=><button className={openFaq===i?"faq-item open":"faq-item"} onClick={()=>setOpenFaq(openFaq===i?null:i)} key={q}><span><b>{q}</b>{openFaq===i&&<p>{a}</p>}</span><ChevronDown size={20}/></button>)}</div></section>
 
-    <section className="closing"><div><span className="eyebrow">Empezá a ordenar tu negocio</span><h2>Menos vueltas. Más tiempo para vender.</h2><p>Instalá Kiosco+ en Windows. Las próximas versiones se descargarán automáticamente sin interrumpir tu trabajo.</p></div><div className="hero-actions" style={{margin:0}}><a className="button light" href={windowsDownloadUrl}><Download size={18}/> Descargar Kiosco+</a><a className="button ghost" href={appUrl} style={{background:"#fff0e8"}}>Abrir demo <ArrowRight size={18}/></a></div></section>
+    <section className="closing"><div><span className="eyebrow">Empezá a ordenar tu negocio</span><h2>Menos vueltas. Más tiempo para vender.</h2><p>Instalá Kiosco+ en Windows o Mac. En iPhone y Android podés agregar la versión web a la pantalla de inicio.</p></div><div className="hero-actions" style={{margin:0,flexWrap:"wrap"}}><a className="button light" href={windowsDownloadUrl}><Download size={18}/> Windows</a><a className="button light" href={macDownloadUrl}><Download size={18}/> Mac</a><a className="button ghost" href={appUrl} style={{background:"#fff0e8"}}>Abrir app <ArrowRight size={18}/></a></div></section>
     <footer><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+"/><span>Gestión simple para comercios reales.</span><span>© {new Date().getFullYear()} Kiosco+</span></footer>
   </main>;
 }

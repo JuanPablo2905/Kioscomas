@@ -1,4 +1,4 @@
-name: Publicar Kiosco+ para Windows
+name: Publicar Kiosco+ para Windows y Mac
 
 on:
   push:
@@ -50,3 +50,65 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+
+  release-macos:
+    needs: release-windows
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Descargar el proyecto
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Preparar pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Verificar que la etiqueta coincida con la versión
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "La etiqueta v$TAG_VERSION no coincide con package.json ($PACKAGE_VERSION)."
+            exit 1
+          fi
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Probar la aplicación en Mac
+        run: pnpm run test:all
+
+      - name: Preparar el ícono para Mac
+        run: |
+          mkdir -p desktop/icon.iconset
+          sips -z 16 16 desktop/icon.png --out desktop/icon.iconset/icon_16x16.png
+          sips -z 32 32 desktop/icon.png --out desktop/icon.iconset/icon_16x16@2x.png
+          sips -z 32 32 desktop/icon.png --out desktop/icon.iconset/icon_32x32.png
+          sips -z 64 64 desktop/icon.png --out desktop/icon.iconset/icon_32x32@2x.png
+          sips -z 128 128 desktop/icon.png --out desktop/icon.iconset/icon_128x128.png
+          sips -z 256 256 desktop/icon.png --out desktop/icon.iconset/icon_128x128@2x.png
+          sips -z 256 256 desktop/icon.png --out desktop/icon.iconset/icon_256x256.png
+          sips -z 512 512 desktop/icon.png --out desktop/icon.iconset/icon_256x256@2x.png
+          sips -z 512 512 desktop/icon.png --out desktop/icon.iconset/icon_512x512.png
+          sips -z 1024 1024 desktop/icon.png --out desktop/icon.iconset/icon_512x512@2x.png
+          iconutil -c icns desktop/icon.iconset -o desktop/icon.icns
+
+      - name: Crear instalador universal para Mac
+        run: pnpm run desktop:build:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Adjuntar instaladores a la versión publicada
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            release/KioscoPlus-Mac-universal.dmg \
+            release/KioscoPlus-Mac-universal.zip \
+            --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
