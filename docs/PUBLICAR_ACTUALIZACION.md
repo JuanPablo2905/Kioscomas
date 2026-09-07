@@ -8,7 +8,7 @@ El instalador y las actualizaciones se distribuyen mediante GitHub Releases. La 
 2. Guardar y subir todos los cambios de la versión.
 3. En la página del repositorio, entrar a **Releases** y elegir **Draft a new release**.
 4. En **Choose a tag**, escribir la versión indicada en `package.json`, elegir crear esa etiqueta desde `main` y usar el mismo número en el título. Por ejemplo: etiqueta `v0.2.0` y título `Kiosco+ 0.2.0`.
-5. Publicar la versión. La acción **Publicar Kiosco+ para Windows** ejecutará las pruebas, creará el instalador y agregará los archivos de actualización automáticamente.
+5. Publicar la versión. La acción **Publicar Kiosco+ para Windows y Mac** ejecutará las pruebas, creará los instaladores y agregará los archivos de actualización automáticamente.
 6. Entrar a **Actions** y esperar a que la acción termine en verde. A partir de ese momento funcionará el botón de descarga de la página.
 
 Para la versión `0.2.0`, primero hay que esperar que Render termine de publicar el commit en verde y recién después crear la etiqueta. Esta versión inicia la segunda generación de la nube sin importar los negocios ficticios del almacenamiento anterior.
