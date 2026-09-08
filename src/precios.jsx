@@ -8,6 +8,7 @@ import { DEFAULT_MONTHLY_PLAN_PRICE } from "./billing/referrals.js";
 
 const base = import.meta.env.BASE_URL;
 const appUrl = import.meta.env.VITE_PUBLIC_APP_URL || "./";
+const contactEmail = String(import.meta.env.VITE_LEGAL_EMAIL || "juan@kioscomas.ar").trim();
 const whatsappNumber = normalizeWhatsAppPhone(import.meta.env.VITE_SALES_WHATSAPP || "1122502706");
 const envNumber = (value, fallback) => {
   const parsed = Number(value);
@@ -76,7 +77,7 @@ function App() {
     <section className="section faq" id="preguntas"><div className="section-intro"><span className="eyebrow">Preguntas frecuentes</span><h2>Precios sin letra chica.</h2></div><div className="faq-list">{faqs.map(([q,a],i)=><button className={openFaq===i?"faq-item open":"faq-item"} onClick={()=>setOpenFaq(openFaq===i?null:i)} key={q}><span><b>{q}</b>{openFaq===i&&<p>{a}</p>}</span><ChevronDown size={20}/></button>)}</div></section>
 
     <section className="closing"><div><span className="eyebrow">¿Listo para ordenar tu negocio?</span><h2>Empezá hoy. Sin permanencia.</h2><p>Probalo gratis y quedate con el plan que mejor se adapte a tu comercio.</p></div><a className="button light" href={wa("Hola Kiosco+, quiero probar la app. ¿Cómo arranco?")} target="_blank" rel="noopener noreferrer">Escribime por WhatsApp <ArrowRight size={18}/></a></section>
-    <footer><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+"/><span>Gestión simple para comercios reales.</span><a href="./terminos.html">Términos y condiciones</a><span>© {new Date().getFullYear()} Kiosco+</span></footer>
+    <footer><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+"/><span>Gestión simple para comercios reales.</span><a href={`mailto:${contactEmail}`} aria-label={`Enviar un correo a ${contactEmail}`}>{contactEmail}</a><a href="./terminos.html">Términos y condiciones</a><span>© {new Date().getFullYear()} Kiosco+</span></footer>
   </main>;
 }
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);

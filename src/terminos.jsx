@@ -21,6 +21,10 @@ function Section({ number, title, children }) {
   return <section className="legal-section" id={`clausula-${number}`}><span className="legal-number">{String(number).padStart(2, "0")}</span><div><h2>{title}</h2>{children}</div></section>;
 }
 
+function ContactEmail({ email, fallback }) {
+  return email ? <a href={`mailto:${email}`}><b>{email}</b></a> : <b>{fallback}</b>;
+}
+
 function App() {
   const cancellationUrl = whatsappUrl("Hola Kiosco+, solicito la baja de mi servicio. Necesito el código de identificación de la solicitud.");
   const withdrawalUrl = whatsappUrl("Hola Kiosco+, quiero ejercer el derecho de arrepentimiento respecto de la contratación del servicio. Necesito el código de identificación de la solicitud.");
@@ -33,11 +37,11 @@ function App() {
       <aside className="legal-index"><b>Contenido</b>{["Identificación", "Aceptación", "Servicio", "Cuenta y dispositivos", "Planes y pagos", "Pruebas y referidos", "Datos y sincronización", "Responsabilidades", "Disponibilidad", "Propiedad intelectual", "Baja y arrepentimiento", "Privacidad", "Cambios", "Ley aplicable", "Contacto"].map((title, index)=><a key={title} href={`#clausula-${index + 1}`}>{String(index + 1).padStart(2, "0")} {title}</a>)}</aside>
 
       <article className="legal-document">
-        {missingProviderDetails && <div className="legal-pending"><b>Información del proveedor pendiente de completar</b><p>Antes de iniciar contrataciones pagas deben cargarse razón social o nombre completo, CUIT, domicilio y correo de atención en las variables legales del sitio.</p></div>}
+        {missingProviderDetails && <div className="legal-pending"><b>Información del proveedor pendiente de completar</b><p>Antes de iniciar contrataciones pagas deben cargarse razón social o nombre completo, CUIT o CUIL, domicilio y correo de atención en las variables legales del sitio.</p></div>}
 
         <div className="legal-summary"><ShieldCheck size={25}/><div><b>Resumen en lenguaje simple</b><p>Kiosco+ es una herramienta de gestión comercial. El usuario conserva la responsabilidad sobre sus precios, ventas, inventario, obligaciones fiscales, credenciales y copias. La aplicación puede trabajar localmente y sincroniza cuando hay conexión, pero ningún sistema puede garantizar disponibilidad absoluta.</p></div></div>
 
-        <Section number={1} title="Identificación del proveedor"><p>El servicio Kiosco+ es ofrecido por <b>{provider.name || "[COMPLETAR NOMBRE O RAZÓN SOCIAL]"}</b>, CUIT <b>{provider.cuit || "[COMPLETAR CUIT]"}</b>, con domicilio en <b>{provider.address || "[COMPLETAR DOMICILIO]"}</b> y correo de atención <b>{provider.email || "[COMPLETAR CORREO]"}</b>, en adelante, “Kiosco+” o el “Proveedor”.</p><p>Canal adicional de atención: WhatsApp <a href={whatsappUrl("Hola Kiosco+, necesito realizar una consulta.")} target="_blank" rel="noopener noreferrer">+{whatsappNumber}<ExternalLink size={13}/></a>.</p></Section>
+        <Section number={1} title="Identificación del proveedor"><p>El servicio Kiosco+ es ofrecido por <b>{provider.name || "[COMPLETAR NOMBRE O RAZÓN SOCIAL]"}</b>, CUIT/CUIL <b>{provider.cuit || "[COMPLETAR CUIT O CUIL]"}</b>, con domicilio en <b>{provider.address || "[COMPLETAR DOMICILIO]"}</b> y correo de atención <ContactEmail email={provider.email} fallback="[COMPLETAR CORREO]"/>, en adelante, “Kiosco+” o el “Proveedor”.</p><p>Canal adicional de atención: WhatsApp <a href={whatsappUrl("Hola Kiosco+, necesito realizar una consulta.")} target="_blank" rel="noopener noreferrer">+{whatsappNumber}<ExternalLink size={13}/></a>.</p></Section>
 
         <Section number={2} title="Aceptación y capacidad"><p>Estos términos forman un contrato entre el Proveedor y la persona humana o jurídica que crea una cuenta, contrata o utiliza Kiosco+ (el “Usuario”). Al marcar la casilla de aceptación o utilizar una cuenta ya contratada, el Usuario declara que leyó y aceptó la versión informada.</p><p>Quien actúe en nombre de un comercio o una persona jurídica declara contar con facultades suficientes. No debe utilizar el servicio quien no pueda asumir obligaciones legales.</p></Section>
 
@@ -65,7 +69,7 @@ function App() {
 
         <Section number={14} title="Ley aplicable y resolución de conflictos"><p>Estos términos se interpretan conforme a las leyes de la República Argentina. Ninguna cláusula limita derechos irrenunciables reconocidos por la normativa de defensa del consumidor y protección de datos personales.</p><p>Cuando exista una relación de consumo, será competente la autoridad o jurisdicción que corresponda según el domicilio del consumidor y la normativa aplicable. Antes de iniciar una controversia, las partes procurarán resolverla mediante el canal de atención.</p><p>El Usuario puede consultar información oficial en <a href="https://www.argentina.gob.ar/produccion/defensadelconsumidor" target="_blank" rel="noopener noreferrer">Defensa del Consumidor<ExternalLink size={13}/></a> y sobre datos personales en la <a href="https://www.argentina.gob.ar/aaip/datospersonales" target="_blank" rel="noopener noreferrer">Agencia de Acceso a la Información Pública<ExternalLink size={13}/></a>.</p></Section>
 
-        <Section number={15} title="Contacto y constancia"><p>Consultas, reclamos, ejercicio de derechos sobre datos, bajas o arrepentimiento:</p><ul><li>Correo: <b>{provider.email || "[COMPLETAR CORREO DE ATENCIÓN]"}</b></li><li>WhatsApp: <a href={whatsappUrl("Hola Kiosco+, necesito asistencia.")} target="_blank" rel="noopener noreferrer">+{whatsappNumber}<ExternalLink size={13}/></a></li><li>Domicilio: <b>{provider.address || "[COMPLETAR DOMICILIO]"}</b></li></ul><p>Se recomienda al Usuario guardar o imprimir una copia de estos términos y de la oferta aceptada.</p></Section>
+        <Section number={15} title="Contacto y constancia"><p>Consultas, reclamos, ejercicio de derechos sobre datos, bajas o arrepentimiento:</p><ul><li>Correo: <ContactEmail email={provider.email} fallback="[COMPLETAR CORREO DE ATENCIÓN]"/></li><li>WhatsApp: <a href={whatsappUrl("Hola Kiosco+, necesito asistencia.")} target="_blank" rel="noopener noreferrer">+{whatsappNumber}<ExternalLink size={13}/></a></li><li>Domicilio: <b>{provider.address || "[COMPLETAR DOMICILIO]"}</b></li></ul><p>Se recomienda al Usuario guardar o imprimir una copia de estos términos y de la oferta aceptada.</p></Section>
       </article>
     </div>
 
@@ -74,4 +78,3 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-

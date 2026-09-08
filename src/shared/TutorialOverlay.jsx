@@ -1,6 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, HelpCircle, MousePointerClick, Play, X } from "lucide-react";
 
+const SUPPORT_EMAIL = String(import.meta.env.VITE_LEGAL_EMAIL || "juan@kioscomas.ar").trim();
+
 const step = (title, description, target, extra = {}) => ({ title, description, target, ...extra });
 
 const TOURS = {
@@ -221,7 +223,7 @@ const findTarget = (target) => {
 };
 
 function TourCatalog({ tours, onSelect, onClose }) {
-  return <div data-tutorial-ui className="fixed inset-0 z-[195] flex items-end justify-center bg-black/60 p-3 sm:items-center sm:p-5"><div className="tutorial-surface max-h-[min(720px,92dvh)] w-full max-w-2xl overflow-y-auto rounded-2xl border shadow-2xl"><div className="tutorial-surface-header sticky top-0 z-10 flex items-center justify-between border-b px-5 py-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-accent)]">Centro de ayuda</p><h2 className="tutorial-title text-xl font-bold">¿Qué querés aprender?</h2></div><button onClick={onClose} className="grid h-10 w-10 place-items-center rounded-lg"><X size={20}/></button></div><div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">{tours.map((tour) => <button key={tour.id} onClick={() => onSelect(tour.id)} className="tutorial-tour-card group rounded-xl border p-4 text-left"><span className="tutorial-tour-icon mb-3 grid h-10 w-10 place-items-center rounded-xl"><Play size={18}/></span><b className="block">{tour.title}</b><span className="mt-1 block text-sm opacity-70">{tour.description}</span><span className="mt-3 flex items-center gap-1 text-xs font-semibold">Empezar · {tour.steps.length} pasos <ChevronRight size={14}/></span></button>)}</div></div></div>;
+  return <div data-tutorial-ui className="fixed inset-0 z-[195] flex items-end justify-center bg-black/60 p-3 sm:items-center sm:p-5"><div className="tutorial-surface max-h-[min(720px,92dvh)] w-full max-w-2xl overflow-y-auto rounded-2xl border shadow-2xl"><div className="tutorial-surface-header sticky top-0 z-10 flex items-center justify-between border-b px-5 py-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-accent)]">Centro de ayuda</p><h2 className="tutorial-title text-xl font-bold">¿Qué querés aprender?</h2></div><button onClick={onClose} className="grid h-10 w-10 place-items-center rounded-lg"><X size={20}/></button></div><div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">{tours.map((tour) => <button key={tour.id} onClick={() => onSelect(tour.id)} className="tutorial-tour-card group rounded-xl border p-4 text-left"><span className="tutorial-tour-icon mb-3 grid h-10 w-10 place-items-center rounded-xl"><Play size={18}/></span><b className="block">{tour.title}</b><span className="mt-1 block text-sm opacity-70">{tour.description}</span><span className="mt-3 flex items-center gap-1 text-xs font-semibold">Empezar · {tour.steps.length} pasos <ChevronRight size={14}/></span></button>)}</div><div className="border-t px-4 py-3 text-center text-xs sm:px-5">¿Necesitás ayuda directa? <a className="font-semibold text-[var(--app-accent)] underline-offset-2 hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></div></div></div>;
 }
 
 export function TutorialOverlay({ open, view, hasEmployees = true, showCatalog = false, onClose, onComplete }) {

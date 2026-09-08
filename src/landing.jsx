@@ -11,6 +11,7 @@ import { normalizeWhatsAppPhone } from "./shared/share.js";
 
 const base = import.meta.env.BASE_URL;
 const appUrl = import.meta.env.VITE_PUBLIC_APP_URL || "./";
+const contactEmail = String(import.meta.env.VITE_LEGAL_EMAIL || "juan@kioscomas.ar").trim();
 const windowsDownloadUrl = import.meta.env.VITE_WINDOWS_DOWNLOAD_URL || "https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Setup.exe";
 const macDownloadUrl = import.meta.env.VITE_MAC_DOWNLOAD_URL || "https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Mac-universal.dmg";
 const whatsappNumber = normalizeWhatsAppPhone(import.meta.env.VITE_SALES_WHATSAPP || "1122502706");
@@ -114,7 +115,7 @@ function App() {
     <section className="section faq" id="preguntas"><div className="section-intro"><span className="eyebrow">Preguntas frecuentes</span><h2>Hecha para que sea fácil empezar.</h2></div><div className="faq-list">{faqs.map(([q,a],i)=><button className={openFaq===i?"faq-item open":"faq-item"} onClick={()=>setOpenFaq(openFaq===i?null:i)} key={q}><span><b>{q}</b>{openFaq===i&&<p>{a}</p>}</span><ChevronDown size={20}/></button>)}</div></section>
 
     <section className="closing"><div><span className="eyebrow">Empezá a ordenar tu negocio</span><h2>Menos vueltas. Más tiempo para vender.</h2><p>Instalá Kiosco+ en Windows o Mac. En iPhone y Android podés agregar la versión web a la pantalla de inicio.</p></div><div className="hero-actions" style={{margin:0,flexWrap:"wrap"}}><a className="button light" href={windowsDownloadUrl}><Download size={18}/> Windows</a><a className="button light" href={macDownloadUrl}><Download size={18}/> Mac</a><a className="button ghost" href={appUrl} style={{background:"#fff0e8"}}>Abrir app <ArrowRight size={18}/></a></div></section>
-    <footer><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+"/><span>Gestión simple para comercios reales.</span><a href="./terminos.html">Términos y condiciones</a><span>© {new Date().getFullYear()} Kiosco+</span></footer>
+    <footer><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+"/><span>Gestión simple para comercios reales.</span><a href={`mailto:${contactEmail}`} aria-label={`Enviar un correo a ${contactEmail}`}>{contactEmail}</a><a href="./terminos.html">Términos y condiciones</a><span>© {new Date().getFullYear()} Kiosco+</span></footer>
   </main>;
 }
 function Step({n,title,text}) { return <div className="step"><span>{n}</span><div><h3>{title}</h3><p>{text}</p></div></div>; }
