@@ -24,6 +24,7 @@ const {
   cloudFetch,
   cloudSession,
   cloudSessionBelongsToApi,
+  logoutCloud,
 } = await import("../src/cloud/cloudAuth.js");
 const { isRedundantBootstrapOperation } = await import("../src/cloud/syncEngine.js");
 
@@ -113,6 +114,19 @@ assert.equal(unauthorized.status, 401);
 assert.equal(cloudSession(remoteUrl), null, "an invalid refresh token must clear the saved session");
 globalThis.fetch = originalFetch;
 
+let finishLogoutRequest;
+globalThis.fetch = () => new Promise((resolve) => { finishLogoutRequest = resolve; });
+sessionStorage.setItem("kiosco_cloud_session", JSON.stringify({ apiUrl: remoteUrl, refreshToken: "logout-old-refresh", accessToken: "logout-old-access" }));
+localStorage.setItem("kiosco_cloud_session", JSON.stringify({ apiUrl: remoteUrl, refreshToken: "logout-old-refresh" }));
+const delayedLogout = logoutCloud(remoteUrl);
+await new Promise((resolve) => setTimeout(resolve, 0));
+sessionStorage.setItem("kiosco_cloud_session", JSON.stringify({ apiUrl: remoteUrl, refreshToken: "login-new-refresh", accessToken: "login-new-access", savedAt: new Date().toISOString() }));
+localStorage.setItem("kiosco_cloud_session", JSON.stringify({ apiUrl: remoteUrl, refreshToken: "login-new-refresh", savedAt: new Date().toISOString() }));
+finishLogoutRequest(new Response("{}", { status: 200, headers: { "content-type": "application/json" } }));
+await delayedLogout;
+assert.equal(cloudSession(remoteUrl)?.refreshToken, "login-new-refresh", "a delayed logout must not erase a newer login");
+globalThis.fetch = originalFetch;
+
 const remoteSnapshot = {
   dataset: {
     products: [{ id: 1, nombre: "Coca-Cola", deposito: 12, _syncVersion: 4 }],
@@ -128,9 +142,10 @@ assert.equal(isRedundantBootstrapOperation({ tenantId: "2", type: "section_delet
 assert.equal(isRedundantBootstrapOperation({ tenantId: "1", type: "section_delete", section: "pedidos" }, "2", remoteSnapshot), false);
 assert.equal(isRedundantBootstrapOperation({ tenantId: "2", type: "entity_upsert", seedOnly: true }, "2", remoteSnapshot), true);
 
+sessionStorage.removeItem("kiosco_cloud_session");
 localStorage.removeItem("kiosco_cloud_session");
 assert.equal(cloudSession(), null, "a mismatched local session must look disconnected from Render");
 sessionStorage.setItem("kiosco_cloud_session", "{broken-json");
 assert.equal(cloudSession(), null, "corrupt saved sessions must not crash startup");
 
-console.log("cloud-config-tests: 31 assertions passed");
+console.log("cloud-config-tests: 32 assertions passed");

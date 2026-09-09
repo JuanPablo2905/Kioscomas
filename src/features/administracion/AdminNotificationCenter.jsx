@@ -29,6 +29,9 @@ export function AdminNotificationCenter({ accounts = [] }) {
   useEffect(() => {
     reload();
     if (pushCapability() === "granted") enablePushNotifications().catch(() => {});
+    const reloadAfterLogin = () => reload();
+    window.addEventListener("kiosco-cloud-session-changed", reloadAfterLogin);
+    return () => window.removeEventListener("kiosco-cloud-session-changed", reloadAfterLogin);
   }, []);
 
   const toggleBusiness = (id) => setForm((previous) => ({

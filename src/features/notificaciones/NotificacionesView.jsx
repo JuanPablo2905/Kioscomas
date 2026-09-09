@@ -77,7 +77,12 @@ export function NotificacionesView({ data, onNavigate }) {
     refreshPlatform();
     if (pushCapability() === "granted") enablePushNotifications().catch(() => {});
     const timer = setInterval(refreshPlatform, 60000);
-    return () => clearInterval(timer);
+    const reloadAfterLogin = () => refreshPlatform();
+    window.addEventListener("kiosco-cloud-session-changed", reloadAfterLogin);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("kiosco-cloud-session-changed", reloadAfterLogin);
+    };
   }, []);
 
   const openPlatformNotification = async (item) => {

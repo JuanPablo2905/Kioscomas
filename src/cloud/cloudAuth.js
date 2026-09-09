@@ -178,6 +178,13 @@ export async function ensureLocalCloudSession(apiUrl, { businessId, username, pa
 export async function logoutCloud(apiUrl) {
   const normalizedApiUrl = normalizeCloudApiUrl(apiUrl);
   const session = read(normalizedApiUrl);
+  const isSessionBeingClosed = (candidate) => {
+    if (!cloudSessionBelongsToApi(candidate, normalizedApiUrl)) return false;
+    if (!session) return true;
+    if (session.refreshToken && candidate?.refreshToken) return candidate.refreshToken === session.refreshToken;
+    if (session.accessToken && candidate?.accessToken) return candidate.accessToken === session.accessToken;
+    return false;
+  };
   try {
     if (session?.accessToken && normalizedApiUrl) {
       await cloudRequest(`${normalizedApiUrl}/v1/auth/logout`, {
@@ -188,8 +195,10 @@ export async function logoutCloud(apiUrl) {
   } finally {
     const volatile = parseStoredSession(globalThis.sessionStorage);
     const durable = parseStoredSession(globalThis.localStorage);
-    if (cloudSessionBelongsToApi(volatile, normalizedApiUrl)) globalThis.sessionStorage?.removeItem(SESSION_KEY);
-    if (cloudSessionBelongsToApi(durable, normalizedApiUrl)) globalThis.localStorage?.removeItem(SESSION_KEY);
+    // El cierre en el servidor puede tardar. Si la persona ya volvió a entrar,
+    // no borrar por accidente la sesión nueva que se guardó mientras tanto.
+    if (isSessionBeingClosed(volatile)) globalThis.sessionStorage?.removeItem(SESSION_KEY);
+    if (isSessionBeingClosed(durable)) globalThis.localStorage?.removeItem(SESSION_KEY);
     globalThis.window?.dispatchEvent?.(new Event("kiosco-cloud-session-changed"));
   }
 }

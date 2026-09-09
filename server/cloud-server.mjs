@@ -1520,6 +1520,14 @@ const handleRequest = async (req, res) => {
       return send(res, 403, { error: "El abono está vencido. La cuenta se encuentra en modo consulta." });
     }
 
+    if (req.method === "GET" && req.url === "/v1/admin/accounts") {
+      if (session?.role !== "superAdmin") return send(res, 403, { error: "Se requiere la cuenta administradora de Kiosco+" });
+      return send(res, 200, {
+        accounts: (db.system?.cuentas || []).filter((account) => account && !account.superAdmin),
+        cursor: Number(db.cursor || 0),
+      });
+    }
+
     if (req.method === "GET" && req.url === "/v1/notifications") {
       return send(res, 200, {
         notifications: visiblePlatformNotifications(db, session).map((entry) => notificationView(db, entry, session)),

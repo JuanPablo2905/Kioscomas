@@ -1197,6 +1197,7 @@ export default function KioscoApp() {
     }
     const cloudConfig = loadCloudConfig();
     logoutCloud(cloudConfig.apiUrl).catch(() => {});
+    repository.setContext({ tenantId: null, isSystemAdmin: false });
     setCurrentUserId(null);
     setIdentidad(null);
     setSessionExpiresAt(null);

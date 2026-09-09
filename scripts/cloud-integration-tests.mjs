@@ -184,6 +184,10 @@ try {
   test("una cuenta pendiente no puede escribir datos antes del pago", pendingWrite.response.status === 403);
   const adminNotificationDirectory = await request("/v1/admin/notifications", { headers: centralHeaders });
   test("la solicitud nueva genera un aviso persistente para el administrador", adminNotificationDirectory.value.notifications?.some((item) => item.sourceKey === `registration:${registeredAccount.id}`));
+  const authoritativeAccountDirectory = await request("/v1/admin/accounts", { headers: centralHeaders });
+  test("el administrador puede reconstruir el padrón completo desde la nube", authoritativeAccountDirectory.response.ok && authoritativeAccountDirectory.value.accounts?.some((item) => item.id === registeredAccount.id));
+  const forbiddenAccountDirectory = await request("/v1/admin/accounts", { headers: pendingHeaders });
+  test("un negocio no puede consultar el padrón general", forbiddenAccountDirectory.response.status === 403);
   const publishedNotice = await request("/v1/admin/notifications", {
     method: "POST",
     headers: centralHeaders,

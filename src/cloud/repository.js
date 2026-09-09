@@ -3,7 +3,7 @@ import { syncEngine } from "./syncEngine";
 import { extractTenantValue, SYNCABLE_KEYS } from "./protocol";
 import { diffTenantEntities, diffTenantSections } from "./entitySync";
 import { loadCloudConfig } from "./config";
-import { cloudSession } from "./cloudAuth";
+import { cloudFetch, cloudSession } from "./cloudAuth";
 import { withDataStorageLock } from "./dataStorageLock";
 
 let context = { tenantId: null, isSystemAdmin: false };
@@ -20,6 +20,40 @@ const scheduleSync = () => {
   }, 120);
 };
 const canSyncSystemData = () => cloudSession()?.user?.role === "superAdmin";
+const refreshSystemAccountDirectory = async () => {
+  if (!context.isSystemAdmin) return { skipped: true };
+  const config = loadCloudConfig();
+  const session = cloudSession(config.apiUrl);
+  if (!config.enabled || !config.apiUrl || !context.tenantId || session?.user?.role !== "superAdmin") {
+    return { skipped: true };
+  }
+  const response = await cloudFetch(config.apiUrl, "/v1/admin/accounts", {
+    headers: {
+      "x-device-id": config.deviceId,
+      "x-tenant-id": String(context.tenantId),
+    },
+  });
+  const detail = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) throw new Error("La sesión de nube venció. Volvé a iniciar sesión.");
+    if (response.status === 403) throw new Error("Este dispositivo ya no tiene permiso para consultar los negocios.");
+    throw new Error(detail.error || `No se pudo actualizar la lista de negocios (${response.status}).`);
+  }
+  const remoteBusinesses = (Array.isArray(detail.accounts) ? detail.accounts : [])
+    .filter((account) => account && !account.superAdmin);
+  const currentResult = await storage.get("cuentas");
+  let currentAccounts = [];
+  try { currentAccounts = currentResult?.value ? JSON.parse(currentResult.value) : []; } catch {}
+  const localAdministrators = (Array.isArray(currentAccounts) ? currentAccounts : [])
+    .filter((account) => account?.superAdmin);
+  const accounts = [...localAdministrators, ...remoteBusinesses];
+  const serialized = JSON.stringify(accounts);
+  if (currentResult?.value !== serialized) await storage.set("cuentas", serialized);
+  globalThis.window?.dispatchEvent?.(new CustomEvent("kiosco-cloud-update", {
+    detail: { tenantId: String(context.tenantId), accounts: true, authoritative: true },
+  }));
+  return { ...detail, accounts };
+};
 const currentBootstrapScope = () => {
   const config = loadCloudConfig();
   return `${config.enabled ? config.apiUrl : "local"}:${String(context.tenantId || "")}`;
@@ -95,7 +129,9 @@ export const repository = {
   async syncNow() {
     try {
       await ensureCloudBootstrap();
-      return syncEngine.flush();
+      const result = await syncEngine.flush();
+      await refreshSystemAccountDirectory();
+      return result;
     } catch (error) {
       syncEngine.reportError(error);
       throw error;
@@ -149,6 +185,7 @@ export const repository = {
         // Una identidad administradora sintética se crea al entrar desde una
         // PC limpia. No es una modificación del padrón y no debe subir sola.
         if (!businesses.length && !previousBusinesses.length) return;
+        if (JSON.stringify(previousBusinesses) === JSON.stringify(businesses)) return;
         const nextIds = new Set(businesses.map((account) => String(account.id)));
         const removedAccountIds = previousBusinesses
           .filter((account) => !nextIds.has(String(account.id)))
