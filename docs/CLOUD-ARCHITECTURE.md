@@ -16,6 +16,9 @@ Con `DATABASE_URL`, Render utiliza `kiosco_private.cloud_records_v2`. Cada fila 
 - `device`, `activation` y `activation_code`: licencias y equipos separados.
 - `change` y `accepted`: historial incremental e idempotencia por operación.
 - `catalog`: un registro por código de barras.
+- `platform_notification` y `notification_read`: avisos persistentes y recibos de lectura por usuario.
+- `push_subscription`: dispositivos que autorizaron avisos Web Push; guarda el endpoint del navegador, no la clave privada VAPID.
+- `reported_issue`: problemas enviados por los negocios al administrador.
 - `system`: configuración administrativa que no pertenece a una cuenta.
 - `meta`: versión del esquema y cursor de sincronización.
 
@@ -47,11 +50,17 @@ La retención se configura mediante `KIOSCO_BACKUP_RETENTION_DAYS`, entre 1 y 90
 
 ## Diagnóstico
 
-- `/v1/health`: confirma que Node/Render está funcionando y debe informar `schemaVersion: 4`.
+- `/v1/health`: confirma que Node/Render está funcionando y debe informar `schemaVersion: 5`.
 - `/v1/ready`: comprueba PostgreSQL y debe informar `storageGeneration: 2` y `payloadType: "records"`.
 - `/v1/ready/sections`: muestra cantidad y tamaño de registros por alcance sin exponer su contenido.
 
 La URI `DATABASE_URL` contiene una contraseña. Nunca debe guardarse en Git, pegarse en el frontend ni incorporarse al instalador.
+
+## Avisos y referidos
+
+Los avisos importantes se guardan primero en PostgreSQL y luego se intenta enviarlos mediante Web Push. Una falla del proveedor push no elimina el mensaje: sigue disponible en el Centro de notificaciones. Las claves VAPID viven sólo en Render y se configuran según `docs/CONFIGURAR_NOTIFICACIONES_PUSH.md`.
+
+Un referido cuenta 20% únicamente mientras su abono está vigente hasta el final del día en Argentina. Al vencer queda `pausado`; al renovar vuelve a `activo`. Los descuentos manuales tienen motivo, vigencia y revocación separados de los referidos para conservar una auditoría clara.
 
 ## Publicación
 

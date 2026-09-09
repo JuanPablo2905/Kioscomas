@@ -45,6 +45,12 @@ services:
         value: https://app.kioscomas.ar
       - key: KIOSCO_PASSWORD_RESET_MINUTES
         value: "30"
+      - key: KIOSCO_VAPID_PUBLIC_KEY
+        sync: false
+      - key: KIOSCO_VAPID_PRIVATE_KEY
+        sync: false
+      - key: KIOSCO_VAPID_SUBJECT
+        value: mailto:soporte@kioscomas.ar
       - key: DATABASE_URL
         sync: false
       - key: KIOSCO_BACKUP_RETENTION_DAYS

@@ -1,7 +1,7 @@
 const RECORD_TABLE = "cloud_records_v2";
 
 const emptyState = () => ({
-  schemaVersion: 4,
+  schemaVersion: 5,
   cursor: 0,
   accepted: {},
   system: {},
@@ -15,6 +15,10 @@ const emptyState = () => ({
   activations: {},
   passwordResetTokens: {},
   passwordResetRateLimits: {},
+  platformNotifications: {},
+  notificationReads: {},
+  pushSubscriptions: {},
+  reportedIssues: {},
 });
 
 const normalizePayload = (value) => {
@@ -48,7 +52,7 @@ export function stateToRecords(value) {
   const { cuentas: accounts = [], ...systemWithoutAccounts } = system;
   const records = [
     record("meta", "state", {
-      schemaVersion: Number(state.schemaVersion || 4),
+      schemaVersion: Number(state.schemaVersion || 5),
       cursor: Number(state.cursor || 0),
     }),
     record("system", "state", systemWithoutAccounts),
@@ -91,6 +95,10 @@ export function stateToRecords(value) {
   addObjectRecords("activation", state.activations);
   addObjectRecords("password_reset", state.passwordResetTokens);
   addObjectRecords("password_reset_rate", state.passwordResetRateLimits);
+  addObjectRecords("platform_notification", state.platformNotifications);
+  addObjectRecords("notification_read", state.notificationReads);
+  addObjectRecords("push_subscription", state.pushSubscriptions);
+  addObjectRecords("reported_issue", state.reportedIssues);
   for (const [key, cursor] of Object.entries(stateValue(state.accepted))) {
     records.push(record("accepted", key, { cursor: Number(cursor || 0) }));
   }
@@ -110,7 +118,7 @@ export function recordsToState(rows = []) {
     const key = String(row?.record_key ?? row?.key ?? "");
     const payload = normalizePayload(row?.payload);
     if (scope === "meta" && key === "state") {
-      state.schemaVersion = Number(payload?.schemaVersion || 4);
+      state.schemaVersion = Number(payload?.schemaVersion || 5);
       state.cursor = Number(payload?.cursor || 0);
     } else if (scope === "system" && key === "state") state.system = stateValue(payload);
     else if (scope === "account") accounts.push({ position: Number(payload?.position || 0), value: stateValue(payload?.value) });
@@ -150,6 +158,10 @@ export function recordsToState(rows = []) {
     else if (scope === "activation") state.activations[key] = stateValue(payload);
     else if (scope === "password_reset") state.passwordResetTokens[key] = stateValue(payload);
     else if (scope === "password_reset_rate") state.passwordResetRateLimits[key] = stateValue(payload);
+    else if (scope === "platform_notification") state.platformNotifications[key] = stateValue(payload);
+    else if (scope === "notification_read") state.notificationReads[key] = stateValue(payload);
+    else if (scope === "push_subscription") state.pushSubscriptions[key] = stateValue(payload);
+    else if (scope === "reported_issue") state.reportedIssues[key] = stateValue(payload);
     else if (scope === "accepted") state.accepted[key] = Number(payload?.cursor || 0);
     else if (scope === "change") changes.push({ key, payload: stateValue(payload) });
   }
@@ -307,7 +319,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 1
   };
 
   const persist = async (value) => {
-    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 4 };
+    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 5 };
     const before = recordsMap(cachedState || emptyState());
     const after = recordsMap(nextState);
     const changed = [...after.entries()]
@@ -357,7 +369,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 1
   };
 
   const replace = async (value) => {
-    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 4 };
+    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 5 };
     const run = async () => {
       await sql.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtext('kiosco-plus-cloud-records-v2'))`;

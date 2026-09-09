@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { cleanV2Seed, recordsToState, stateToRecords } from "../server/postgres-record-store.mjs";
 
 const state = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   cursor: 7,
   accepted: { "operation-1": 7 },
   system: { cuentas: [{ id: "business-a", nombreNegocio: "Comercio A" }] },
@@ -19,6 +19,10 @@ const state = {
   activations: { "device-a": { id: "activation-a" } },
   passwordResetTokens: { "token-hash": { id: "reset-a", subjectKey: "business-a:owner:owner", expiresAt: "2030-01-01T00:00:00.000Z" } },
   passwordResetRateLimits: { "email-hash": { requests: [1] } },
+  platformNotifications: {},
+  notificationReads: {},
+  pushSubscriptions: {},
+  reportedIssues: {},
 };
 
 const rows = stateToRecords(state).map(({ scope, key, payload }) => ({ scope, record_key: key, payload }));

@@ -32,6 +32,7 @@ try {
   const share = await vite.ssrLoadModule("/src/shared/share.js");
   const dataStorageLock = await vite.ssrLoadModule("/src/cloud/dataStorageLock.js");
   const referrals = await vite.ssrLoadModule("/src/billing/referrals.js");
+  const datePicker = await vite.ssrLoadModule("/src/shared/KioscoDatePicker.jsx");
 
   test("redondeo de gramos", domain.roundQuantity(4.1000000000000005) === 4.1);
   test("precio sugerido por margen", pricing.calcularPrecioSugerido(1000, 1, 50) === 1500);
@@ -98,12 +99,21 @@ try {
       id: `referred-${index}`,
       referredByAccountId: "origin",
       pagos: index < 5 ? [{ id: `payment-${index}` }] : [],
+      subscriptionExpiresAt: index < 5 ? "2099-12-31T23:59:59.000Z" : null,
     })),
   ];
   const referralBenefit = referrals.monthlyPriceFor(referralAccounts[0], referralAccounts);
   test("cada referido con primer pago suma 20% y los pendientes no descuentan", referralBenefit.activeCount === 5 && referralBenefit.pendingCount === 1 && referralBenefit.discountPercent === 100);
   test("cinco referidos activos dejan el abono en cero", referralBenefit.monthlyPrice === 0 && referralBenefit.totalPrice === 0);
   test("el precio mensual usa 30.000 como valor central predeterminado", referrals.monthlyPriceFor({ id: "new" }, []).monthlyPrice === 30000);
+  test("un cero heredado no vuelve gratis una cuenta por accidente", referrals.monthlyPriceFor({ id: "legacy", planPrecio: 0 }, []).monthlyPrice === 30000);
+  test("una cuenta gratuita debe estar marcada explícitamente", referrals.monthlyPriceFor({ id: "free", planGratis: true }, []).monthlyPrice === 0);
+  const pausedReferralAccounts = [{ id: "origin" }, { id: "expired", referredByAccountId: "origin", pagos: [{ id: "past" }], subscriptionExpiresAt: "2020-01-01T12:00:00.000Z" }];
+  const pausedReferral = referrals.monthlyPriceFor(pausedReferralAccounts[0], pausedReferralAccounts);
+  test("un referido vencido queda pausado y deja de descontar", pausedReferral.activeCount === 0 && pausedReferral.pausedCount === 1 && pausedReferral.discountPercent === 0);
+  const manuallyDiscounted = referrals.monthlyPriceFor({ id: "manual", manualDiscounts: [{ id: "m1", percent: 15, reason: "Atención comercial", startsAt: "2020-01-01T00:00:00.000Z" }] }, []);
+  test("los descuentos manuales se calculan aparte de los referidos", manuallyDiscounted.manualDiscountPercent === 15 && manuallyDiscounted.automaticDiscountPercent === 0 && manuallyDiscounted.monthlyPrice === 25500);
+  test("el calendario interpreta fechas argentinas y rechaza días inexistentes", datePicker.datePickerHelpers.parseDisplayValue("9/9/2026") === "2026-09-09" && datePicker.datePickerHelpers.parseDisplayValue("31/02/2026") === null);
   const storedAdmin = { id: 1, nombre: "Juan", usuario: "demo", passwordHash: "hash-existente", passwordSalt: "sal-existente", superAdmin: true, roles: [], empleados: [] };
   const migratedStoredAdmin = dataModule.migrarCuentasDemo([storedAdmin]).find((account) => account.id === 1);
   test("abrir la app conserva la credencial cifrada del administrador", migratedStoredAdmin?.passwordHash === "hash-existente" && migratedStoredAdmin?.passwordSalt === "sal-existente" && !migratedStoredAdmin?.password);

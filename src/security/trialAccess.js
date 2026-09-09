@@ -1,3 +1,5 @@
+import { argentinaDateKey } from "../billing/referrals";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const allowedTrialDays = (days) => (Number(days) === 7 ? 7 : 1);
@@ -21,7 +23,7 @@ export function trialAccessStatus(account, now = Date.now()) {
   }
   const subscriptionExpiresAtMs = Date.parse(account.subscriptionExpiresAt || "");
   if (Number.isFinite(subscriptionExpiresAtMs)) {
-    if (subscriptionExpiresAtMs > now) {
+    if (argentinaDateKey(subscriptionExpiresAtMs) >= argentinaDateKey(now)) {
       return {
         allowed: true,
         writable: true,

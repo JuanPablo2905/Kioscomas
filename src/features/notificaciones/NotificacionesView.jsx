@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
-import { AlertTriangle, Bell, CheckCircle2, ChevronRight, Package, Store } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Bell, BellRing, CheckCircle2, ChevronRight, Cloud, Package, Store } from "lucide-react";
 import { SectionHeader } from "../../shared/layout";
 import { buildNotifications } from "./notificationRules";
+import { enablePushNotifications, loadPlatformNotifications, markPlatformNotificationRead, pushCapability } from "./notificationService";
 
 const LEVELS = ["critica", "alta", "media", "baja"];
 const levelUi = {
@@ -46,6 +47,11 @@ const icons = { stock: Package, vitrina: Store };
 
 export function NotificacionesView({ data, onNavigate }) {
   const [filter, setFilter] = useState("todas");
+  const [platform, setPlatform] = useState([]);
+  const [platformError, setPlatformError] = useState("");
+  const [pushState, setPushState] = useState(() => pushCapability());
+  const [pushConfigured, setPushConfigured] = useState(null);
+  const [pushBusy, setPushBusy] = useState(false);
   const notifications = useMemo(() => buildNotifications(data), [data]);
   const counts = useMemo(() => Object.fromEntries(LEVELS.map((level) => [
     level,
@@ -56,9 +62,64 @@ export function NotificacionesView({ data, onNavigate }) {
     .map((level) => ({ level, items: visible.filter((item) => item.level === level) }))
     .filter((group) => group.items.length);
 
+  const refreshPlatform = async () => {
+    try {
+      const detail = await loadPlatformNotifications();
+      setPlatform(detail.notifications || []);
+      setPushConfigured(Boolean(detail.pushConfigured));
+      setPlatformError("");
+    } catch (error) {
+      setPlatformError(error?.message || "No se pudieron cargar las novedades de Kiosco+.");
+    }
+  };
+
+  useEffect(() => {
+    refreshPlatform();
+    if (pushCapability() === "granted") enablePushNotifications().catch(() => {});
+    const timer = setInterval(refreshPlatform, 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const openPlatformNotification = async (item) => {
+    if (!item.readAt) {
+      try {
+        const result = await markPlatformNotificationRead(item.id);
+        setPlatform((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, readAt: result.readAt } : entry));
+      } catch { /* La tarjeta sigue siendo utilizable aunque falle el recibo. */ }
+    }
+    if (item.action?.view) onNavigate(item.action.view);
+  };
+
+  const activatePush = async () => {
+    setPushBusy(true);
+    setPlatformError("");
+    try {
+      await enablePushNotifications();
+      setPushState("granted");
+    } catch (error) {
+      setPushState(pushCapability());
+      setPlatformError(error?.message || "No se pudieron activar los avisos.");
+    } finally { setPushBusy(false); }
+  };
+
   return (
     <div data-tour="notifications-center" className="p-4 sm:p-8">
       <SectionHeader title="Centro de notificaciones" subtitle="Primero aparecen los asuntos más urgentes. Tocá una tarjeta para ir a resolverla." />
+
+      <section className="mb-6 rounded-2xl border border-emerald-100 bg-[#F5FAF7] p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#1C4A44] text-white"><Cloud size={19}/></span><div><h2 className="font-bold text-[#173F3A]">Novedades de Kiosco+</h2><p className="text-xs leading-5 text-gray-600">Mensajes del administrador, avisos de mantenimiento y novedades importantes.</p></div></div>
+          {pushConfigured && pushState === "available" && <button type="button" disabled={pushBusy} onClick={activatePush} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"><BellRing size={16}/>{pushBusy ? "Activando..." : "Avisarme en este dispositivo"}</button>}
+          {pushConfigured && pushState === "granted" && <span className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-2 text-xs font-bold text-green-800"><CheckCircle2 size={15}/>Avisos al dispositivo activos</span>}
+          {pushConfigured === false && <span className="rounded-xl bg-gray-100 px-3 py-2 text-xs text-gray-600">Los mensajes quedan acá; los avisos fuera de la app todavía no están habilitados.</span>}
+          {pushState === "denied" && <span className="rounded-xl bg-amber-100 px-3 py-2 text-xs text-amber-900">Los avisos están bloqueados en el navegador. Podés habilitarlos desde los permisos del sitio.</span>}
+        </div>
+        {platformError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{platformError}</p>}
+        {platform.length > 0 ? <div className="mt-4 space-y-2">{platform.map((item) => {
+          const colors = item.level === "urgente" ? "border-red-200 bg-red-50 text-red-900" : item.level === "mantenimiento" ? "border-blue-200 bg-blue-50 text-blue-900" : item.level === "importante" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-100 bg-white text-gray-800";
+          return <button type="button" key={item.id} onClick={() => openPlatformNotification(item)} className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition hover:shadow-sm ${colors} ${item.readAt ? "opacity-65" : "shadow-sm"}`}><Bell size={17} className="mt-0.5 shrink-0"/><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><b className="text-sm">{item.title}</b>{!item.readAt && <span className="rounded-full bg-[#D96B32] px-2 py-0.5 text-[9px] font-black uppercase text-white">Nuevo</span>}</span><span className="mt-1 block text-xs leading-5 opacity-80">{item.message}</span><span className="mt-1 block text-[10px] opacity-55">{new Date(item.publishAt || item.createdAt).toLocaleString("es-AR")}</span></span>{item.action?.view && <ChevronRight size={17} className="mt-2 shrink-0"/>}</button>;
+        })}</div> : !platformError && <p className="mt-4 text-xs text-gray-500">No hay mensajes generales pendientes.</p>}
+      </section>
 
       <div data-tour="notifications-filters" className="mb-6 grid grid-cols-2 gap-2 lg:grid-cols-4">
         <button

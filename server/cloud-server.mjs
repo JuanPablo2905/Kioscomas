@@ -2,11 +2,13 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import webpush from "web-push";
 import { fileURLToPath } from "node:url";
 import { mergeConcurrentEntity } from "../src/cloud/conflictMerge.js";
 import { TERMS_VERSION } from "../src/legal/terms.js";
 import { createPostgresStore } from "./postgres-record-store.mjs";
 import { createEmailService, isValidEmail, normalizeEmail } from "./email-service.mjs";
+import { argentinaDateKey, referralStats, referralStatus } from "../src/billing/referrals.js";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 let appVersion = "0.0.0";
@@ -43,9 +45,14 @@ const emailService = createEmailService({
   appUrl: process.env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar",
   testMode: emailTestMode,
 });
+const vapidPublicKey = String(process.env.KIOSCO_VAPID_PUBLIC_KEY || "").trim();
+const vapidPrivateKey = String(process.env.KIOSCO_VAPID_PRIVATE_KEY || "").trim();
+const vapidSubject = String(process.env.KIOSCO_VAPID_SUBJECT || "mailto:soporte@kioscomas.ar").trim();
+const pushDeliveryConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
+if (pushDeliveryConfigured) webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISOString();
 const refreshTokenExpiresAt = () => new Date(Date.now() + refreshTokenTtlMs).toISOString();
-const emptyDb = () => ({ schemaVersion: 4, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {} });
+const emptyDb = () => ({ schemaVersion: 5, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {} });
 const compactChangeLog = (changes = []) => {
   let latestAccountDirectoryKept = false;
   return [...changes].reverse().filter((change) => {
@@ -430,6 +437,7 @@ const writeDb = async (db) => {
   db.sessions = compactSessions(db.sessions);
   db.passwordResetTokens = compactPasswordResetTokens(db.passwordResetTokens);
   db.passwordResetRateLimits = compactPasswordResetRateLimits(db.passwordResetRateLimits);
+  compactNotificationData(db);
   if (postgresStore) {
     await postgresStore.write(db);
     return;
@@ -483,7 +491,6 @@ const generateReferralCode = (accounts = []) => {
     if (!used.has(normalizeReferralCode(code))) return code;
   }
 };
-const referralQualifies = (account = {}) => Array.isArray(account.pagos) && account.pagos.length > 0;
 const ensureReferralMetadata = (db) => {
   db.system ||= {};
   const accounts = Array.isArray(db.system.cuentas) ? db.system.cuentas : [];
@@ -501,19 +508,155 @@ const ensureReferralMetadata = (db) => {
       account.referredByAccountId = null;
       account.referredByCode = null;
     }
-    const referred = accounts.filter((candidate) => String(candidate?.referredByAccountId || "") === String(account.id));
-    const activeCount = Math.min(5, referred.filter(referralQualifies).length);
-    account.referralStats = {
-      activeCount,
-      pendingCount: referred.filter((candidate) => !referralQualifies(candidate)).length,
-      totalCount: referred.length,
-      discountPercent: Math.min(100, activeCount * 20),
-    };
-    if (account.referredByAccountId) account.referralStatus = referralQualifies(account) ? "activo" : "pendiente";
-    else delete account.referralStatus;
+    account.referralStats = referralStats(accounts, account.id);
+    account.referralStatus = referralStatus(account);
   }
   db.system.cuentas = accounts;
   return db;
+};
+const notificationAudienceMatches = (notification, subject = {}) => {
+  const audience = notification?.audience || { type: "all" };
+  if (audience.type === "all") return true;
+  if (audience.type === "admin") return subject.role === "superAdmin";
+  if (audience.type === "business") {
+    return (audience.businessIds || []).map(String).includes(String(subject.businessId || ""));
+  }
+  return false;
+};
+const notificationView = (db, notification, session) => ({
+  ...notification,
+  readAt: db.notificationReads?.[`${notification.id}:${session.userId}`]?.readAt || null,
+});
+const safeNotificationAction = (value) => {
+  if (!value || typeof value !== "object") return null;
+  const view = cleanCatalogText(value.view, 80).replace(/[^a-zA-Z0-9_-]/g, "");
+  const requestedUrl = String(value.url || "").trim();
+  const url = requestedUrl.startsWith("/") && !requestedUrl.startsWith("//") ? requestedUrl.slice(0, 300) : "";
+  return view || url ? { ...(view ? { view } : {}), ...(url ? { url } : {}) } : null;
+};
+const createPlatformNotification = (db, values = {}) => {
+  db.platformNotifications ||= {};
+  const sourceKey = String(values.sourceKey || "").trim();
+  const existing = sourceKey && Object.values(db.platformNotifications).find((entry) => entry.sourceKey === sourceKey);
+  if (existing) return { notification: existing, created: false };
+  const now = new Date().toISOString();
+  const notification = {
+    id: crypto.randomUUID(),
+    title: cleanCatalogText(values.title, 120),
+    message: cleanCatalogText(values.message, 700),
+    level: ["info", "importante", "urgente", "mantenimiento"].includes(values.level) ? values.level : "info",
+    audience: values.audience || { type: "all" },
+    action: safeNotificationAction(values.action),
+    sourceKey: sourceKey || null,
+    createdAt: now,
+    publishAt: values.publishAt || now,
+    expiresAt: values.expiresAt || null,
+    createdBy: values.createdBy || "kiosco-cloud",
+    archivedAt: null,
+  };
+  db.platformNotifications[notification.id] = notification;
+  return { notification, created: true };
+};
+const visiblePlatformNotifications = (db, session) => {
+  const now = Date.now();
+  return Object.values(db.platformNotifications || {}).filter((entry) => {
+    if (!entry || entry.archivedAt || !notificationAudienceMatches(entry, session)) return false;
+    const publishAt = Date.parse(entry.publishAt || entry.createdAt || "");
+    const expiresAt = Date.parse(entry.expiresAt || "");
+    return (!Number.isFinite(publishAt) || publishAt <= now) && (!Number.isFinite(expiresAt) || expiresAt > now);
+  }).sort((left, right) => String(right.publishAt || right.createdAt).localeCompare(String(left.publishAt || left.createdAt)));
+};
+const sendPushNotification = async (db, notification) => {
+  if (!notification || notification.archivedAt) return { sent: 0, skipped: true };
+  if (notification.pushDispatchedAt) return { sent: Number(notification.pushDeliveryCount || 0), alreadyDispatched: true };
+  const publishAt = Date.parse(notification.publishAt || notification.createdAt || "");
+  const expiresAt = Date.parse(notification.expiresAt || "");
+  if (Number.isFinite(publishAt) && publishAt > Date.now()) return { sent: 0, scheduled: true };
+  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) return { sent: 0, expired: true };
+  if (!pushDeliveryConfigured) return { sent: 0, unavailable: true };
+  const actionView = cleanCatalogText(notification.action?.view, 80);
+  let sent = 0;
+  const payload = JSON.stringify({
+    id: notification.id,
+    title: notification.title,
+    body: notification.message,
+    level: notification.level,
+    url: notification.action?.url || (actionView ? `/?view=${encodeURIComponent(actionView)}` : "/?view=notificaciones"),
+  });
+  await Promise.all(Object.values(db.pushSubscriptions || {}).map(async (entry) => {
+    if (!entry || entry.revokedAt || !notificationAudienceMatches(notification, entry)) return;
+    try {
+      await webpush.sendNotification(entry.subscription, payload, { TTL: 60 * 60 * 24 });
+      entry.lastSuccessAt = new Date().toISOString();
+      sent += 1;
+    } catch (error) {
+      entry.lastErrorAt = new Date().toISOString();
+      entry.lastError = String(error?.message || error).slice(0, 180);
+      if ([404, 410].includes(Number(error?.statusCode))) entry.revokedAt = entry.lastErrorAt;
+    }
+  }));
+  notification.pushDispatchedAt = new Date().toISOString();
+  notification.pushDeliveryCount = sent;
+  return { sent, unavailable: false };
+};
+const duePushNotifications = (db, now = Date.now()) => Object.values(db.platformNotifications || {}).filter((notification) => {
+  if (!notification || notification.archivedAt || notification.pushDispatchedAt) return false;
+  const publishAt = Date.parse(notification.publishAt || notification.createdAt || "");
+  const expiresAt = Date.parse(notification.expiresAt || "");
+  return (!Number.isFinite(publishAt) || publishAt <= now) && (!Number.isFinite(expiresAt) || expiresAt > now);
+});
+const argentinaDayNumber = (dateKey) => {
+  const [year, month, day] = String(dateKey || "").split("-").map(Number);
+  return Date.UTC(year, month - 1, day) / 86400000;
+};
+const ensureAutomaticNotifications = (db) => {
+  const accounts = (db.system?.cuentas || []).filter((account) => account && !account.superAdmin);
+  const todayKey = argentinaDateKey(Date.now());
+  const created = [];
+  for (const account of accounts) {
+    const expirationKey = argentinaDateKey(account.subscriptionExpiresAt);
+    if (expirationKey) {
+      const days = argentinaDayNumber(expirationKey) - argentinaDayNumber(todayKey);
+      if ([3, 1, 0].includes(days) || days < 0) {
+        const bucket = days < 0 ? "vencido" : `faltan-${days}`;
+        const result = createPlatformNotification(db, {
+          sourceKey: `subscription:${account.id}:${expirationKey}:${bucket}`,
+          title: days < 0 ? `Abono vencido: ${account.nombreNegocio}` : `Abono por vencer: ${account.nombreNegocio}`,
+          message: days < 0 ? `El abono venció el ${expirationKey}. Revisá el pago y el acceso de la cuenta.` : `El abono vence ${days === 0 ? "hoy" : `en ${days} día${days === 1 ? "" : "s"}`}.`,
+          level: days <= 0 ? "urgente" : "importante",
+          audience: { type: "admin" },
+          action: { view: "administracion" },
+        });
+        if (result.created) created.push(result.notification);
+      }
+    }
+    if (referralStatus(account) === "pausado") {
+      const referrer = accounts.find((candidate) => String(candidate.id) === String(account.referredByAccountId));
+      const result = createPlatformNotification(db, {
+        sourceKey: `referral-paused:${account.id}:${expirationKey || "sin-vencimiento"}`,
+        title: "Descuento por referido pausado",
+        message: `${account.nombreNegocio} dejó de tener un abono vigente${referrer ? `; ya no suma descuento a ${referrer.nombreNegocio}` : ""}.`,
+        level: "importante",
+        audience: { type: "admin" },
+        action: { view: "administracion" },
+      });
+      if (result.created) created.push(result.notification);
+    }
+  }
+  return created;
+};
+const compactNotificationData = (db, now = Date.now()) => {
+  const retainedNotifications = Object.values(db.platformNotifications || {}).filter((item) => {
+    const archivedAt = Date.parse(item?.archivedAt || "");
+    const expiresAt = Date.parse(item?.expiresAt || "");
+    return (!Number.isFinite(archivedAt) || archivedAt > now - 90 * 86400000)
+      && (!Number.isFinite(expiresAt) || expiresAt > now - 90 * 86400000);
+  }).sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || ""))).slice(0, 2000);
+  const notificationIds = new Set(retainedNotifications.map((item) => String(item.id)));
+  db.platformNotifications = Object.fromEntries(retainedNotifications.map((item) => [item.id, item]));
+  db.notificationReads = Object.fromEntries(Object.entries(db.notificationReads || {}).filter(([, item]) => notificationIds.has(String(item?.notificationId || ""))));
+  db.pushSubscriptions = Object.fromEntries(Object.entries(db.pushSubscriptions || {}).filter(([, item]) => !item?.revokedAt || Date.parse(item.revokedAt) > now - 30 * 86400000));
+  db.reportedIssues = Object.fromEntries(Object.entries(db.reportedIssues || {}).filter(([, item]) => !item?.archivedAt || Date.parse(item.archivedAt) > now - 90 * 86400000));
 };
 const activationCodeView = (entry = {}) => ({
   id: entry.id,
@@ -775,8 +918,8 @@ const accountCanWrite = (db, tenantId) => {
   const account = tenantAccount(db, tenantId);
   if (!account || account.superAdmin) return true;
   if (account.estado === "bloqueada") return false;
-  const subscriptionExpiresAt = Date.parse(account.subscriptionExpiresAt || "");
-  if (Number.isFinite(subscriptionExpiresAt)) return subscriptionExpiresAt > Date.now();
+  const subscriptionExpirationDay = argentinaDateKey(account.subscriptionExpiresAt);
+  if (subscriptionExpirationDay) return subscriptionExpirationDay >= argentinaDateKey(Date.now());
   const trialExpiresAt = Date.parse(account.trialExpiresAt || "");
   if (Number.isFinite(trialExpiresAt) && trialExpiresAt > Date.now()) return true;
   return account.estado === "aprobada";
@@ -792,14 +935,21 @@ const handleRequest = async (req, res) => {
     if (req.url === "/v1/health") return send(res, 200, {
       ok: true,
       service: "kiosco-cloud-local",
-      schemaVersion: 4,
+      schemaVersion: 5,
       localMode,
       deviceActivationRequired: requireDeviceActivation,
       emailDeliveryConfigured: emailService.configured && !emailTestMode,
+      pushDeliveryConfigured,
       persistence: postgresStore ? "postgresql" : "json",
       revision: String(process.env.RENDER_GIT_COMMIT || "local").slice(0, 12),
       time: new Date().toISOString(),
     });
+    if (req.method === "GET" && req.url === "/v1/notifications/push-public-key") {
+      return send(res, pushDeliveryConfigured ? 200 : 503, {
+        configured: pushDeliveryConfigured,
+        publicKey: pushDeliveryConfigured ? vapidPublicKey : null,
+      });
+    }
     if (req.method === "GET" && req.url === "/v1/ready") {
       if (!postgresStore) return send(res, 200, { ok: true, persistence: "json" });
       try {
@@ -1159,6 +1309,15 @@ const handleRequest = async (req, res) => {
         serverAt: now,
       });
       db.changes = compactChangeLog(db.changes);
+      const registrationNotice = createPlatformNotification(db, {
+        sourceKey: `registration:${businessId}`,
+        title: "Nueva cuenta pendiente",
+        message: `${businessName} (${name}) creó su cuenta y está esperando aprobación.`,
+        level: "urgente",
+        audience: { type: "admin" },
+        action: { view: "administracion" },
+      }).notification;
+      await sendPushNotification(db, registrationNotice);
       await writeDb(db);
       if (emailService.configured) {
         void sendEmailBestEffort("de bienvenida", () => emailService.sendWelcome({
@@ -1357,8 +1516,165 @@ const handleRequest = async (req, res) => {
     }
     db.devices[deviceId] = { ...(db.devices[deviceId] || {}), tenantId, lastSeenAt: new Date().toISOString() };
 
-    if (!["GET", "OPTIONS"].includes(req.method) && session?.role !== "superAdmin" && !req.url.startsWith("/v1/admin/") && !accountCanWrite(db, tenantId)) {
+    if (!["GET", "OPTIONS"].includes(req.method) && session?.role !== "superAdmin" && !req.url.startsWith("/v1/admin/") && !req.url.startsWith("/v1/notifications") && req.url !== "/v1/issues" && !accountCanWrite(db, tenantId)) {
       return send(res, 403, { error: "El abono está vencido. La cuenta se encuentra en modo consulta." });
+    }
+
+    if (req.method === "GET" && req.url === "/v1/notifications") {
+      return send(res, 200, {
+        notifications: visiblePlatformNotifications(db, session).map((entry) => notificationView(db, entry, session)),
+        pushConfigured: pushDeliveryConfigured,
+      });
+    }
+    const notificationReadMatch = req.url?.match(/^\/v1\/notifications\/([^/?]+)\/read$/);
+    if (req.method === "POST" && notificationReadMatch) {
+      const notificationId = decodeURIComponent(notificationReadMatch[1]);
+      const notification = db.platformNotifications?.[notificationId];
+      if (!notification || !notificationAudienceMatches(notification, session)) return send(res, 404, { error: "Notificación inexistente" });
+      db.notificationReads ||= {};
+      const key = `${notificationId}:${session.userId}`;
+      db.notificationReads[key] = { notificationId, userId: session.userId, businessId: session.businessId, readAt: new Date().toISOString() };
+      await writeDb(db);
+      return send(res, 200, { ok: true, readAt: db.notificationReads[key].readAt });
+    }
+    if (req.method === "POST" && req.url === "/v1/notifications/push-subscriptions") {
+      if (!pushDeliveryConfigured) return send(res, 503, { error: "Los avisos al celular todavía no están configurados en el servidor" });
+      const payload = await body(req);
+      const subscription = payload.subscription;
+      if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) return send(res, 400, { error: "La suscripción del dispositivo no es válida" });
+      const id = crypto.createHash("sha256").update(String(subscription.endpoint)).digest("hex");
+      db.pushSubscriptions ||= {};
+      db.pushSubscriptions[id] = {
+        id,
+        subscription,
+        userId: session.userId,
+        businessId: session.businessId,
+        role: session.role,
+        deviceId,
+        userAgent: cleanCatalogText(req.headers["user-agent"], 240),
+        createdAt: db.pushSubscriptions[id]?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        revokedAt: null,
+      };
+      await writeDb(db);
+      return send(res, 201, { ok: true, id });
+    }
+    if (req.method === "DELETE" && req.url === "/v1/notifications/push-subscriptions") {
+      const payload = await body(req);
+      const endpoint = String(payload.endpoint || "");
+      const id = endpoint ? crypto.createHash("sha256").update(endpoint).digest("hex") : "";
+      if (id && db.pushSubscriptions?.[id]?.userId === session.userId) db.pushSubscriptions[id].revokedAt = new Date().toISOString();
+      await writeDb(db);
+      return send(res, 200, { ok: true });
+    }
+    if (req.url?.startsWith("/v1/admin/notifications")) {
+      if (session?.role !== "superAdmin") return send(res, 403, { error: "Se requiere la cuenta administradora de Kiosco+" });
+      if (req.method === "GET" && req.url === "/v1/admin/notifications") {
+        return send(res, 200, {
+          notifications: Object.values(db.platformNotifications || {}).sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))),
+          pushConfigured: pushDeliveryConfigured,
+          activePushDevices: Object.values(db.pushSubscriptions || {}).filter((entry) => !entry.revokedAt).length,
+        });
+      }
+      if (req.method === "POST" && req.url === "/v1/admin/notifications") {
+        const payload = await body(req);
+        if (!String(payload.title || "").trim() || !String(payload.message || "").trim()) return send(res, 400, { error: "Escribí un título y un mensaje" });
+        const publishAt = Date.parse(payload.publishAt || "");
+        const expiresAt = Date.parse(payload.expiresAt || "");
+        if (Number.isFinite(publishAt) && Number.isFinite(expiresAt) && expiresAt <= publishAt) return send(res, 400, { error: "La fecha para ocultar el aviso debe ser posterior a su publicación" });
+        const audienceType = ["all", "admin", "business"].includes(payload.audienceType) ? payload.audienceType : "all";
+        const businessIds = [...new Set((Array.isArray(payload.businessIds) ? payload.businessIds : []).map(String).filter(Boolean))];
+        if (audienceType === "business" && !businessIds.length) return send(res, 400, { error: "Elegí al menos un negocio" });
+        const result = createPlatformNotification(db, {
+          title: payload.title,
+          message: payload.message,
+          level: payload.level,
+          audience: { type: audienceType, businessIds },
+          publishAt: payload.publishAt,
+          expiresAt: payload.expiresAt,
+          action: payload.action,
+          createdBy: session.userId,
+        });
+        const delivery = await sendPushNotification(db, result.notification);
+        await writeDb(db);
+        return send(res, 201, { notification: result.notification, delivery });
+      }
+      const archiveMatch = req.url.match(/^\/v1\/admin\/notifications\/([^/?]+)\/archive$/);
+      if (req.method === "POST" && archiveMatch) {
+        const id = decodeURIComponent(archiveMatch[1]);
+        if (!db.platformNotifications?.[id]) return send(res, 404, { error: "Notificación inexistente" });
+        db.platformNotifications[id].archivedAt = new Date().toISOString();
+        await writeDb(db);
+        return send(res, 200, { ok: true, notification: db.platformNotifications[id] });
+      }
+      return send(res, 404, { error: "Ruta administrativa inexistente" });
+    }
+    if (req.method === "POST" && req.url === "/v1/issues") {
+      const payload = await body(req);
+      const description = cleanCatalogText(payload.description || payload.descripcion, 1200);
+      if (description.length < 5) return send(res, 400, { error: "Describí el problema con un poco más de detalle" });
+      const recentIssueCount = Object.values(db.reportedIssues || {}).filter((item) => (
+        item?.userId === session.userId && Date.parse(item.fecha || "") > Date.now() - 60 * 60 * 1000
+      )).length;
+      if (recentIssueCount >= 5) return send(res, 429, { error: "Ya enviaste varios reportes. Esperá un rato antes de mandar otro." });
+      const account = tenantAccount(db, session.businessId);
+      const id = crypto.randomUUID();
+      const capture = String(payload.capture || payload.captura || "");
+      const issue = {
+        id,
+        businessId: session.businessId,
+        negocioId: session.businessId,
+        negocio: account?.nombreNegocio || "Sin negocio",
+        userId: session.userId,
+        usuario: cleanCatalogText(payload.userName || payload.usuario || "Usuario", 100),
+        descripcion: description,
+        detalleTecnico: cleanCatalogText(payload.technicalDetail || payload.detalleTecnico, 4000),
+        captura: capture.startsWith("data:image/") && capture.length <= 3_000_000 ? capture : null,
+        vista: cleanCatalogText(payload.view || payload.vista || "", 80),
+        fecha: new Date().toISOString(),
+        estado: "nuevo",
+        archivedAt: null,
+      };
+      db.reportedIssues ||= {};
+      db.reportedIssues[id] = issue;
+      const notification = createPlatformNotification(db, {
+        sourceKey: `issue:${id}`,
+        title: `Problema reportado por ${issue.negocio}`,
+        message: description,
+        level: "urgente",
+        audience: { type: "admin" },
+        action: { view: "administracion" },
+      }).notification;
+      await sendPushNotification(db, notification);
+      await writeDb(db);
+      return send(res, 201, { ok: true, issue });
+    }
+    if (req.url?.startsWith("/v1/admin/issues")) {
+      if (session?.role !== "superAdmin") return send(res, 403, { error: "Se requiere la cuenta administradora de Kiosco+" });
+      if (req.method === "GET" && req.url === "/v1/admin/issues") {
+        return send(res, 200, { issues: Object.values(db.reportedIssues || {}).filter((item) => !item.archivedAt).sort((left, right) => String(right.fecha).localeCompare(String(left.fecha))) });
+      }
+      const statusMatch = req.url.match(/^\/v1\/admin\/issues\/([^/?]+)\/status$/);
+      if (req.method === "POST" && statusMatch) {
+        const id = decodeURIComponent(statusMatch[1]);
+        const issue = db.reportedIssues?.[id];
+        if (!issue) return send(res, 404, { error: "Reporte inexistente" });
+        const payload = await body(req);
+        issue.estado = payload.status === "resuelto" ? "resuelto" : "nuevo";
+        issue.updatedAt = new Date().toISOString();
+        await writeDb(db);
+        return send(res, 200, { ok: true, issue });
+      }
+      const archiveIssueMatch = req.url.match(/^\/v1\/admin\/issues\/([^/?]+)\/archive$/);
+      if (req.method === "POST" && archiveIssueMatch) {
+        const id = decodeURIComponent(archiveIssueMatch[1]);
+        const issue = db.reportedIssues?.[id];
+        if (!issue) return send(res, 404, { error: "Reporte inexistente" });
+        issue.archivedAt = new Date().toISOString();
+        await writeDb(db);
+        return send(res, 200, { ok: true });
+      }
+      return send(res, 404, { error: "Ruta administrativa inexistente" });
     }
 
     if (req.method === "GET" && req.url === "/v1/sync/bootstrap") {
@@ -1525,11 +1841,15 @@ const handleRequest = async (req, res) => {
             const currentById = new Map((db.system.cuentas || []).map((account) => [String(account?.id), account]));
             const incomingAccounts = operation.value.filter((account) => account && !account.superAdmin).map((account) => {
               const current = currentById.get(String(account.id));
+              const supplied = (key) => Object.prototype.hasOwnProperty.call(account, key);
               const next = {
                 ...account,
                 referralCode: current?.referralCode || account.referralCode,
-                referredByAccountId: current?.referredByAccountId || account.referredByAccountId || null,
-                referredByCode: current?.referredByCode || account.referredByCode || null,
+                referredByAccountId: supplied("referredByAccountId") ? account.referredByAccountId : (current?.referredByAccountId || null),
+                referredByCode: supplied("referredByCode") ? account.referredByCode : (current?.referredByCode || null),
+                referralInvalidatedAt: supplied("referralInvalidatedAt") ? account.referralInvalidatedAt : (current?.referralInvalidatedAt || null),
+                referralInvalidatedReason: supplied("referralInvalidatedReason") ? account.referralInvalidatedReason : (current?.referralInvalidatedReason || null),
+                manualDiscounts: supplied("manualDiscounts") ? account.manualDiscounts : (current?.manualDiscounts || []),
                 termsAcceptedAt: current?.termsAcceptedAt || account.termsAcceptedAt || null,
                 termsVersion: current?.termsVersion || account.termsVersion || null,
               };
@@ -1634,6 +1954,9 @@ const handleRequest = async (req, res) => {
       }
       db.changes = compactChangeLog(db.changes);
       db.accepted = compactAcceptedOperations(db.accepted, db.cursor);
+      ensureReferralMetadata(db);
+      ensureAutomaticNotifications(db);
+      for (const notification of duePushNotifications(db)) await sendPushNotification(db, notification);
       await writeDb(db);
       send(res, 200, { acceptedIds, acceptedEntityVersions, conflicts, rejected, cursor: db.cursor });
       for (const email of accountReadyEmails) {
@@ -1752,9 +2075,28 @@ const startServer = async () => {
     const seed = await readJsonDb();
     await postgresStore.initialize(seed);
   }
+  const notificationDb = await readDb();
+  ensureAutomaticNotifications(notificationDb);
+  const dueNotifications = duePushNotifications(notificationDb);
+  for (const notification of dueNotifications) await sendPushNotification(notificationDb, notification);
+  // La escritura inicial también deja persistidos los códigos de referido que
+  // se asignan a cuentas creadas con versiones anteriores.
+  await writeDb(notificationDb);
   server.listen(port, "0.0.0.0", () => {
     console.log(`Kiosco Cloud activo en el puerto ${port} · persistencia: ${postgresStore ? "PostgreSQL" : dataDirectory}`);
   });
+  const reminderTimer = setInterval(() => {
+    const runSweep = async () => {
+      const db = await readDb();
+      const automaticNotifications = ensureAutomaticNotifications(db);
+      const dueNotifications = duePushNotifications(db);
+      for (const notification of dueNotifications) await sendPushNotification(db, notification);
+      if (automaticNotifications.length || dueNotifications.length) await writeDb(db);
+    };
+    const pending = databaseRequestMutation.then(runSweep, runSweep);
+    databaseRequestMutation = pending.catch((error) => console.error("No se pudieron revisar los avisos automáticos", error));
+  }, 30 * 60 * 1000);
+  reminderTimer.unref();
 };
 
 const shutdown = async () => {

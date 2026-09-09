@@ -34,7 +34,7 @@ const planFeatures = [
 
 const referralSteps = [
   { icon: Share2, title: "Compartí tu código", text: "Cada comercio tiene su código de referido listo para compartir." },
-  { icon: UserPlus, title: "Sumá descuentos", text: "Cuando el comercio referido activa su primer abono, sumás un 20% de descuento." },
+  { icon: UserPlus, title: "Sumá descuentos", text: "Cada comercio referido con el abono vigente te suma un 20% de descuento." },
   { icon: Wallet, title: "Llegá a gratis", text: "Los descuentos se acumulan: con 5 referidos tu plan queda en $0." },
 ];
 
@@ -42,7 +42,7 @@ const faqs = [
   [`¿Los ${money(monthlyPrice)} son por negocio o por dispositivo?`, "Son por negocio e incluyen dos dispositivos simultáneos para que puedas trabajar junto a quien te ayude en el mostrador."],
   ["¿Cómo sumo un tercer dispositivo?", `Cada dispositivo adicional suma ${money(extraDevicePrice)} por mes. Lo sumás cuando lo necesites, sin permanencia.`],
   [`¿El Plan Lanzamiento queda en ${money(launchPrice)} para siempre?`, `Sí. Como agradecimiento por acompañarnos en el arranque, el primer mes es gratis y el plan queda en ${money(launchPrice)} por mes mientras sigas suscrito.`],
-  ["¿Cómo funcionan los referidos?", "El nuevo comercio ingresa tu código al crear su cuenta. Cuando activa su primer abono, obtenés un 20% de descuento. Es acumulable: con 5 referidos activos llegás al 100% y pagás $0."],
+  ["¿Cómo funcionan los referidos?", "El nuevo comercio ingresa tu código al crear su cuenta. Mientras mantiene su abono vigente, obtenés un 20% de descuento. Si vence, el beneficio se pausa y vuelve cuando renueva. Con 5 referidos activos llegás al 100% y pagás $0."],
   ["¿Puedo cancelar cuando quiera?", "Sí. No hay permanencia: podés dejar de suscribirte cuando quieras."],
 ];
 
@@ -70,7 +70,7 @@ function App() {
       <article className={"plan-card reveal" + (hoverPlans === "launch" ? " hovered" : "")} onMouseEnter={() => setHoverPlans("launch")} onMouseLeave={() => setHoverPlans(null)}><span className="plan-badge">Lanzamiento</span><div className="plan-icon"><Sparkles size={22}/></div><h3>Plan Lanzamiento</h3><div className="plan-price"><b>$0</b><span>el primer mes</span></div><p className="plan-note">Después queda en <b>{money(launchPrice)}/mes por siempre</b>, como agradecimiento por ayudarnos a cerrar la app.</p><ul>{planFeatures.map((item)=><li key={item}><Check size={15}/>{item}</li>)}</ul><a className="button ghost" href={wa(`Hola Kiosco+, me interesa el Plan Lanzamiento (primer mes gratis, después ${money(launchPrice)}/mes). ¿Cómo lo contrato?`)} target="_blank" rel="noopener noreferrer">Quiero el plan lanzamiento <ArrowRight size={18}/></a></article>
     </div></section>
 
-    <section className="section referrals" id="referidos"><div className="section-intro reveal"><span className="eyebrow"><Gift size={15}/> Referidos</span><h2>Recomendá Kiosco+ y pagá menos.</h2><p>Cada comercio que se registra con tu código y activa su primer abono te suma un 20% de descuento. Acumulá hasta que tu suscripción quede gratis.</p></div>
+    <section className="section referrals" id="referidos"><div className="section-intro reveal"><span className="eyebrow"><Gift size={15}/> Referidos</span><h2>Recomendá Kiosco+ y pagá menos.</h2><p>Cada comercio que se registra con tu código y mantiene su abono vigente te suma un 20% de descuento. Acumulá hasta que tu suscripción quede gratis.</p></div>
       <div className="referral-steps">{referralSteps.map(({icon: Icon, title, text}, index)=><div className="step reveal" key={title}><span>0{index+1}</span><div><h3>{title}</h3><p>{text}</p></div></div>)}</div>
       <div className="referral-bar reveal">{[1,2,3,4,5].map((n)=><div className={n===5?"seg full":"seg"} key={n}><b>{n * 20}%</b><span>{n===5?"Gratis":`${n} ${n===1?"cuenta":"cuentas"}`}</span></div>)}</div>
       <p className="referral-caption reveal">Con 5 referidos tu suscripción queda en <b>$0</b>.</p>

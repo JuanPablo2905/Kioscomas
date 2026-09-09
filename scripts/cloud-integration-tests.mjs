@@ -182,6 +182,35 @@ try {
   };
   const pendingWrite = await request("/v1/sync/push", { method: "POST", headers: pendingHeaders, body: JSON.stringify({ operations: [] }) });
   test("una cuenta pendiente no puede escribir datos antes del pago", pendingWrite.response.status === 403);
+  const adminNotificationDirectory = await request("/v1/admin/notifications", { headers: centralHeaders });
+  test("la solicitud nueva genera un aviso persistente para el administrador", adminNotificationDirectory.value.notifications?.some((item) => item.sourceKey === `registration:${registeredAccount.id}`));
+  const publishedNotice = await request("/v1/admin/notifications", {
+    method: "POST",
+    headers: centralHeaders,
+    body: JSON.stringify({ title: "Mantenimiento programado", message: "Esta noche puede haber una interrupción breve.", level: "mantenimiento", audienceType: "business", businessIds: [registeredAccount.id], action: { view: "ventas" } }),
+  });
+  test("el administrador puede publicar un aviso para un negocio", publishedNotice.response.status === 201 && publishedNotice.value.notification?.audience?.businessIds?.includes(registeredAccount.id));
+  const businessNotifications = await request("/v1/notifications", { headers: pendingHeaders });
+  const businessNotice = businessNotifications.value.notifications?.find((item) => item.id === publishedNotice.value.notification?.id);
+  test("el negocio recibe el aviso dirigido dentro de la app", businessNotifications.response.ok && businessNotice && !businessNotice.readAt && businessNotice.action?.view === "ventas");
+  const readNotice = await request(`/v1/notifications/${businessNotice.id}/read`, { method: "POST", headers: pendingHeaders, body: "{}" });
+  const businessNotificationsAfterRead = await request("/v1/notifications", { headers: pendingHeaders });
+  test("cada usuario puede marcar el aviso como leído", readNotice.response.ok && !!businessNotificationsAfterRead.value.notifications?.find((item) => item.id === businessNotice.id)?.readAt);
+  const futureNotice = await request("/v1/admin/notifications", {
+    method: "POST",
+    headers: centralHeaders,
+    body: JSON.stringify({ title: "Aviso futuro", message: "Todavía no debe verse.", audienceType: "business", businessIds: [registeredAccount.id], publishAt: "2099-01-01T12:00:00.000Z" }),
+  });
+  const notificationsBeforeSchedule = await request("/v1/notifications", { headers: pendingHeaders });
+  test("un aviso programado queda guardado pero no aparece antes de la fecha", futureNotice.response.status === 201 && futureNotice.value.delivery?.scheduled === true && !notificationsBeforeSchedule.value.notifications?.some((item) => item.id === futureNotice.value.notification?.id));
+  const reportedIssue = await request("/v1/issues", { method: "POST", headers: pendingHeaders, body: JSON.stringify({ description: "No puedo terminar una venta de prueba", view: "ventas", userName: "Cliente Nuevo" }) });
+  const adminIssues = await request("/v1/admin/issues", { headers: centralHeaders });
+  const savedIssue = adminIssues.value.issues?.find((item) => item.id === reportedIssue.value.issue?.id);
+  test("un negocio puede reportar un problema aunque esté pendiente", reportedIssue.response.status === 201 && savedIssue?.vista === "ventas");
+  const issueNoticeDirectory = await request("/v1/admin/notifications", { headers: centralHeaders });
+  test("un problema reportado genera un aviso para el administrador", issueNoticeDirectory.value.notifications?.some((item) => item.sourceKey === `issue:${savedIssue.id}`));
+  const resolvedIssue = await request(`/v1/admin/issues/${savedIssue.id}/status`, { method: "POST", headers: centralHeaders, body: JSON.stringify({ status: "resuelto" }) });
+  test("el administrador puede resolver un reporte", resolvedIssue.value.issue?.estado === "resuelto");
   const centralRegistrationPull = await request("/v1/sync/pull?since=0", { headers: centralHeaders });
   test("el administrador recibe la nueva solicitud en su padrón", centralRegistrationPull.value.operations?.some((item) => item.type === "system_set" && item.value?.some((account) => account.id === registeredAccount.id)));
   const activationDirectory = await request("/v1/admin/activation-codes", { headers: centralHeaders });
@@ -228,7 +257,7 @@ try {
       key: "cuentas",
       value: [
         { ...registeredAccount, estado: "aprobada", subscriptionExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
-        { ...referredAccount, estado: "aprobada", pagos: [{ id: "first-referral-payment", importe: 30000 }] },
+        { ...referredAccount, estado: "aprobada", subscriptionExpiresAt: "2099-12-31T23:59:59.000Z", pagos: [{ id: "first-referral-payment", importe: 30000 }] },
       ],
     }] }),
   });

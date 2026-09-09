@@ -16,6 +16,7 @@ import { ComprasArea } from "../features/compras/ComprasArea";
 import { ProveedoresView } from "../features/proveedores/ProveedoresView";
 import { VencimientosView } from "../features/vencimientos/VencimientosView";
 import { NotificacionesView } from "../features/notificaciones/NotificacionesView";
+import { reportPlatformIssue } from "../features/notificaciones/notificationService";
 import { GastosView } from "../features/gastos/GastosView";
 import { ClientesView } from "../features/clientes/ClientesView";
 import { ReportesView } from "../features/reportes/ReportesView";
@@ -246,7 +247,7 @@ const createTutorialDataset = (source) => {
 export default function KioscoApp() {
   useMobileKeyboardViewport();
   useAutoContrast();
-  const [view, setView] = useState("home");
+  const [view, setView] = useState(() => new URLSearchParams(window.location.search).get("view") || "home");
   const [cargando, setCargando] = useState(true);
   const [activationStatus, setActivationStatus] = useState("checking");
   const [activationDeviceId, setActivationDeviceId] = useState("");
@@ -692,7 +693,11 @@ export default function KioscoApp() {
     setTutorialPrompt(null);
     setHelpSpotlightOpen(true);
   };
-  const reportarProblema = ({ descripcion, captura, detalleTecnico, vista: vistaReportada }) => setReportesProblemas((prev) => [{ id: Date.now(), fecha: new Date().toISOString(), estado: "nuevo", descripcion, captura: captura || null, detalleTecnico: detalleTecnico || "", negocioId: currentUserId, negocio: cuentaActual?.nombreNegocio || "Sin negocio", usuario: identidad?.nombre || "Sin identificar", vista: vistaReportada || view }, ...prev]);
+  const reportarProblema = ({ descripcion, captura, detalleTecnico, vista: vistaReportada }) => {
+    const report = { id: Date.now(), fecha: new Date().toISOString(), estado: "nuevo", descripcion, captura: captura || null, detalleTecnico: detalleTecnico || "", negocioId: currentUserId, negocio: cuentaActual?.nombreNegocio || "Sin negocio", usuario: identidad?.nombre || "Sin identificar", vista: vistaReportada || view };
+    setReportesProblemas((previous) => [report, ...previous]);
+    if (!PUBLIC_DEMO_MODE) reportPlatformIssue(report).catch(() => {});
+  };
   const abrirReporteProblema = async ({ detalleTecnico = "", vista: vistaReportada = view } = {}) => {
     const captura = await captureAppScreenshot();
     setBugReportDraft({ captura, detalleTecnico, vista: vistaReportada });

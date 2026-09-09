@@ -15,6 +15,7 @@ import { lookupBarcode } from "../../shared/productLookup";
 import { ProductTransferModal } from "./ProductTransferModal";
 import { NumberInput } from "../../shared/controls";
 import { groupProductFamilies } from "../../shared/productFamilies";
+import { KioscoDatePicker } from "../../shared/KioscoDatePicker";
 
 const emptyForm = {
   nombre: "", codigo: "", costo: "", venta: "", deposito: "", minimo: "",
@@ -354,7 +355,7 @@ export function ProductModal({ initial, onClose, onSave, proveedores = [], puede
               </div>
               <div data-tour="product-details">
                 <label className="text-sm text-gray-700 block mb-1">Fecha de vencimiento</label>
-                <input type="date" value={form.vencimiento || ""} onChange={set("vencimiento")} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                <KioscoDatePicker value={form.vencimiento || ""} onChange={(vencimiento) => setForm((previous) => ({ ...previous, vencimiento }))} />
                 <p className="mt-1 text-xs text-gray-400">Dejala vacía si el producto no vence.</p>
               </div>
             </div>

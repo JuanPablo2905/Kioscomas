@@ -192,6 +192,8 @@ Resume la operación del negocio: estado de caja, ventas del día, productos cr�
 
 Agrupa alertas de stock mínimo, vitrina, vencimientos, tareas y otras situaciones que requieren atención. Entrá en cada aviso para ver el origen antes de corregir o descartar algo.
 
+La sección **Novedades de Kiosco+** conserva los mensajes enviados por el administrador, incluso si el navegador no tiene permiso para mostrar avisos fuera de la aplicación. Cuando Web Push está configurado, cada persona puede tocar **Avisarme en este dispositivo**. En iPhone o iPad primero debe agregar la app web a la pantalla de inicio y abrirla desde ese ícono.
+
 Una alerta es una ayuda operativa; no garantiza que el conteo físico coincida. Confirmá siempre los casos sensibles en el comercio.
 
 ## 7. Stock, vencimientos e inventario
@@ -808,6 +810,19 @@ Las credenciales maestras provienen únicamente de variables privadas del servid
 - `GET /v1/devices`
 - `POST /v1/devices/revoke`
 
+### Notificaciones y reportes
+
+- `GET /v1/notifications`: bandeja del usuario autenticado.
+- `POST /v1/notifications/:id/read`: recibo de lectura individual.
+- `GET /v1/notifications/push-public-key`: clave pública para autorizar Web Push.
+- `POST/DELETE /v1/notifications/push-subscriptions`: alta o baja de un dispositivo para avisos.
+- `GET/POST /v1/admin/notifications`: consulta y publicación administrativa individual, múltiple o masiva.
+- `POST /v1/admin/notifications/:id/archive`: retira un aviso de las bandejas sin destruir su registro inmediatamente.
+- `POST /v1/issues`: envía un problema del negocio y genera un aviso al administrador.
+- `GET/POST /v1/admin/issues...`: consulta, resolución y archivo de reportes.
+
+Los avisos de alta pendiente, vencimiento de abono y pausa de un referido se generan automáticamente con una clave de origen que evita duplicados. Todos quedan dentro de la app aunque el destinatario no autorice notificaciones del sistema. La configuración de las claves está en `docs/CONFIGURAR_NOTIFICACIONES_PUSH.md`.
+
 Las rutas privadas validan sesión, negocio y dispositivo. Toda escritura de una cuenta no administradora también valida que la suscripción o prueba permita escribir.
 
 ## 32. PostgreSQL y Supabase
@@ -864,6 +879,9 @@ KIOSCO_EMAIL_FROM="Kiosco+ <notificaciones@correo.kioscomas.ar>"
 KIOSCO_EMAIL_REPLY_TO=
 KIOSCO_PUBLIC_APP_URL=https://app.kioscomas.ar
 KIOSCO_PASSWORD_RESET_MINUTES=30
+KIOSCO_VAPID_PUBLIC_KEY=
+KIOSCO_VAPID_PRIVATE_KEY=
+KIOSCO_VAPID_SUBJECT=mailto:soporte@kioscomas.ar
 KIOSCO_UPCITEMDB_KEY=
 KIOSCO_GO_UPC_API_KEY=
 KIOSCO_BARCODE_LOOKUP_API_KEY=
@@ -879,6 +897,14 @@ Variables de desarrollo local adicionales:
 - `KIOSCO_ENABLE_LOCAL_CLOUD`
 
 Los archivos `.env.example`, `.env.public` y `.env.cloud` sólo deben llevar configuración pública o valores vacíos. Los secretos reales se cargan en Render/GitHub y no se suben.
+
+## 33.1 Referidos y descuentos manuales
+
+El código se vincula al registrarse. Antes del primer pago el referido está `pendiente`; con un pago válido y abono vigente pasa a `activo`; al vencer queda `pausado` y deja de descontar; una renovación lo reactiva. El administrador puede corregir el negocio referente o invalidar la relación dejando el motivo.
+
+Los descuentos comerciales especiales se guardan en `manualDiscounts` con porcentaje, motivo, inicio, vencimiento opcional y revocación. No aumentan la cantidad de referidos. Al registrar un pago se congela el precio base, el porcentaje automático, el manual y el total aplicado; los cambios posteriores sólo afectan el siguiente cobro.
+
+La edición general de una cuenta no cambia contraseñas. El precio puede heredar el valor general, usar uno especial o marcarse explícitamente como cuenta gratuita. Las contraseñas temporales se administran en la sección **Cuentas**.
 
 ## 34. Preparar el entorno de desarrollo
 

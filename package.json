@@ -1,7 +1,7 @@
 {
   "name": "kiosco-app",
   "private": true,
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Gestión simple de stock, ventas, caja y compras para comercios.",
   "author": "Kiosco+",
   "repository": {
@@ -31,6 +31,7 @@
     "test:tutorials": "node scripts/tutorial-target-tests.mjs",
     "test:pwa": "node scripts/pwa-tests.mjs",
     "test:public-site": "node scripts/public-site-tests.mjs",
+    "push:generate-keys": "node scripts/generate-vapid-keys.mjs",
     "test:all": "node scripts/cloud-config-tests.mjs && node scripts/cloud-warmup-tests.mjs && node scripts/postgres-record-store-tests.mjs && node scripts/tutorial-target-tests.mjs && node scripts/pwa-tests.mjs && node scripts/public-site-tests.mjs && node scripts/device-activation-enforcement-tests.mjs && node scripts/password-recovery-tests.mjs && node scripts/smoke-views.mjs && node scripts/functional-tests.mjs && vite build",
     "desktop": "electron .",
     "desktop:build": "vite build --mode cloud && electron-builder --win nsis --publish never",
@@ -48,7 +49,8 @@
     "lucide-react": "1.25.0",
     "postgres": "3.4.9",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "web-push": "3.6.7"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "6.0.3",

@@ -6,6 +6,7 @@ import { ConfirmDialog } from "../../shared/controls";
 import { TicketBarcode } from "../../shared/TicketBarcodeView";
 import { exportCommercialArchive } from "../../shared/archive";
 import { openEmailDraft, openWhatsApp } from "../../shared/share";
+import { KioscoDatePicker } from "../../shared/KioscoDatePicker";
 import {
   allowedDocumentTypes,
   buildCommercialDocument,
@@ -262,7 +263,7 @@ export function InvoiceTicketManager({ data, setters, identidad }) {
                 <label className="text-sm sm:col-span-2">Domicilio<input value={config.domicilio} onChange={(event) => setFiscal("domicilio", event.target.value)} className={`${field} mt-1`}/></label>
                 <label className="text-sm">Punto de venta<input value={config.puntoVenta} inputMode="numeric" onChange={(event) => setFiscal("puntoVenta", event.target.value.replace(/\D/g, "").slice(0, 5))} className={`${field} mt-1`}/></label>
                 <label className="text-sm">Ingresos Brutos<input value={config.ingresosBrutos} onChange={(event) => setFiscal("ingresosBrutos", event.target.value)} className={`${field} mt-1`}/></label>
-                <label className="text-sm">Inicio de actividades<input type="date" value={config.inicioActividades} onChange={(event) => setFiscal("inicioActividades", event.target.value)} className={`${field} mt-1`}/></label>
+                <div className="text-sm">Inicio de actividades<KioscoDatePicker value={config.inicioActividades} onChange={(fecha) => setFiscal("inicioActividades", fecha)} className="mt-1"/></div>
                 <label className="text-sm">Condición fiscal<CustomSelect className="mt-1" value={config.condicionFiscal} onChange={(value) => setFiscal("condicionFiscal", value)} options={["Monotributista", "Responsable inscripto", "Exento"]}/></label>
                 {config.condicionFiscal === "Responsable inscripto" && <label className="text-sm">Alícuota de IVA<input type="number" min="0" max="100" value={config.alicuotaIva} onChange={(event) => setFiscal("alicuotaIva", Number(event.target.value))} className={`${field} mt-1`}/></label>}
               </div>

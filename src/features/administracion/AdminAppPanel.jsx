@@ -5,9 +5,13 @@ import { secureSubject } from "../../security/auth";
 import { canAccessAccount, formatAccessExpiration, formatTrialExpiration, grantTrialAccess, trialAccessStatus } from "../../security/trialAccess";
 import { AppSelect, ConfirmDialog } from "../../shared/controls";
 import { BarcodeCatalogAdmin } from "./BarcodeCatalogAdmin";
+import { AdminNotificationCenter } from "./AdminNotificationCenter";
+import { ReferralAccountManager } from "./ReferralAccountManager";
 import { loadCloudConfig } from "../../cloud/config";
 import { cloudFetch, cloudSession } from "../../cloud/cloudAuth";
 import { monthlyPriceFor, withReferralStats } from "../../billing/referrals";
+import { KioscoDatePicker, datePickerHelpers } from "../../shared/KioscoDatePicker";
+import { archiveAdminIssue, loadAdminIssues, updateAdminIssueStatus } from "../notificaciones/notificationService";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 
@@ -28,7 +32,7 @@ function TrialStatus({ account }) {
 }
 
 const emptyPayment = (account, accounts = [], months = 1) => ({
-  fecha: new Date().toISOString().slice(0, 10),
+  fecha: datePickerHelpers.dateValue(new Date()),
   importe: account ? String(monthlyPriceFor(account, accounts, months).totalPrice) : "",
   medio: "Transferencia",
   meses: months,
@@ -47,7 +51,7 @@ function addCalendarMonths(value, months) {
 
 function ReferralAdminSummary({ account, accounts }) {
   const pricing = monthlyPriceFor(account, accounts);
-  return <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]"><span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-800"><Gift size={12}/>{account.referralCode || "Código pendiente"}</span>{account.referredByCode && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">Llegó por {account.referredByCode}</span>}<span className="rounded-full bg-gray-100 px-2 py-1 text-gray-700">{pricing.activeCount} activos · {pricing.pendingCount} pendientes</span><span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">{pricing.discountPercent}% desc. · ${pricing.monthlyPrice.toLocaleString("es-AR")}/mes</span></div>;
+  return <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]"><span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-800"><Gift size={12}/>{account.referralCode || "Código pendiente"}</span>{account.referredByCode && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">Llegó por {account.referredByCode}</span>}<span className="rounded-full bg-gray-100 px-2 py-1 text-gray-700">{pricing.activeCount} activos · {pricing.pendingCount} pendientes · {pricing.pausedCount} pausados</span><span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">{pricing.discountPercent}% desc. ({pricing.manualDiscountPercent}% manual) · ${pricing.monthlyPrice.toLocaleString("es-AR")}/mes</span></div>;
 }
 
 export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, setNotas, reportes = [], setReportes, onOpenNegocio, onLogout, onOpenSettings, syncStatus, onSyncNow }) {
@@ -64,6 +68,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
   const [historialCuentaId, setHistorialCuentaId] = useState(null);
   const [busquedaNegocios, setBusquedaNegocios] = useState("");
   const [usuariosCuentaId, setUsuariosCuentaId] = useState(null);
+  const [referidosCuentaId, setReferidosCuentaId] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
   const [resetPassword, setResetPassword] = useState("");
   const [resetError, setResetError] = useState("");
@@ -126,6 +131,24 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
     return () => window.removeEventListener("kiosco-cloud-session-changed", reload);
   }, []);
 
+  useEffect(() => {
+    loadAdminIssues().then((detail) => {
+      const remote = detail.issues || [];
+      setReportes((previous) => [...remote, ...previous.filter((item) => !remote.some((entry) => String(entry.id) === String(item.id)))]);
+    }).catch(() => {});
+  }, [setReportes]);
+
+  const toggleIssueStatus = (report) => {
+    const status = report.estado === "resuelto" ? "nuevo" : "resuelto";
+    setReportes((previous) => previous.map((item) => item.id === report.id ? { ...item, estado: status } : item));
+    updateAdminIssueStatus(report.id, status).catch(() => {});
+  };
+
+  const archiveIssue = (report) => {
+    setReportes((previous) => previous.filter((item) => item.id !== report.id));
+    archiveAdminIssue(report.id).catch(() => {});
+  };
+
   const createActivationCode = async () => {
     setActivationLoading(true);
     setActivationError("");
@@ -164,8 +187,17 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
     setCuentas((prev) => withReferralStats(prev.map((cuenta) => cuenta.id === id ? { ...cuenta, ...cambios } : cuenta)));
 
   const guardarCuenta = async (cuenta) => {
-    const cambios = { nombre: form.nombre, nombreNegocio: form.nombreNegocio, usuario: form.usuario, email: String(form.email || "").trim().toLowerCase(), planNombre: form.planNombre || "Mensual", planPrecio: Number(form.planPrecio || 0) };
-    if (form.password?.trim()) Object.assign(cambios, await secureSubject({ password: form.password.trim() }));
+    const priceMode = form.priceMode || "general";
+    const customPrice = Number(form.planPrecio);
+    const cambios = {
+      nombre: form.nombre,
+      nombreNegocio: form.nombreNegocio,
+      usuario: form.usuario,
+      email: String(form.email || "").trim().toLowerCase(),
+      planNombre: form.planNombre || "Mensual",
+      planGratis: priceMode === "free",
+      planPrecio: priceMode === "custom" && Number.isFinite(customPrice) && customPrice > 0 ? customPrice : null,
+    };
     actualizarCuenta(cuenta.id, cambios);
     setEditandoId(null);
   };
@@ -225,7 +257,9 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
       accesoHasta: expiresAt.toISOString(),
       registradoPor: "Administrador de Kiosco+",
       precioBaseMensual: pricing.baseMonthlyPrice,
-      descuentoReferidos: pricing.discountPercent,
+      descuentoReferidos: pricing.automaticDiscountPercent,
+      descuentoManual: pricing.manualDiscountPercent,
+      descuentoTotal: pricing.discountPercent,
       referidosActivos: pricing.activeCount,
     };
     actualizarCuenta(cuenta.id, {
@@ -348,6 +382,8 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
           </div>
         </section>
 
+        <AdminNotificationCenter accounts={negocios}/>
+
         <section className="mb-7 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2"><Shield size={19}/><h2 className="font-semibold">Administrador de cuentas</h2></div>
@@ -366,15 +402,10 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
             {negociosFiltrados.map((cuenta) => (
               <div key={cuenta.id} className="rounded-xl border border-gray-200 p-4">
                 {editandoId === cuenta.id ? (
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-                    <input value={form.nombre || ""} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Responsable" className="rounded-lg border px-3 py-2 text-sm" />
-                    <input value={form.nombreNegocio || ""} onChange={(e) => setForm({ ...form, nombreNegocio: e.target.value })} placeholder="Negocio" className="rounded-lg border px-3 py-2 text-sm" />
-                    <input value={form.usuario || ""} onChange={(e) => setForm({ ...form, usuario: e.target.value })} placeholder="Usuario" className="rounded-lg border px-3 py-2 text-sm" />
-                    <input type="email" value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Correo electrónico" className="rounded-lg border px-3 py-2 text-sm" />
-                    <input value={form.password || ""} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Contraseña" className="rounded-lg border px-3 py-2 text-sm" />
-                    <input value={form.planNombre || ""} onChange={(e) => setForm({ ...form, planNombre: e.target.value })} placeholder="Nombre del plan" className="rounded-lg border px-3 py-2 text-sm" />
-                    <input type="number" min="0" value={form.planPrecio || ""} onChange={(e) => setForm({ ...form, planPrecio: e.target.value })} placeholder="Precio de referencia" className="rounded-lg border px-3 py-2 text-sm" />
-                    <div className="grid grid-cols-2 gap-2 md:col-span-4 md:flex"><button onClick={() => guardarCuenta(cuenta)} className="rounded-lg bg-gray-900 px-3 py-2 text-sm text-white">Guardar</button><button onClick={() => setEditandoId(null)} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button></div>
+                  <div className="space-y-4 rounded-xl bg-gray-50 p-3">
+                    <div><h3 className="text-xs font-bold uppercase tracking-wide text-gray-500">Identidad del negocio</h3><div className="mt-2 grid gap-2 md:grid-cols-2"><label className="text-xs text-gray-600">Responsable<input value={form.nombre || ""} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label><label className="text-xs text-gray-600">Nombre del negocio<input value={form.nombreNegocio || ""} onChange={(e) => setForm({ ...form, nombreNegocio: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label><label className="text-xs text-gray-600">Usuario del dueño<input value={form.usuario || ""} onChange={(e) => setForm({ ...form, usuario: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label><label className="text-xs text-gray-600">Correo electrónico<input type="email" value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label></div></div>
+                    <div><h3 className="text-xs font-bold uppercase tracking-wide text-gray-500">Plan y precio</h3><div className="mt-2 grid gap-2 md:grid-cols-3"><label className="text-xs text-gray-600">Nombre del plan<input value={form.planNombre || ""} onChange={(e) => setForm({ ...form, planNombre: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label><div className="text-xs text-gray-600">Forma de cobro<div className="mt-1"><AppSelect value={form.priceMode || "general"} onChange={(priceMode) => setForm({ ...form, priceMode })} options={[{ value: "general", label: "Precio general ($30.000)" }, { value: "custom", label: "Precio especial" }, { value: "free", label: "Cuenta gratuita" }]}/></div></div>{form.priceMode === "custom" ? <label className="text-xs text-gray-600">Precio especial por mes<input type="number" min="1" value={form.planPrecio || ""} onChange={(e) => setForm({ ...form, planPrecio: e.target.value })} placeholder="Ej.: 25000" className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label> : <div className="rounded-lg border border-dashed bg-white px-3 py-2 text-xs text-gray-500">{form.priceMode === "free" ? "Esta cuenta quedará explícitamente sin cargo." : "Usa el precio general; cambiarlo en el sistema actualizará esta cuenta."}</div>}</div><p className="mt-2 text-[11px] text-gray-500">La contraseña se cambia de forma segura desde el botón “Cuentas”, separado de estos datos.</p></div>
+                    <div className="grid grid-cols-2 gap-2 md:flex"><button onClick={() => guardarCuenta(cuenta)} className="rounded-lg bg-gray-900 px-3 py-2 text-sm text-white">Guardar cambios</button><button onClick={() => setEditandoId(null)} className="rounded-lg border bg-white px-3 py-2 text-sm">Cancelar</button></div>
                   </div>
                 ) : (
                   <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
@@ -386,11 +417,13 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                       {(cuenta.pagos || []).length > 0 && <button onClick={() => setHistorialCuentaId(historialCuentaId === cuenta.id ? null : cuenta.id)} className="flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs"><History size={14}/>Historial</button>}
                       <button onClick={() => actualizarCuenta(cuenta.id, { estado: cuenta.estado === "bloqueada" ? "aprobada" : "bloqueada" })} className="rounded-lg border border-amber-300 px-3 py-2 text-xs text-amber-700">{cuenta.estado === "bloqueada" ? "Desbloquear" : "Bloquear"}</button>
                       <button onClick={() => setUsuariosCuentaId(usuariosCuentaId === cuenta.id ? null : cuenta.id)} className="flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium"><UsersRound size={14}/>{usuariosCuentaId === cuenta.id ? "Ocultar cuentas" : `Cuentas (${1 + (cuenta.empleados || []).length})`}</button>
-                      <button onClick={() => { setEditandoId(cuenta.id); setForm({ nombre: cuenta.nombre, nombreNegocio: cuenta.nombreNegocio, usuario: cuenta.usuario, email: cuenta.email || "", password: "", planNombre: cuenta.planNombre || "Mensual", planPrecio: cuenta.planPrecio || "" }); }} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold text-gray-600"><Pencil size={14}/>Editar</button>
+                      <button onClick={() => setReferidosCuentaId(referidosCuentaId === cuenta.id ? null : cuenta.id)} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-800"><Gift size={14}/>{referidosCuentaId === cuenta.id ? "Ocultar descuentos" : "Referidos y descuentos"}</button>
+                      <button onClick={() => { setEditandoId(cuenta.id); setForm({ nombre: cuenta.nombre, nombreNegocio: cuenta.nombreNegocio, usuario: cuenta.usuario, email: cuenta.email || "", planNombre: cuenta.planNombre || "Mensual", planPrecio: Number(cuenta.planPrecio) > 0 ? cuenta.planPrecio : "", priceMode: cuenta.planGratis ? "free" : Number(cuenta.planPrecio) > 0 ? "custom" : "general" }); }} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold text-gray-600"><Pencil size={14}/>Editar</button>
                       <button onClick={() => setCuentaABorrarId(cuenta.id)} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600"><Trash2 size={14}/>Eliminar</button>
                     </div>
                   </div>
                 )}
+                {referidosCuentaId === cuenta.id && <ReferralAccountManager account={cuenta} accounts={negocios} onUpdate={(changes) => actualizarCuenta(cuenta.id, changes)}/>}
                 {usuariosCuentaId === cuenta.id && <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50/60">
                   <div className="flex items-start gap-2 border-b bg-gray-50 px-4 py-3"><UsersRound size={17} className="mt-0.5"/><div><h3 className="text-sm font-bold">Cuentas asociadas a {cuenta.nombreNegocio}</h3><p className="text-xs text-gray-500">Por seguridad no se muestran contraseñas existentes. Podés asignar una temporal nueva.</p></div></div>
                   <div className="divide-y">
@@ -412,14 +445,14 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                 {pagoCuentaId === cuenta.id && <div className="mt-4 rounded-xl border border-green-200 bg-green-50/40 p-4">
                   <div className="mb-3 flex items-center gap-2"><CreditCard size={17}/><h3 className="text-sm font-bold">Registrar pago y habilitar acceso</h3></div>
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-                    <input type="date" value={pagoForm.fecha} onChange={(event) => setPagoForm({ ...pagoForm, fecha: event.target.value })} className="rounded-lg border bg-white px-3 py-2 text-sm"/>
+                    <KioscoDatePicker value={pagoForm.fecha} onChange={(fecha) => setPagoForm({ ...pagoForm, fecha })} allowClear={false}/>
                     <input type="number" min="0" step="0.01" value={pagoForm.importe} onChange={(event) => setPagoForm({ ...pagoForm, importe: event.target.value })} placeholder="Importe" className="rounded-lg border bg-white px-3 py-2 text-sm"/>
                     <AppSelect value={pagoForm.medio} onChange={(medio) => setPagoForm({ ...pagoForm, medio })} options={["Transferencia", "Efectivo", "Mercado Pago", "Otro"]}/>
                     <label className="rounded-lg border bg-white px-3 py-1"><span className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Meses a habilitar</span><input type="number" min="1" max="24" value={pagoForm.meses} onChange={(event) => { const meses = Math.max(1, Number(event.target.value) || 1); setPagoForm({ ...pagoForm, meses, importe: String(monthlyPriceFor(cuenta, negocios, meses).totalPrice) }); }} className="w-full bg-transparent py-0.5 text-sm outline-none"/></label>
                     <button onClick={() => registrarPago(cuenta)} className="rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white">Confirmar pago</button>
                     <input value={pagoForm.nota} onChange={(event) => setPagoForm({ ...pagoForm, nota: event.target.value })} placeholder="Nota opcional" className="rounded-lg border bg-white px-3 py-2 text-sm sm:col-span-2 lg:col-span-5"/>
                   </div>
-                  <p className="mt-2 text-xs text-gray-600">Importe sugerido con {monthlyPriceFor(cuenta, negocios).discountPercent}% de descuento por {monthlyPriceFor(cuenta, negocios).activeCount} referido(s) activo(s). Podés corregirlo manualmente. El plazo se suma desde el vencimiento vigente; si ya venció, empieza desde hoy.</p>
+                  <p className="mt-2 text-xs text-gray-600">Importe sugerido con {monthlyPriceFor(cuenta, negocios).automaticDiscountPercent}% automático por {monthlyPriceFor(cuenta, negocios).activeCount} referido(s) vigente(s) y {monthlyPriceFor(cuenta, negocios).manualDiscountPercent}% manual. El descuento total queda congelado en este pago; los cambios de referidos afectan el próximo. El plazo se suma desde el vencimiento vigente y, si ya venció, empieza hoy.</p>
                 </div>}
                 {historialCuentaId === cuenta.id && <div className="mt-4 overflow-hidden rounded-xl border">
                   <div className="bg-gray-50 px-4 py-2 text-sm font-bold">Historial de pagos</div>
@@ -433,7 +466,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
 
         <section className="mb-7 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
           <div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2"><Bug size={19} className="text-red-600"/><h2 className="font-semibold">Problemas reportados</h2></div><span className="rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700">{reportes.filter((item) => item.estado === "nuevo").length} nuevo(s)</span></div>
-          {reportes.length === 0 ? <p className="text-sm text-gray-400">Todavía no se reportaron problemas.</p> : <div className="space-y-3">{reportes.map((reporte) => <div key={reporte.id} className={`rounded-xl border p-4 ${reporte.estado === "nuevo" ? "border-red-200 bg-red-50/30" : "border-gray-200"}`}><div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="break-words text-sm font-medium">{reporte.descripcion}</p><p className="mt-1 break-words text-xs text-gray-500">{reporte.negocio} · {reporte.usuario} · pantalla {reporte.vista} · {new Date(reporte.fecha).toLocaleString("es-AR")}</p>{reporte.detalleTecnico && <details className="mt-2 text-xs text-gray-500"><summary className="cursor-pointer font-medium text-gray-700">Ver datos técnicos</summary><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-900 p-2 text-[11px] text-gray-100">{reporte.detalleTecnico}</pre></details>}</div><div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">{reporte.captura && <button onClick={() => setCapturaAbierta(reporte.captura)} className="rounded-lg border bg-white px-2 py-2 text-xs">Ver captura</button>}<button onClick={() => setReportes((prev) => prev.map((item) => item.id === reporte.id ? { ...item, estado: item.estado === "resuelto" ? "nuevo" : "resuelto" } : item))} className="rounded-lg border bg-white px-2 py-2 text-xs">{reporte.estado === "resuelto" ? "Reabrir" : "Resolver"}</button><button onClick={() => setReportes((prev) => prev.filter((item) => item.id !== reporte.id))} className="grid min-h-9 place-items-center rounded-lg border border-red-200 text-red-500"><Trash2 size={14}/></button></div></div></div>)}</div>}
+          {reportes.length === 0 ? <p className="text-sm text-gray-400">Todavía no se reportaron problemas.</p> : <div className="space-y-3">{reportes.map((reporte) => <div key={reporte.id} className={`rounded-xl border p-4 ${reporte.estado === "nuevo" ? "border-red-200 bg-red-50/30" : "border-gray-200"}`}><div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="break-words text-sm font-medium">{reporte.descripcion}</p><p className="mt-1 break-words text-xs text-gray-500">{reporte.negocio} · {reporte.usuario} · pantalla {reporte.vista} · {new Date(reporte.fecha).toLocaleString("es-AR")}</p>{reporte.detalleTecnico && <details className="mt-2 text-xs text-gray-500"><summary className="cursor-pointer font-medium text-gray-700">Ver datos técnicos</summary><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-gray-900 p-2 text-[11px] text-gray-100">{reporte.detalleTecnico}</pre></details>}</div><div className="grid shrink-0 grid-cols-2 gap-2 sm:flex">{reporte.captura && <button onClick={() => setCapturaAbierta(reporte.captura)} className="rounded-lg border bg-white px-2 py-2 text-xs">Ver captura</button>}<button onClick={() => toggleIssueStatus(reporte)} className="rounded-lg border bg-white px-2 py-2 text-xs">{reporte.estado === "resuelto" ? "Reabrir" : "Resolver"}</button><button onClick={() => archiveIssue(reporte)} className="grid min-h-9 place-items-center rounded-lg border border-red-200 text-red-500" aria-label="Archivar reporte"><Trash2 size={14}/></button></div></div></div>)}</div>}
         </section>
 
         <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">

@@ -1,4 +1,4 @@
-const CACHE_NAME = "kioscoplus-shell-v5";
+const CACHE_NAME = "kioscoplus-shell-v6";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll([
@@ -41,4 +41,32 @@ self.addEventListener("fetch", (event) => {
       return response;
     })));
   }
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try { payload = event.data?.json?.() || {}; } catch { payload = { body: event.data?.text?.() || "Tenés una novedad en Kiosco+." }; }
+  const title = payload.title || "Kiosco+";
+  event.waitUntil(self.registration.showNotification(title, {
+    body: payload.body || "Tenés una novedad en Kiosco+.",
+    icon: "./pwa-icon-192.png",
+    badge: "./pwa-icon-192.png",
+    tag: payload.id || "kioscoplus-notification",
+    renotify: payload.level === "urgente",
+    data: { url: payload.url || "./?view=notificaciones", id: payload.id || null },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const destination = new URL(event.notification.data?.url || "./?view=notificaciones", self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+    const current = clients.find((client) => new URL(client.url).origin === self.location.origin);
+    if (current) {
+      await current.focus();
+      if ("navigate" in current) await current.navigate(destination);
+      return;
+    }
+    await self.clients.openWindow(destination);
+  }));
 });
