@@ -37,9 +37,9 @@ const passwordResetTtlMinutes = Number.isFinite(configuredResetMinutes)
 const passwordResetTtlMs = passwordResetTtlMinutes * 60 * 1000;
 const emailTestMode = localMode && process.env.KIOSCO_EMAIL_TEST_MODE === "1";
 const emailService = createEmailService({
-  apiKey: process.env.KIOSCO_RESEND_API_KEY,
-  from: process.env.KIOSCO_EMAIL_FROM,
-  replyTo: process.env.KIOSCO_EMAIL_REPLY_TO || process.env.VITE_LEGAL_EMAIL,
+  apiKey: process.env.KIOSCO_RESEND_API_KEY || process.env.RESEND_API_KEY,
+  from: process.env.KIOSCO_EMAIL_FROM || "Kiosco+ <notificaciones@kioscomas.ar>",
+  replyTo: process.env.KIOSCO_EMAIL_REPLY_TO || process.env.VITE_LEGAL_EMAIL || "soporte@kioscomas.ar",
   appUrl: process.env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar",
   testMode: emailTestMode,
 });
