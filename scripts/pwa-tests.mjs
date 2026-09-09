@@ -8,6 +8,8 @@ const app = fs.readFileSync("src/app/KioscoApp.jsx", "utf8");
 const serviceWorker = fs.readFileSync("public/sw.js", "utf8");
 const terms = fs.readFileSync("src/terminos.jsx", "utf8");
 const notificationService = fs.readFileSync("src/features/notificaciones/notificationService.js", "utf8");
+const settings = fs.readFileSync("src/shared/SettingsModal.jsx", "utf8");
+const styles = fs.readFileSync("src/styles.css", "utf8");
 
 const checks = [
   [manifest.display === "standalone", "La app móvil debe abrir sin interfaz del navegador."],
@@ -27,6 +29,8 @@ const checks = [
   [serviceWorker.includes('addEventListener("push"') && serviceWorker.includes("showNotification"), "El service worker debe mostrar avisos push."],
   [serviceWorker.includes('addEventListener("notificationclick"') && serviceWorker.includes("openWindow"), "Los avisos deben abrir Kiosco+ al tocarlos."],
   [notificationService.includes("Notification.requestPermission") && notificationService.includes("pushManager.subscribe"), "La app debe pedir permiso antes de registrar el dispositivo para avisos."],
+  [settings.includes("VITE_APP_VERSION") && settings.includes("Versión actual:") && settings.includes("Aplicación web instalada"), "Configuración debe mostrar claramente la versión y el tipo de aplicación."],
+  [settings.includes("settings-mobile-safe-header") && styles.includes("(display-mode: standalone)") && styles.includes("env(safe-area-inset-top) + 4rem"), "Las pestañas de Configuración deben quedar debajo del velo superior de iPhone en modo instalado."],
 ];
 
 for (const [condition, message] of checks) {
