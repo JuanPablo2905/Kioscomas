@@ -84,6 +84,38 @@ export async function registerCloudAccount(apiUrl, payload) {
   return detail;
 }
 
+export async function requestCloudPasswordReset(apiUrl, email) {
+  await waitForCloudReady(apiUrl);
+  const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/password/forgot`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  }, CLOUD_AUTH_TIMEOUT_MS);
+  const detail = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(detail.error || "No se pudo solicitar la recuperación en este momento.");
+    error.status = response.status;
+    throw error;
+  }
+  return detail;
+}
+
+export async function resetCloudPassword(apiUrl, resetToken, password) {
+  await waitForCloudReady(apiUrl);
+  const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/password/reset`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: resetToken, password }),
+  }, CLOUD_AUTH_TIMEOUT_MS);
+  const detail = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(detail.error || "No se pudo actualizar la contraseña.");
+    error.status = response.status;
+    throw error;
+  }
+  return detail;
+}
+
 export async function loginCloud(apiUrl, username, password, deviceId) {
   await waitForCloudReady(apiUrl);
   const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/login`, {

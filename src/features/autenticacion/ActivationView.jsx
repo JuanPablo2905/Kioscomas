@@ -41,7 +41,7 @@ export function ActivationView({ deviceId, onActivate, onAdminActivate, cloudWar
           <div className="my-12">
             <span className="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-white/10"><ShieldCheck size={29}/></span>
             <h1 className="max-w-md text-3xl font-bold leading-tight sm:text-4xl">Activá Kiosco+ en este dispositivo</h1>
-            <p className="mt-4 max-w-md text-sm leading-6 text-white/75 sm:text-base">La clave confirma que esta instalación fue autorizada. Se pide una sola vez y las actualizaciones futuras se instalan normalmente.</p>
+            <p className="mt-4 max-w-md text-sm leading-6 text-white/75 sm:text-base">La clave confirma que este dispositivo fue autorizado. Se pide una sola vez en este navegador o instalación.</p>
           </div>
           <p className="text-xs text-white/50">Dispositivo {String(deviceId || "").slice(-8).toUpperCase()}</p>
         </section>
@@ -49,7 +49,7 @@ export function ActivationView({ deviceId, onActivate, onAdminActivate, cloudWar
         <section className="flex items-center p-7 sm:p-10 lg:p-14">
           <form onSubmit={submit} className="w-full">
             <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-100 text-amber-700"><KeyRound size={24}/></span>
-            <h2 className="mt-6 text-2xl font-bold">{adminMode ? "Activar dispositivo administrador" : "Clave de instalación"}</h2>
+            <h2 className="mt-6 text-2xl font-bold">{adminMode ? "Activar dispositivo administrador" : "Clave de activación"}</h2>
             <p className="mt-2 text-sm leading-6 text-gray-500">{adminMode ? "Usá la clave privada configurada en Render para recuperar tu dispositivo administrador." : "Pedile una clave al administrador de Kiosco+ y pegala acá."}</p>
             <CloudWarmupStatus state={cloudWarmupState} onRetry={onRetryCloud} className="mt-5"/>
             <label className="mt-7 block text-xs font-bold uppercase tracking-wide text-gray-600" htmlFor="installation-code">{adminMode ? "Clave privada de Render" : "Clave"}</label>
@@ -85,7 +85,7 @@ export function ActivationView({ deviceId, onActivate, onAdminActivate, cloudWar
               onClick={() => { setAdminMode((value) => !value); setError(""); }}
               className="mt-3 min-h-11 w-full rounded-xl border border-gray-200 px-4 text-sm font-semibold text-[#1C4A44] hover:bg-gray-50"
             >
-              {adminMode ? "Volver a la clave de instalación" : "Este es mi dispositivo administrador"}
+              {adminMode ? "Volver a la clave de activación" : "Este es mi dispositivo administrador"}
             </button>
             <p className="mt-5 text-center text-xs leading-5 text-gray-400">Necesitás Internet únicamente para validar la clave por primera vez.</p>
           </form>

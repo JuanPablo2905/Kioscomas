@@ -3,11 +3,14 @@ import ReactDOM from "react-dom/client";
 import { Gift, Share2, Sparkles, Store, UserPlus, Wallet, ArrowRight, Check, ChevronDown } from "lucide-react";
 import "./landing.css";
 import "./precios.css";
+import "./landing-responsive.css";
 import { normalizeWhatsAppPhone } from "./shared/share.js";
 import { DEFAULT_MONTHLY_PLAN_PRICE } from "./billing/referrals.js";
+import { PublicSiteNav } from "./shared/PublicSiteNav.jsx";
 
 const base = import.meta.env.BASE_URL;
-const appUrl = import.meta.env.VITE_PUBLIC_APP_URL || "./";
+const demoUrl = import.meta.env.VITE_PUBLIC_APP_URL || "./app.html";
+const cloudAppUrl = import.meta.env.VITE_CLOUD_APP_URL || "https://app.kioscomas.ar";
 const contactEmail = String(import.meta.env.VITE_LEGAL_EMAIL || "juan@kioscomas.ar").trim();
 const whatsappNumber = normalizeWhatsAppPhone(import.meta.env.VITE_SALES_WHATSAPP || "1122502706");
 const envNumber = (value, fallback) => {
@@ -55,7 +58,7 @@ function App() {
     return () => observer.disconnect();
   }, []);
   return <main>
-    <nav className="nav"><a className="brand" href="./"><img src={`${base}kiosco-plus-lockup-principal.svg`} alt="Kiosco+" /></a><div className="nav-links"><a href="./">Inicio</a><a href="./#funciones">Funciones</a><a href="./#como-funciona">Cómo funciona</a><a className="active" href="./precios.html">Precios</a><a href="./#preguntas">Preguntas</a></div><a className="nav-cta" href={appUrl}>Probar la app <ArrowRight size={16}/></a></nav>
+    <PublicSiteNav base={base} currentPage="precios" demoUrl={demoUrl} cloudAppUrl={cloudAppUrl}/>
 
     <section className="pricing-hero"><div className="eyebrow"><Sparkles size={15}/> Precios claros</div><h1>Un precio simple. <i>Sin sorpresas.</i></h1><p>Un solo plan, dos dispositivos incluidos y descuentos reales para quienes suman. Sin letra chica.</p></section>
 
@@ -71,7 +74,7 @@ function App() {
       <div className="referral-steps">{referralSteps.map(({icon: Icon, title, text}, index)=><div className="step reveal" key={title}><span>0{index+1}</span><div><h3>{title}</h3><p>{text}</p></div></div>)}</div>
       <div className="referral-bar reveal">{[1,2,3,4,5].map((n)=><div className={n===5?"seg full":"seg"} key={n}><b>{n * 20}%</b><span>{n===5?"Gratis":`${n} ${n===1?"cuenta":"cuentas"}`}</span></div>)}</div>
       <p className="referral-caption reveal">Con 5 referidos tu suscripción queda en <b>$0</b>.</p>
-      <div className="referral-code reveal"><label>Tu código se genera automáticamente</label><p>Lo encontrás dentro de Kiosco+ en <b>Configuración → Negocio</b>, listo para copiar y compartir.</p><div className="code-row"><a className="button ghost" href={appUrl}>Abrir Kiosco+ <ArrowRight size={16}/></a></div><small>El comercio referido debe ingresarlo al crear su cuenta.</small></div>
+      <div className="referral-code reveal"><label>Tu código se genera automáticamente</label><p>Lo encontrás dentro de Kiosco+ en <b>Configuración → Negocio</b>, listo para copiar y compartir.</p><div className="code-row"><a className="button ghost" href={cloudAppUrl}>Ingresar a Kiosco+ <ArrowRight size={16}/></a></div><small>El comercio referido debe ingresarlo al crear su cuenta.</small></div>
     </section>
 
     <section className="section faq" id="preguntas"><div className="section-intro"><span className="eyebrow">Preguntas frecuentes</span><h2>Precios sin letra chica.</h2></div><div className="faq-list">{faqs.map(([q,a],i)=><button className={openFaq===i?"faq-item open":"faq-item"} onClick={()=>setOpenFaq(openFaq===i?null:i)} key={q}><span><b>{q}</b>{openFaq===i&&<p>{a}</p>}</span><ChevronDown size={20}/></button>)}</div></section>

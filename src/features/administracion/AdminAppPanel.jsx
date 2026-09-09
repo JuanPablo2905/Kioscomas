@@ -82,7 +82,8 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
       cuenta.nombreNegocio,
       cuenta.nombre,
       cuenta.usuario,
-      ...(cuenta.empleados || []).flatMap((empleado) => [empleado.nombre, empleado.usuario, empleado.rol]),
+      cuenta.email,
+      ...(cuenta.empleados || []).flatMap((empleado) => [empleado.nombre, empleado.usuario, empleado.email, empleado.rol]),
     ].some((value) => String(value || "").toLocaleLowerCase("es").includes(query)));
   }, [busquedaNegocios, negocios]);
 
@@ -163,7 +164,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
     setCuentas((prev) => withReferralStats(prev.map((cuenta) => cuenta.id === id ? { ...cuenta, ...cambios } : cuenta)));
 
   const guardarCuenta = async (cuenta) => {
-    const cambios = { nombre: form.nombre, nombreNegocio: form.nombreNegocio, usuario: form.usuario, planNombre: form.planNombre || "Mensual", planPrecio: Number(form.planPrecio || 0) };
+    const cambios = { nombre: form.nombre, nombreNegocio: form.nombreNegocio, usuario: form.usuario, email: String(form.email || "").trim().toLowerCase(), planNombre: form.planNombre || "Mensual", planPrecio: Number(form.planPrecio || 0) };
     if (form.password?.trim()) Object.assign(cambios, await secureSubject({ password: form.password.trim() }));
     actualizarCuenta(cuenta.id, cambios);
     setEditandoId(null);
@@ -369,6 +370,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                     <input value={form.nombre || ""} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="Responsable" className="rounded-lg border px-3 py-2 text-sm" />
                     <input value={form.nombreNegocio || ""} onChange={(e) => setForm({ ...form, nombreNegocio: e.target.value })} placeholder="Negocio" className="rounded-lg border px-3 py-2 text-sm" />
                     <input value={form.usuario || ""} onChange={(e) => setForm({ ...form, usuario: e.target.value })} placeholder="Usuario" className="rounded-lg border px-3 py-2 text-sm" />
+                    <input type="email" value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Correo electrónico" className="rounded-lg border px-3 py-2 text-sm" />
                     <input value={form.password || ""} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Contraseña" className="rounded-lg border px-3 py-2 text-sm" />
                     <input value={form.planNombre || ""} onChange={(e) => setForm({ ...form, planNombre: e.target.value })} placeholder="Nombre del plan" className="rounded-lg border px-3 py-2 text-sm" />
                     <input type="number" min="0" value={form.planPrecio || ""} onChange={(e) => setForm({ ...form, planPrecio: e.target.value })} placeholder="Precio de referencia" className="rounded-lg border px-3 py-2 text-sm" />
@@ -376,7 +378,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                   </div>
                 ) : (
                   <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-                    <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{cuenta.nombreNegocio}</p><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADOS[cuenta.estado] || ESTADOS.pendiente}`}>{cuenta.estado || "pendiente"}</span></div><p className="mt-1 text-sm text-gray-500">{cuenta.nombre} · @{cuenta.usuario} · {(cuenta.empleados || []).length} empleado(s)</p><TrialStatus account={cuenta}/><ReferralAdminSummary account={cuenta} accounts={negocios}/></div>
+                    <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{cuenta.nombreNegocio}</p><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADOS[cuenta.estado] || ESTADOS.pendiente}`}>{cuenta.estado || "pendiente"}</span></div><p className="mt-1 text-sm text-gray-500">{cuenta.nombre} · @{cuenta.usuario} · {cuenta.email || "sin correo"} · {(cuenta.empleados || []).length} empleado(s)</p><TrialStatus account={cuenta}/><ReferralAdminSummary account={cuenta} accounts={negocios}/></div>
                     <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
                       <button onClick={() => onOpenNegocio(cuenta.id)} disabled={!canAccessAccount(cuenta)} className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-30">Entrar</button>
                       {cuenta.estado !== "aprobada" && <><button onClick={() => actualizarCuenta(cuenta.id, grantTrialAccess(cuenta, 1))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-medium text-amber-800">Dar 1 día</button><button onClick={() => actualizarCuenta(cuenta.id, grantTrialAccess(cuenta, 7))} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-medium text-amber-800">Dar 1 semana</button></>}
@@ -384,8 +386,8 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                       {(cuenta.pagos || []).length > 0 && <button onClick={() => setHistorialCuentaId(historialCuentaId === cuenta.id ? null : cuenta.id)} className="flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs"><History size={14}/>Historial</button>}
                       <button onClick={() => actualizarCuenta(cuenta.id, { estado: cuenta.estado === "bloqueada" ? "aprobada" : "bloqueada" })} className="rounded-lg border border-amber-300 px-3 py-2 text-xs text-amber-700">{cuenta.estado === "bloqueada" ? "Desbloquear" : "Bloquear"}</button>
                       <button onClick={() => setUsuariosCuentaId(usuariosCuentaId === cuenta.id ? null : cuenta.id)} className="flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium"><UsersRound size={14}/>{usuariosCuentaId === cuenta.id ? "Ocultar cuentas" : `Cuentas (${1 + (cuenta.empleados || []).length})`}</button>
-                      <button onClick={() => { setEditandoId(cuenta.id); setForm({ nombre: cuenta.nombre, nombreNegocio: cuenta.nombreNegocio, usuario: cuenta.usuario, password: "", planNombre: cuenta.planNombre || "Mensual", planPrecio: cuenta.planPrecio || "" }); }} className="rounded-lg border px-3 py-2 text-gray-500"><Pencil size={14}/></button>
-                      <button onClick={() => setCuentaABorrarId(cuenta.id)} className="rounded-lg border border-red-200 px-3 py-2 text-red-500"><Trash2 size={14}/></button>
+                      <button onClick={() => { setEditandoId(cuenta.id); setForm({ nombre: cuenta.nombre, nombreNegocio: cuenta.nombreNegocio, usuario: cuenta.usuario, email: cuenta.email || "", password: "", planNombre: cuenta.planNombre || "Mensual", planPrecio: cuenta.planPrecio || "" }); }} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold text-gray-600"><Pencil size={14}/>Editar</button>
+                      <button onClick={() => setCuentaABorrarId(cuenta.id)} className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600"><Trash2 size={14}/>Eliminar</button>
                     </div>
                   </div>
                 )}
@@ -393,7 +395,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                   <div className="flex items-start gap-2 border-b bg-gray-50 px-4 py-3"><UsersRound size={17} className="mt-0.5"/><div><h3 className="text-sm font-bold">Cuentas asociadas a {cuenta.nombreNegocio}</h3><p className="text-xs text-gray-500">Por seguridad no se muestran contraseñas existentes. Podés asignar una temporal nueva.</p></div></div>
                   <div className="divide-y">
                     {[{ ...cuenta, rol: "Dueño", tipoCuenta: "dueno" }, ...(cuenta.empleados || []).map((empleado) => ({ ...empleado, tipoCuenta: "empleado" }))].map((sujeto) => <div key={`${sujeto.tipoCuenta}-${sujeto.id}`} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex min-w-0 items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-[#1C4A44] shadow-sm"><UserRound size={17}/></span><div className="min-w-0"><p className="truncate text-sm font-semibold">{sujeto.nombre || "Sin nombre"} <span className="ml-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-gray-600">{sujeto.rol || "Empleado"}</span></p><p className="truncate text-xs text-gray-500">Usuario: @{sujeto.usuario}</p></div></div>
+                      <div className="flex min-w-0 items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-[#1C4A44] shadow-sm"><UserRound size={17}/></span><div className="min-w-0"><p className="truncate text-sm font-semibold">{sujeto.nombre || "Sin nombre"} <span className="ml-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-gray-600">{sujeto.rol || "Empleado"}</span></p><p className="truncate text-xs text-gray-500">Usuario: @{sujeto.usuario} · {sujeto.email || "sin correo"}</p></div></div>
                       <button type="button" onClick={() => abrirRestablecimiento(cuenta, sujeto, sujeto.tipoCuenta)} className="flex items-center justify-center gap-1 rounded-lg border bg-white px-3 py-2 text-xs font-semibold hover:border-[#1C4A44] hover:text-[#1C4A44]"><KeyRound size={14}/>Restablecer contraseña</button>
                     </div>)}
                   </div>

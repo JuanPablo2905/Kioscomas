@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { mergeConcurrentEntity } from "../src/cloud/conflictMerge.js";
 import { TERMS_VERSION } from "../src/legal/terms.js";
 import { createPostgresStore } from "./postgres-record-store.mjs";
+import { createEmailService, isValidEmail, normalizeEmail } from "./email-service.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 let appVersion = "0.0.0";
@@ -17,6 +18,8 @@ const dataDirectory = process.env.KIOSCO_CLOUD_DATA_DIR || path.dirname(database
 // KIOSCO_CLOUD_PORT remains available for the local desktop server.
 const port = Number(process.env.PORT || process.env.KIOSCO_CLOUD_PORT || 8787);
 const localMode = process.env.KIOSCO_LOCAL_MODE !== "0";
+const requireDeviceActivation = process.env.KIOSCO_REQUIRE_DEVICE_ACTIVATION === "1"
+  || (!localMode && process.env.KIOSCO_REQUIRE_DEVICE_ACTIVATION !== "0");
 const databaseUrl = String(process.env.DATABASE_URL || "").trim();
 let postgresStore = null;
 const configuredSuperAdminUsername = String(process.env.KIOSCO_SUPERADMIN_USERNAME || "").trim();
@@ -27,9 +30,22 @@ const accessTokenTtlMs = (Number.isFinite(configuredAccessTokenHours) && configu
   : 24) * 60 * 60 * 1000;
 const refreshTokenTtlMs = 30 * 24 * 60 * 60 * 1000;
 const refreshRetryGraceMs = 5 * 60 * 1000;
+const configuredResetMinutes = Number(process.env.KIOSCO_PASSWORD_RESET_MINUTES || 30);
+const passwordResetTtlMinutes = Number.isFinite(configuredResetMinutes)
+  ? Math.max(10, Math.min(120, configuredResetMinutes))
+  : 30;
+const passwordResetTtlMs = passwordResetTtlMinutes * 60 * 1000;
+const emailTestMode = localMode && process.env.KIOSCO_EMAIL_TEST_MODE === "1";
+const emailService = createEmailService({
+  apiKey: process.env.KIOSCO_RESEND_API_KEY,
+  from: process.env.KIOSCO_EMAIL_FROM,
+  replyTo: process.env.KIOSCO_EMAIL_REPLY_TO || process.env.VITE_LEGAL_EMAIL,
+  appUrl: process.env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar",
+  testMode: emailTestMode,
+});
 const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISOString();
 const refreshTokenExpiresAt = () => new Date(Date.now() + refreshTokenTtlMs).toISOString();
-const emptyDb = () => ({ schemaVersion: 4, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {} });
+const emptyDb = () => ({ schemaVersion: 4, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {} });
 const compactChangeLog = (changes = []) => {
   let latestAccountDirectoryKept = false;
   return [...changes].reverse().filter((change) => {
@@ -50,6 +66,19 @@ const compactSessions = (sessions = {}, now = Date.now()) => Object.fromEntries(
     if (!session.revokedAt) return !session.refreshExpiresAt || Date.parse(session.refreshExpiresAt) > now;
     return session.revokedReason === "refreshed" && Date.parse(session.refreshGraceUntil || "") > now;
   }),
+);
+const compactPasswordResetTokens = (tokens = {}, now = Date.now()) => Object.fromEntries(
+  Object.entries(tokens).filter(([, entry]) => {
+    const expiresAt = Date.parse(entry?.expiresAt || "");
+    const completedAt = Date.parse(entry?.usedAt || entry?.revokedAt || "");
+    if (Number.isFinite(completedAt)) return completedAt > now - 24 * 60 * 60 * 1000;
+    return Number.isFinite(expiresAt) && expiresAt > now - 24 * 60 * 60 * 1000;
+  }),
+);
+const compactPasswordResetRateLimits = (limits = {}, now = Date.now()) => Object.fromEntries(
+  Object.entries(limits).map(([key, entry]) => [key, {
+    requests: (Array.isArray(entry?.requests) ? entry.requests : []).filter((timestamp) => Number(timestamp) > now - 60 * 60 * 1000),
+  }]).filter(([, entry]) => entry.requests.length),
 );
 const cleanBarcode = (value) => String(value || "").replace(/\D/g, "").slice(0, 18);
 const cleanCatalogText = (value, max = 160) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
@@ -399,6 +428,8 @@ const writeMirrors = async (db) => {
 const writeDb = async (db) => {
   ensureReferralMetadata(db);
   db.sessions = compactSessions(db.sessions);
+  db.passwordResetTokens = compactPasswordResetTokens(db.passwordResetTokens);
+  db.passwordResetRateLimits = compactPasswordResetRateLimits(db.passwordResetRateLimits);
   if (postgresStore) {
     await postgresStore.write(db);
     return;
@@ -528,6 +559,131 @@ const appPasswordFields = (password) => {
     passwordVersion: 1,
   };
 };
+const sha256 = (value) => crypto.createHash("sha256").update(String(value || "")).digest("hex");
+const passwordResetGenericMessage = "Si el correo corresponde a una cuenta, te enviaremos un enlace para crear una contraseña nueva.";
+const passwordResetIpAttempts = new Map();
+const passwordResetSubjectKey = ({ businessId, role, subjectId, username }) => [
+  String(businessId || ""),
+  String(role || ""),
+  String(subjectId || username || ""),
+].join(":");
+const credentialFromSubject = (subject, businessId, role) => ({
+  subject,
+  businessId: String(businessId),
+  role,
+  subjectId: String(subject?.id || subject?.usuario || ""),
+  username: String(subject?.usuario || "").trim(),
+  name: String(subject?.nombre || subject?.usuario || "").trim(),
+  email: normalizeEmail(subject?.email || subject?.correo),
+});
+const passwordResetCredentials = (db) => {
+  const credentials = [];
+  for (const account of db.system?.cuentas || []) {
+    if (!account) continue;
+    credentials.push(credentialFromSubject(account, account.id, account.superAdmin ? "superAdmin" : "owner"));
+    for (const employee of account.empleados || []) credentials.push(credentialFromSubject(employee, account.id, "employee"));
+  }
+  const configuredAdminEmail = normalizeEmail(process.env.KIOSCO_SUPERADMIN_EMAIL);
+  const configuredAdmin = db.users?.[configuredSuperAdminUsername];
+  if (configuredAdmin && isValidEmail(configuredAdminEmail)) {
+    credentials.push({
+      subject: configuredAdmin,
+      businessId: configuredAdmin.businessId,
+      role: "superAdmin",
+      subjectId: configuredAdmin.id,
+      username: configuredAdmin.username,
+      name: configuredAdmin.name,
+      email: configuredAdminEmail,
+      cloudOnly: true,
+    });
+  }
+  return credentials.filter((credential) => credential.username && isValidEmail(credential.email));
+};
+const passwordResetCredentialByEmail = (db, email) => {
+  const normalized = normalizeEmail(email);
+  const matches = passwordResetCredentials(db).filter((credential) => credential.email === normalized);
+  const unique = new Map(matches.map((credential) => [passwordResetSubjectKey(credential), credential]));
+  return unique.size === 1 ? [...unique.values()][0] : null;
+};
+const passwordResetEmailInUse = (db, email) => passwordResetCredentials(db)
+  .some((credential) => credential.email === normalizeEmail(email));
+const passwordResetCredentialBySubjectKey = (db, subjectKey) => passwordResetCredentials(db)
+  .find((credential) => passwordResetSubjectKey(credential) === subjectKey) || null;
+const findCloudUserEntry = (db, credential) => Object.entries(db.users || {}).find(([, user]) => (
+  (credential.cloudUserId && String(user?.id) === String(credential.cloudUserId))
+  || String(user?.username || "").trim().toLowerCase() === credential.username.toLowerCase()
+));
+const updatePasswordResetCredential = (db, credential, password) => {
+  const securedCloudPassword = hashPassword(password);
+  const currentEntry = findCloudUserEntry(db, credential);
+  const currentKey = currentEntry?.[0];
+  const current = currentEntry?.[1];
+  const userId = current?.id || crypto.randomUUID();
+  const user = {
+    ...current,
+    id: userId,
+    businessId: credential.businessId,
+    username: credential.username,
+    name: credential.name || credential.username,
+    email: credential.email,
+    role: credential.role,
+    salt: securedCloudPassword.salt,
+    passwordHash: securedCloudPassword.hash,
+    status: "active",
+    passwordUpdatedAt: new Date().toISOString(),
+  };
+  if (currentKey && currentKey !== credential.username) delete db.users[currentKey];
+  db.users[credential.username] = user;
+  if (!credential.cloudOnly && credential.subject) {
+    Object.assign(credential.subject, appPasswordFields(password), {
+      email: credential.email,
+      passwordUpdatedAt: user.passwordUpdatedAt,
+    });
+    delete credential.subject.password;
+    delete credential.subject.correo;
+  }
+  return user;
+};
+const requestClientIp = (req) => String(
+  req.headers["cf-connecting-ip"]
+  || String(req.headers["x-forwarded-for"] || "").split(",")[0]
+  || req.socket.remoteAddress
+  || "unknown",
+).trim().slice(0, 128);
+const consumePasswordResetIpLimit = (req, now = Date.now()) => {
+  const key = sha256(requestClientIp(req));
+  const recent = (passwordResetIpAttempts.get(key) || []).filter((timestamp) => timestamp > now - 15 * 60 * 1000);
+  recent.push(now);
+  passwordResetIpAttempts.set(key, recent);
+  if (passwordResetIpAttempts.size > 2000) {
+    for (const [candidate, attempts] of passwordResetIpAttempts) {
+      if (!attempts.some((timestamp) => timestamp > now - 15 * 60 * 1000)) passwordResetIpAttempts.delete(candidate);
+    }
+  }
+  return recent.length <= 10;
+};
+const consumePasswordResetEmailLimit = (db, email, now = Date.now()) => {
+  db.passwordResetRateLimits ||= {};
+  const key = sha256(normalizeEmail(email));
+  const recent = (db.passwordResetRateLimits[key]?.requests || []).filter((timestamp) => Number(timestamp) > now - 60 * 60 * 1000);
+  const last = Math.max(0, ...recent.map(Number));
+  const allowed = recent.length < 5 && (!last || now - last >= 2 * 60 * 1000);
+  if (allowed) recent.push(now);
+  db.passwordResetRateLimits[key] = { requests: recent };
+  return allowed;
+};
+const passwordResetUrl = (rawToken) => {
+  const url = new URL(emailService.appUrl);
+  url.searchParams.set("reset_token", rawToken);
+  return url.toString();
+};
+const sendEmailBestEffort = async (event, operation) => {
+  try { return await operation(); }
+  catch (error) {
+    console.error(`No se pudo enviar el correo ${event}`, error?.message || error?.name || "email_error");
+    return null;
+  }
+};
 const accountForLogin = (db, user) => {
   const account = tenantAccount(db, user?.businessId);
   if (!account) return null;
@@ -579,6 +735,7 @@ const migrateAppUser = (db, username, password) => {
     businessId: credential.businessId,
     username: canonicalUsername,
     name: credential.name || canonicalUsername,
+    email: normalizeEmail(credential.subject?.email || credential.subject?.correo || existing?.email),
     role: credential.role,
     salt: secured.salt,
     passwordHash: secured.hash,
@@ -598,6 +755,7 @@ const applyConfiguredSuperAdmin = (db) => {
     businessId: "system-admin",
     username: configuredSuperAdminUsername,
     name: existing?.name || "Administrador de Kiosco+",
+    email: normalizeEmail(process.env.KIOSCO_SUPERADMIN_EMAIL || existing?.email),
     role: "superAdmin",
     salt: secured.salt,
     adminSecretSalt: secured.salt,
@@ -636,6 +794,8 @@ const handleRequest = async (req, res) => {
       service: "kiosco-cloud-local",
       schemaVersion: 4,
       localMode,
+      deviceActivationRequired: requireDeviceActivation,
+      emailDeliveryConfigured: emailService.configured && !emailTestMode,
       persistence: postgresStore ? "postgresql" : "json",
       revision: String(process.env.RENDER_GIT_COMMIT || "local").slice(0, 12),
       time: new Date().toISOString(),
@@ -813,17 +973,114 @@ const handleRequest = async (req, res) => {
       await writeDb(db);
       return send(res, 200, { activated: true, activation: activationView(activation) });
     }
+    if (req.method === "POST" && req.url === "/v1/auth/password/forgot") {
+      const payload = await body(req);
+      const email = normalizeEmail(payload.email);
+      const ipAllowed = consumePasswordResetIpLimit(req);
+      if (!isValidEmail(email)) {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return send(res, 202, { ok: true, message: passwordResetGenericMessage });
+      }
+      const db = await readDb();
+      const emailAllowed = consumePasswordResetEmailLimit(db, email);
+      const credential = emailAllowed && ipAllowed ? passwordResetCredentialByEmail(db, email) : null;
+      let rawToken = "";
+      if (credential && emailService.configured) {
+        const now = Date.now();
+        const subjectKey = passwordResetSubjectKey(credential);
+        for (const candidate of Object.values(db.passwordResetTokens || {})) {
+          if (candidate.subjectKey === subjectKey && !candidate.usedAt && !candidate.revokedAt) {
+            candidate.revokedAt = new Date(now).toISOString();
+            candidate.revokedReason = "replaced";
+          }
+        }
+        rawToken = token();
+        const requestId = crypto.randomUUID();
+        db.passwordResetTokens ||= {};
+        db.passwordResetTokens[sha256(rawToken)] = {
+          id: requestId,
+          subjectKey,
+          businessId: credential.businessId,
+          role: credential.role,
+          username: credential.username,
+          emailHash: sha256(email),
+          createdAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + passwordResetTtlMs).toISOString(),
+          usedAt: null,
+          revokedAt: null,
+        };
+        await writeDb(db);
+        void sendEmailBestEffort("de recuperación", () => emailService.sendPasswordReset({
+          to: email,
+          name: credential.name,
+          resetUrl: passwordResetUrl(rawToken),
+          expiresInMinutes: passwordResetTtlMinutes,
+          requestId,
+        }));
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      } else {
+        await writeDb(db);
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      }
+      return send(res, 202, {
+        ok: true,
+        message: passwordResetGenericMessage,
+        ...(emailTestMode && isLoopback(req) && rawToken ? { testResetToken: rawToken } : {}),
+      });
+    }
+    if (req.method === "POST" && req.url === "/v1/auth/password/reset") {
+      const payload = await body(req);
+      const rawToken = String(payload.token || "").trim();
+      const password = String(payload.password || "");
+      if (password.length < 8 || password.length > 128) {
+        return send(res, 400, { error: "La contraseña nueva debe tener entre 8 y 128 caracteres." });
+      }
+      const db = await readDb();
+      const entry = rawToken.length >= 30 ? db.passwordResetTokens?.[sha256(rawToken)] : null;
+      const now = Date.now();
+      const tokenExpiresAt = Date.parse(entry?.expiresAt || "");
+      if (!entry || entry.usedAt || entry.revokedAt || !Number.isFinite(tokenExpiresAt) || tokenExpiresAt <= now) {
+        return send(res, 400, { error: "El enlace de recuperación es inválido, ya fue usado o venció." });
+      }
+      const credential = passwordResetCredentialBySubjectKey(db, entry.subjectKey);
+      if (!credential) return send(res, 400, { error: "El enlace de recuperación ya no corresponde a una cuenta activa." });
+      const user = updatePasswordResetCredential(db, credential, password);
+      entry.usedAt = new Date(now).toISOString();
+      for (const candidate of Object.values(db.passwordResetTokens || {})) {
+        if (candidate.subjectKey === entry.subjectKey && candidate.id !== entry.id && !candidate.usedAt && !candidate.revokedAt) {
+          candidate.revokedAt = entry.usedAt;
+          candidate.revokedReason = "password_changed";
+        }
+      }
+      for (const session of Object.values(db.sessions || {})) {
+        if (String(session?.userId) === String(user.id) && !session.revokedAt) {
+          session.revokedAt = entry.usedAt;
+          session.revokedReason = "password_reset";
+          session.refreshGraceUntil = null;
+        }
+      }
+      await writeDb(db);
+      if (emailService.configured) {
+        void sendEmailBestEffort("de confirmación de contraseña", () => emailService.sendPasswordChanged({
+          to: credential.email,
+          name: credential.name,
+          requestId: entry.id,
+        }));
+      }
+      return send(res, 200, { ok: true, message: "La contraseña fue actualizada. Ya podés iniciar sesión nuevamente." });
+    }
     if (req.method === "POST" && req.url === "/v1/auth/register") {
       const payload = await body(req);
       const deviceId = cleanActivationDeviceId(payload.deviceId);
       const username = cleanCatalogText(payload.username, 80);
       const password = String(payload.password || "");
       const name = cleanCatalogText(payload.name, 100);
+      const email = normalizeEmail(payload.email);
       const businessName = cleanCatalogText(payload.businessName, 140);
       const businessMode = payload.businessMode === "equipo" ? "equipo" : "solo";
       const requestedReferralCode = normalizeReferralCode(payload.referralCode);
-      if (!deviceId || !username || password.length < 4 || !name || !businessName) {
-        return send(res, 400, { error: "Completá el nombre, negocio, usuario y una contraseña de al menos 4 caracteres" });
+      if (!deviceId || !username || password.length < 4 || !name || !businessName || !isValidEmail(email)) {
+        return send(res, 400, { error: "Completá el nombre, negocio, correo, usuario y una contraseña de al menos 4 caracteres" });
       }
       if (payload.termsAccepted !== true || String(payload.termsVersion || "") !== TERMS_VERSION) {
         return send(res, 400, { error: "Leé y aceptá la versión vigente de los Términos y Condiciones para crear la cuenta." });
@@ -841,6 +1098,7 @@ const handleRequest = async (req, res) => {
         || (account?.empleados || []).some((employee) => String(employee?.usuario || "").trim().toLowerCase() === normalizedUsername)
       ));
       if (usernameExists) return send(res, 409, { error: "Ese usuario ya existe, elegí otro" });
+      if (passwordResetEmailInUse(db, email)) return send(res, 409, { error: "Ese correo ya está asociado a otra cuenta" });
 
       const referrer = requestedReferralCode
         ? (db.system?.cuentas || []).find((candidate) => normalizeReferralCode(candidate?.referralCode) === requestedReferralCode)
@@ -856,6 +1114,7 @@ const handleRequest = async (req, res) => {
         tenantId: businessId,
         nombre: name,
         usuario: username,
+        email,
         nombreNegocio: businessName,
         modoNegocio: businessMode,
         superAdmin: false,
@@ -880,6 +1139,7 @@ const handleRequest = async (req, res) => {
         businessId,
         username,
         name,
+        email,
         role: "owner",
         salt: secured.salt,
         passwordHash: secured.hash,
@@ -900,6 +1160,14 @@ const handleRequest = async (req, res) => {
       });
       db.changes = compactChangeLog(db.changes);
       await writeDb(db);
+      if (emailService.configured) {
+        void sendEmailBestEffort("de bienvenida", () => emailService.sendWelcome({
+          to: email,
+          name,
+          businessName,
+          accountId: businessId,
+        }));
+      }
       return send(res, 201, { ok: true, businessId, account });
     }
     if (req.method === "POST" && req.url === "/v1/auth/register-local") {
@@ -915,6 +1183,7 @@ const handleRequest = async (req, res) => {
         businessId: String(payload.businessId),
         username,
         name: payload.name || existing?.name || username,
+        email: normalizeEmail(payload.email || existing?.email),
         role: payload.superAdmin ? "superAdmin" : "owner",
         salt: secured.salt,
         passwordHash: secured.hash,
@@ -993,6 +1262,11 @@ const handleRequest = async (req, res) => {
       try { cloudPasswordIsValid = !!user && user.status === "active" && verifyPassword(payload.password, user); } catch {}
       if (!cloudPasswordIsValid) user = migrateAppUser(db, username, payload.password);
       if (!user) return send(res, 401, { error: "Credenciales incorrectas" });
+      const activation = db.activations?.[deviceId];
+      if (requireDeviceActivation && (!activation || activation.revokedAt)) {
+        return send(res, 403, { error: "Este dispositivo todavía no fue autorizado. Ingresá una clave de activación antes de iniciar sesión." });
+      }
+      if (activation) activation.lastSeenAt = new Date().toISOString();
       const accessToken = token();
       const refreshToken = token();
       const expiresAt = accessTokenExpiresAt();
@@ -1030,6 +1304,11 @@ const handleRequest = async (req, res) => {
       if (!entry) return send(res, 401, { error: "Sesión inválida" });
       const [, old] = entry;
       if (db.devices[old.deviceId]?.revokedAt) return send(res, 403, { error: "Dispositivo bloqueado" });
+      const activation = db.activations?.[old.deviceId];
+      if (requireDeviceActivation && (!activation || activation.revokedAt)) {
+        return send(res, 403, { error: "Este dispositivo ya no está autorizado" });
+      }
+      if (activation) activation.lastSeenAt = new Date(now).toISOString();
       if (!old.revokedAt) {
         old.revokedAt = new Date(now).toISOString();
         old.revokedReason = "refreshed";
@@ -1072,6 +1351,9 @@ const handleRequest = async (req, res) => {
       const canAccessTenant = session && (session.businessId === tenantId || session.role === "superAdmin");
       if (!canAccessTenant || session.deviceId !== deviceId) return send(res, 401, { error: "Sesión o dispositivo no autorizados" });
       if (db.devices[deviceId]?.revokedAt) return send(res, 403, { error: "Dispositivo bloqueado" });
+      if (requireDeviceActivation && (!db.activations?.[deviceId] || db.activations[deviceId].revokedAt)) {
+        return send(res, 403, { error: "Este dispositivo ya no está autorizado" });
+      }
     }
     db.devices[deviceId] = { ...(db.devices[deviceId] || {}), tenantId, lastSeenAt: new Date().toISOString() };
 
@@ -1225,6 +1507,7 @@ const handleRequest = async (req, res) => {
       const acceptedEntityVersions = [];
       const conflicts = [];
       const rejected = [];
+      const accountReadyEmails = [];
       for (const incomingOperation of payload.operations || []) {
         let operation = incomingOperation;
         if (!operation.id || db.accepted[operation.id] || String(operation.tenantId) !== tenantId) {
@@ -1242,7 +1525,7 @@ const handleRequest = async (req, res) => {
             const currentById = new Map((db.system.cuentas || []).map((account) => [String(account?.id), account]));
             const incomingAccounts = operation.value.filter((account) => account && !account.superAdmin).map((account) => {
               const current = currentById.get(String(account.id));
-              return {
+              const next = {
                 ...account,
                 referralCode: current?.referralCode || account.referralCode,
                 referredByAccountId: current?.referredByAccountId || account.referredByAccountId || null,
@@ -1250,6 +1533,16 @@ const handleRequest = async (req, res) => {
                 termsAcceptedAt: current?.termsAcceptedAt || account.termsAcceptedAt || null,
                 termsVersion: current?.termsVersion || account.termsVersion || null,
               };
+              if (current && current.estado !== "aprobada" && next.estado === "aprobada" && isValidEmail(next.email)) {
+                accountReadyEmails.push({
+                  to: normalizeEmail(next.email),
+                  name: next.nombre,
+                  businessName: next.nombreNegocio,
+                  accountId: next.id,
+                  eventId: operation.id,
+                });
+              }
+              return next;
             });
             const incomingIds = new Set(incomingAccounts.map((account) => String(account.id)));
             const removedIds = new Set(
@@ -1342,7 +1635,11 @@ const handleRequest = async (req, res) => {
       db.changes = compactChangeLog(db.changes);
       db.accepted = compactAcceptedOperations(db.accepted, db.cursor);
       await writeDb(db);
-      return send(res, 200, { acceptedIds, acceptedEntityVersions, conflicts, rejected, cursor: db.cursor });
+      send(res, 200, { acceptedIds, acceptedEntityVersions, conflicts, rejected, cursor: db.cursor });
+      for (const email of accountReadyEmails) {
+        if (emailService.configured) void sendEmailBestEffort("de cuenta habilitada", () => emailService.sendAccountReady(email));
+      }
+      return;
     }
     if (req.method === "GET" && req.url?.startsWith("/v1/sync/pull")) {
       const since = Number(new URL(req.url, "http://localhost").searchParams.get("since") || 0);

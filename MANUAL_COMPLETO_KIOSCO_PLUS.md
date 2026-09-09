@@ -734,18 +734,28 @@ Archivos centrales:
 - `src/security/trialAccess.js`
 - `src/features/autenticacion/LoginView.jsx`
 - `src/features/autenticacion/ActivationView.jsx`
+- `src/features/autenticacion/PasswordResetView.jsx`
+- `server/email-service.mjs`
 
 ### Registro
 
-`POST /v1/auth/register` exige aceptación explícita de la versión vigente de términos. El servidor guarda `termsAcceptedAt` y `termsVersion` en la cuenta.
+`POST /v1/auth/register` exige correo válido y aceptación explícita de la versión vigente de términos. El servidor normaliza el correo y guarda `termsAcceptedAt` y `termsVersion` en la cuenta. Las cuentas históricas sin correo continúan funcionando, pero deben completarlo desde el panel administrativo para usar la recuperación automática.
 
 ### Sesión
 
 El servidor entrega token de acceso y token de renovación. El tiempo del token se controla con `KIOSCO_ACCESS_TOKEN_HOURS`. El cliente debe intentar renovar antes de obligar a iniciar sesión otra vez.
 
+### Recuperación de contraseña y correos
+
+`POST /v1/auth/password/forgot` siempre responde con un mensaje neutro. Cuando el correo identifica exactamente un usuario, genera un token aleatorio, guarda solamente SHA-256 y envía mediante Resend un enlace hacia `KIOSCO_PUBLIC_APP_URL`. `POST /v1/auth/password/reset` exige una contraseña de 8 a 128 caracteres, acepta el token una sola vez, actualiza la credencial local y cloud y revoca las sesiones anteriores.
+
+El límite predeterminado es un envío cada 2 minutos y cinco por hora para un mismo correo, además de diez solicitudes cada 15 minutos por IP. Las plantillas transaccionales viven en `server/email-service.mjs`; la guía de dominio, DNS y variables está en `docs/CONFIGURAR_CORREOS_RESEND.md`.
+
 ### Activación
 
 El dispositivo tiene un UUID local. La clave se canjea en `/v1/activation/redeem`. El administrador puede ver y revocar activaciones. Una activación no sustituye la autenticación del usuario.
+
+La aplicación real exige esta autorización tanto en escritorio como en cada perfil de navegador usado para acceder a la nube. El cliente la habilita con `VITE_REQUIRE_DEVICE_ACTIVATION=true` y el servidor la exige con `KIOSCO_REQUIRE_DEVICE_ACTIVATION=1`; el servidor publicado también la considera obligatoria por defecto salvo una desactivación explícita. La demo pública es una experiencia separada, usa datos ficticios y no se conecta a las cuentas reales, por lo que no solicita clave.
 
 ### Superadministrador
 
@@ -781,6 +791,8 @@ Las credenciales maestras provienen únicamente de variables privadas del servid
 ### Autenticación
 
 - `POST /v1/auth/register`
+- `POST /v1/auth/password/forgot`
+- `POST /v1/auth/password/reset`
 - `POST /v1/auth/register-local`
 - `POST /v1/auth/pair-device`
 - `POST /v1/auth/bootstrap`
@@ -844,8 +856,14 @@ Los cuatro datos legales deben completarse antes de ofrecer comercialmente el se
 DATABASE_URL=
 KIOSCO_SUPERADMIN_USERNAME=
 KIOSCO_SUPERADMIN_PASSWORD=
+KIOSCO_SUPERADMIN_EMAIL=
 KIOSCO_ACCESS_TOKEN_HOURS=24
 KIOSCO_BACKUP_RETENTION_DAYS=7
+KIOSCO_RESEND_API_KEY=
+KIOSCO_EMAIL_FROM="Kiosco+ <notificaciones@correo.kioscomas.ar>"
+KIOSCO_EMAIL_REPLY_TO=
+KIOSCO_PUBLIC_APP_URL=https://app.kioscomas.ar
+KIOSCO_PASSWORD_RESET_MINUTES=30
 KIOSCO_UPCITEMDB_KEY=
 KIOSCO_GO_UPC_API_KEY=
 KIOSCO_BARCODE_LOOKUP_API_KEY=
@@ -917,7 +935,7 @@ pnpm test:cloud
 pnpm test:all
 ```
 
-`test:all` ejecuta configuración cloud, almacenamiento PostgreSQL, tutoriales, PWA, vistas, funciones y build. `test:cloud` levanta un servidor temporal y comprueba autenticación, activaciones y sincronización.
+`test:all` ejecuta configuración cloud, almacenamiento PostgreSQL, tutoriales, PWA, vistas, funciones, build, navegación pública, control de activaciones y recuperación de contraseña. `test:cloud` levanta un servidor temporal y comprueba autenticación, activaciones y sincronización. `test:public-site` verifica que la landing diferencie la demo de la aplicación real y que su navegación sea adaptable. `test:device-activation` comprueba que un navegador nuevo no pueda iniciar sesión en la nube hasta canjear una clave válida. `test:password-recovery` comprueba tokens de un uso, hash persistido, revocación de sesiones, límites y plantillas de Resend sin enviar correos reales.
 
 Al modificar términos, registro o versión legal, ejecutar como mínimo:
 
@@ -1019,6 +1037,9 @@ Variables privadas que deben cargarse en el panel del servicio API:
 
 - `DATABASE_URL`
 - `KIOSCO_SUPERADMIN_PASSWORD`
+- `KIOSCO_RESEND_API_KEY`
+- `KIOSCO_EMAIL_FROM`
+- `KIOSCO_EMAIL_REPLY_TO`
 - Las claves opcionales de catálogos.
 
 Después de desplegar:
@@ -1029,9 +1050,10 @@ Después de desplegar:
 4. Crear una clave de prueba.
 5. Activar un perfil limpio.
 6. Registrar una cuenta aceptando términos.
-7. Aprobarla y entrar.
-8. Crear un producto y una venta.
-9. Confirmar el cambio desde otro dispositivo.
+7. Confirmar el correo de bienvenida, aprobarla y comprobar el aviso de habilitación.
+8. Probar **Olvidé mi contraseña** y verificar que el enlace funcione una sola vez.
+9. Entrar, crear un producto y una venta.
+10. Confirmar el cambio desde otro dispositivo.
 
 ## 41. Cambios frecuentes paso a paso
 

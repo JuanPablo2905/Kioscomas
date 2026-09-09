@@ -4,7 +4,7 @@ import {
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
   MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
-  ChevronRight, Download, Share2,
+  ChevronRight, Download, Share2, ArrowLeft, Mail,
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
@@ -15,9 +15,10 @@ const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const formatActivationCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
 const formatReferralCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 14);
 
-export function LoginView({ onLogin, onRegister, error, notice, onReset, showDemoAccounts = false, requiresRegistrationCode = false, cloudWarmupState, onRetryCloud }) {
+export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice, onReset, showDemoAccounts = false, requiresRegistrationCode = false, cloudWarmupState, onRetryCloud }) {
   const [modo, setModo] = useState("login");
   const [nombre, setNombre] = useState("");
+  const [email, setEmail] = useState("");
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
   const [nombreNegocio, setNombreNegocio] = useState("");
@@ -38,14 +39,18 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
     try {
       if (modo === "login") {
         await onLogin({ usuario, password });
+      } else if (modo === "recuperar") {
+        if (!email.trim()) return;
+        await onForgotPassword({ email: email.trim() });
       } else {
-        if (!nombre.trim() || !usuario.trim() || !password.trim() || !nombreNegocio.trim()) return;
+        if (!nombre.trim() || !email.trim() || !usuario.trim() || !password.trim() || !nombreNegocio.trim()) return;
         if (!termsAccepted) {
           setTermsError("Tenés que leer y aceptar los Términos y Condiciones para crear la cuenta.");
           return;
         }
         const result = await onRegister({
           nombre: nombre.trim(),
+          email: email.trim(),
           usuario: usuario.trim(),
           password,
           nombreNegocio: nombreNegocio.trim(),
@@ -77,12 +82,14 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
         <p className="text-sm text-gray-500 mb-5">
           {modo === "login"
             ? "Iniciá sesión para entrar a tu negocio."
-            : "Creá una cuenta para un nuevo local."}
+            : modo === "recuperar"
+              ? "Te enviaremos un enlace seguro para crear una contraseña nueva."
+              : "Creá una cuenta para un nuevo local."}
         </p>
 
         <CloudWarmupStatus state={cloudWarmupState} onRetry={onRetryCloud} className="mb-4"/>
 
-        <div className="mb-5 grid grid-cols-2 gap-2">
+        {modo === "recuperar" ? <button type="button" onClick={() => setModo("login")} className="mb-5 flex min-h-10 items-center gap-2 text-sm font-semibold text-[#1C4A44]"><ArrowLeft size={16}/>Volver al inicio de sesión</button> : <div className="mb-5 grid grid-cols-2 gap-2">
           <button
             onClick={() => setModo("login")}
             className={`min-h-11 min-w-0 rounded-lg px-2 py-2 text-sm font-medium ${
@@ -103,7 +110,12 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
           >
             Crear cuenta
           </button>
-        </div>
+        </div>}
+
+        {modo === "recuperar" && <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">
+          <div className="mb-1 flex items-center gap-2 font-bold"><Mail size={15}/>Recuperación segura</div>
+          Si el correo está asociado a una cuenta, vas a recibir un botón con un enlace de uso único. Nunca te enviaremos una contraseña por correo.
+        </div>}
 
         {modo === "registro" && (
           <>
@@ -127,6 +139,16 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
             <input
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
+              className="mb-3 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm"
+            />
+            <label className="text-sm text-gray-700 block mb-1" htmlFor="registration-email">Correo electrónico</label>
+            <input
+              id="registration-email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              placeholder="nombre@correo.com"
               className="mb-3 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm"
             />
             <label className="text-sm text-gray-700 block mb-1">
@@ -171,20 +193,37 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
           </>
         )}
 
-        <label className="text-sm text-gray-700 block mb-1">Usuario</label>
-        <input
-          value={usuario}
-          onChange={(e) => setUsuario(e.target.value)}
-          className="mb-3 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm"
-        />
-        <label className="text-sm text-gray-700 block mb-1">Contraseña</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-          className="mb-4 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm"
-        />
+        {modo === "recuperar" ? <>
+          <label className="text-sm text-gray-700 block mb-1" htmlFor="recovery-email">Correo electrónico</label>
+          <input
+            id="recovery-email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && handleSubmit()}
+            autoComplete="email"
+            placeholder="nombre@correo.com"
+            className="mb-4 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm"
+          />
+        </> : <>
+          <label className="text-sm text-gray-700 block mb-1">Usuario</label>
+          <input
+            value={usuario}
+            onChange={(e) => setUsuario(e.target.value)}
+            autoComplete="username"
+            className="mb-3 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm"
+          />
+          <label className="text-sm text-gray-700 block mb-1">Contraseña</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            autoComplete={modo === "registro" ? "new-password" : "current-password"}
+            className={`${modo === "login" ? "mb-2" : "mb-4"} min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm`}
+          />
+          {modo === "login" && <button type="button" onClick={() => setModo("recuperar")} className="mb-4 block text-left text-xs font-semibold text-[#1C4A44] underline underline-offset-2">Olvidé mi contraseña</button>}
+        </>}
 
         {modo === "registro" && <div className="mb-4">
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs leading-relaxed text-gray-700">
@@ -202,7 +241,7 @@ export function LoginView({ onLogin, onRegister, error, notice, onReset, showDem
           disabled={submitting}
           className="brand-cta min-h-11 w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-wait disabled:opacity-60"
         >
-          {submitting ? "Conectando..." : modo === "login" ? "Entrar" : "Enviar solicitud"}
+          {submitting ? (modo === "recuperar" ? "Enviando..." : "Conectando...") : modo === "login" ? "Entrar" : modo === "recuperar" ? "Enviar enlace de recuperación" : "Enviar solicitud"}
         </button>
 
         {!installState.standalone && <div className="pwa-install-card mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-blue-900">

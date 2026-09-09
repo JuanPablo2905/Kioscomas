@@ -1,0 +1,219 @@
+/* Navegación pública y correcciones responsive compartidas por la landing y precios. */
+html,
+body,
+#root,
+main {
+  max-width: 100%;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+.public-site-nav {
+  position: relative;
+  z-index: 80;
+}
+
+.nav-links a.active {
+  color: #173834;
+  font-weight: 800;
+}
+
+.nav-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.mobile-nav-toggle,
+.mobile-nav-panel {
+  display: none;
+}
+
+.hero,
+.hero-copy,
+.hero-visual,
+.demo-window,
+.demo-sidebar,
+.demo-content,
+.section,
+.pricing-hero,
+.plans-grid,
+.plan-card {
+  min-width: 0;
+}
+
+.hero-visual,
+.demo-window {
+  width: 100%;
+  max-width: 100%;
+}
+
+@media (max-width: 1020px) {
+  .public-site-nav .nav-links {
+    display: none;
+  }
+
+  .mobile-nav-toggle {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    place-items: center;
+    border: 1px solid #cbd7d2;
+    border-radius: 999px;
+    background: #fff;
+    color: #173834;
+    cursor: pointer;
+  }
+
+  .mobile-nav-toggle:focus-visible {
+    outline: 3px solid rgba(59, 130, 116, .28);
+    outline-offset: 2px;
+  }
+
+  .mobile-nav-panel {
+    position: absolute;
+    top: calc(100% - 5px);
+    right: 18px;
+    left: 18px;
+    display: grid;
+    gap: 16px;
+    padding: 18px;
+    border: 1px solid #d9e2de;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, .98);
+    box-shadow: 0 24px 65px rgba(23, 56, 52, .2);
+    backdrop-filter: blur(16px);
+  }
+
+  .mobile-nav-links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .mobile-nav-links a {
+    display: flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 11px;
+    color: #49655f;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .mobile-nav-links a:hover,
+  .mobile-nav-links a:focus-visible,
+  .mobile-nav-links a.active {
+    background: #edf4ef;
+    color: #173834;
+    outline: none;
+  }
+
+  .mobile-nav-links svg {
+    flex: 0 0 auto;
+  }
+
+  .mobile-nav-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    padding-top: 14px;
+    border-top: 1px solid #e1e8e4;
+  }
+
+  .mobile-nav-actions .button {
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .public-site-nav .brand img {
+    width: 120px;
+  }
+
+  .public-site-nav .nav-login {
+    padding: 10px 13px;
+    font-size: 12px;
+  }
+
+  .mobile-nav-panel {
+    right: 12px;
+    left: 12px;
+  }
+
+  .mobile-nav-links,
+  .mobile-nav-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .hero,
+  .section,
+  .pricing-hero {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Un teléfono girado no debe adoptar el hero de escritorio sólo por su ancho. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1100px) {
+  .nav {
+    height: 62px;
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+    max-width: 920px;
+    padding: 34px 22px 46px;
+  }
+
+  .hero h1 {
+    max-width: 680px;
+    font-size: clamp(38px, 8vw, 55px);
+  }
+
+  .hero-copy > p {
+    max-width: 720px;
+  }
+
+  .hero-visual {
+    max-width: 880px;
+    margin: 0 auto;
+  }
+
+  .demo-window {
+    min-height: 320px;
+  }
+
+  .hero-trust,
+  .strip div {
+    row-gap: 8px;
+  }
+
+  .section {
+    padding-top: 64px;
+    padding-bottom: 64px;
+  }
+
+  .workflow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+
+  .closing {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-top: 52px;
+    padding-bottom: 52px;
+  }
+}

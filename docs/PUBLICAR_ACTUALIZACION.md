@@ -29,7 +29,7 @@ No se debe reutilizar una etiqueta ni publicar dos contenidos distintos con el m
 3. Presionar **Generar clave** y copiarla. La clave completa se muestra una sola vez.
 4. La persona descarga el instalador desde la página, abre Kiosco+ y pega esa clave.
 
-La clave queda asociada al dispositivo. En escritorio autoriza la instalación; en la web móvil autoriza la creación de un negocio nuevo. Una cuenta existente puede iniciar sesión desde otro celular sin consumir una clave. Desde el mismo panel se puede desactivar una clave que todavía no se usó o un dispositivo ya autorizado.
+La clave queda asociada al dispositivo. En escritorio autoriza la instalación y, en la aplicación web real, autoriza ese perfil de navegador antes de permitir el registro o el inicio de sesión. Cada navegador, celular o computadora nueva consume un lugar de la clave; volver a abrir la aplicación desde el mismo perfil no consume otro. La demo pública de la landing es independiente, usa datos ficticios y no necesita activación. Desde el mismo panel se puede desactivar una clave que todavía no se usó o un dispositivo ya autorizado.
 
 ## Firma de Windows
 

@@ -290,6 +290,7 @@ function EditarMovimientoModal({ movimiento, onClose, onConfirm, onDelete }) {
 function EmpleadoModal({ rolesDisponibles, onClose, onConfirm }) {
   const [nombre, setNombre] = useState("");
   const [usuario, setUsuario] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rol, setRol] = useState(rolesDisponibles[0]?.nombre || "");
   const [rolNuevo, setRolNuevo] = useState("");
@@ -297,7 +298,7 @@ function EmpleadoModal({ rolesDisponibles, onClose, onConfirm }) {
 
   const rolFinal = creandoRol ? rolNuevo.trim() : rol;
   const puedeGuardar =
-    nombre.trim() && usuario.trim() && password.trim() && rolFinal;
+    nombre.trim() && usuario.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email.trim()) && password.trim() && rolFinal;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4">
@@ -319,6 +320,15 @@ function EmpleadoModal({ rolesDisponibles, onClose, onConfirm }) {
         <input
           value={usuario}
           onChange={(e) => setUsuario(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
+        />
+        <label className="text-sm text-gray-700 block mb-1">Correo electrónico</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          autoComplete="email"
+          placeholder="nombre@correo.com"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
         />
         <label className="text-sm text-gray-700 block mb-1">Contraseña</label>
@@ -367,6 +377,7 @@ function EmpleadoModal({ rolesDisponibles, onClose, onConfirm }) {
               onConfirm({
                 nombre: nombre.trim(),
                 usuario: usuario.trim(),
+                email: email.trim().toLowerCase(),
                 password,
                 rol: rolFinal,
               })
@@ -570,17 +581,19 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
     });
   };
 
-  const handleAgregarEmpleado = async ({ nombre, usuario, password, rol }) => {
+  const handleAgregarEmpleado = async ({ nombre, usuario, email, password, rol }) => {
     if (!nuevoEmpleadoOpen) return;
     const normalizedUser = String(usuario || "").trim();
+    const normalizedEmail = String(email || "").trim().toLowerCase();
     const normalizedPassword = String(password || "").trim();
     const yaExiste = cuentas.some(
       (c) =>
         String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase() ||
-        (c.empleados || []).some((e) => String(e.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())
+        String(c.email || "").trim().toLowerCase() === normalizedEmail ||
+        (c.empleados || []).some((e) => String(e.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase() || String(e.email || "").trim().toLowerCase() === normalizedEmail)
     );
     if (yaExiste) return;
-    const empleadoSeguro = await secureSubject({ id: Date.now(), nombre: nombre.trim(), usuario: normalizedUser, password: normalizedPassword, rol });
+    const empleadoSeguro = await secureSubject({ id: Date.now(), nombre: nombre.trim(), usuario: normalizedUser, email: normalizedEmail, password: normalizedPassword, rol });
     setCuentas((prev) =>
       prev.map((c) => {
         if (c.id !== nuevoEmpleadoOpen) return c;
@@ -988,7 +1001,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-gray-900">{e.nombre}</p>
-                        <p className="text-xs text-gray-400">@{e.usuario}</p>
+                        <p className="text-xs text-gray-400">@{e.usuario} · {e.email || "sin correo"}</p>
                         <AppSelect value={e.rol} onChange={(role) => handleCambiarRolEmpleado(negocioAbierto.id, e.id, role)} options={(negocioAbierto.roles || []).map((role) => ({ value: role.nombre, label: role.nombre }))} className="mt-2 w-full max-w-56"/>
                       </div>
                       <button

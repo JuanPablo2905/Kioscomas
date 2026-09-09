@@ -27,10 +27,24 @@ services:
     envVars:
       - key: KIOSCO_LOCAL_MODE
         value: "0"
+      - key: KIOSCO_REQUIRE_DEVICE_ACTIVATION
+        value: "1"
       - key: KIOSCO_SUPERADMIN_USERNAME
         value: kiosco-admin
       - key: KIOSCO_SUPERADMIN_PASSWORD
         sync: false
+      - key: KIOSCO_SUPERADMIN_EMAIL
+        sync: false
+      - key: KIOSCO_RESEND_API_KEY
+        sync: false
+      - key: KIOSCO_EMAIL_FROM
+        sync: false
+      - key: KIOSCO_EMAIL_REPLY_TO
+        sync: false
+      - key: KIOSCO_PUBLIC_APP_URL
+        value: https://app.kioscomas.ar
+      - key: KIOSCO_PASSWORD_RESET_MINUTES
+        value: "30"
       - key: DATABASE_URL
         sync: false
       - key: KIOSCO_BACKUP_RETENTION_DAYS

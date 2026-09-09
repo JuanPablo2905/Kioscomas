@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { repository } from "../cloud/repository";
 import { loadCloudConfig } from "../cloud/config";
-import { ensureLocalCloudSession, loginCloud, logoutCloud, pairCloudDevice, registerCloudAccount } from "../cloud/cloudAuth";
+import { cloudFetch, cloudSession, ensureLocalCloudSession, loginCloud, logoutCloud, pairCloudDevice, registerCloudAccount, requestCloudPasswordReset, resetCloudPassword } from "../cloud/cloudAuth";
 import { clearLoginFailures, createSession, loginGuard, registerLoginFailure, secureAccounts, secureSubject, validSession, verifyPassword } from "../security/auth";
 import { accountAccessMessage, canAccessAccount, formatAccessExpiration, trialAccessStatus } from "../security/trialAccess";
 import { Sidebar } from "../shared/layout";
@@ -24,6 +24,7 @@ import { AdminAppPanel } from "../features/administracion/AdminAppPanel";
 import { GestionView } from "../features/gestion/GestionView";
 import { ActivationView } from "../features/autenticacion/ActivationView";
 import { LoginView } from "../features/autenticacion/LoginView";
+import { PasswordResetView } from "../features/autenticacion/PasswordResetView";
 import { SettingsModal, applyPreferences, DEFAULT_PREFERENCES, migrateBrandPreferences } from "../shared/SettingsModal";
 import { useInteractionFeedback } from "../shared/useInteractionFeedback";
 import { useMobileKeyboardViewport } from "../shared/useMobileKeyboardViewport";
@@ -38,7 +39,6 @@ import { unidadInfo } from "../shared/domain";
 import { auditActor, createAuditEvent, describeAccountChange, enrichEntityHistory, hasMeaningfulChange } from "../shared/audit";
 import { captureAppScreenshot } from "../shared/captureScreenshot";
 import { lookupBarcode } from "../shared/productLookup";
-import { cloudFetch, cloudSession } from "../cloud/cloudAuth";
 import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
 import { PromptDialog } from "../shared/controls";
 import { activateAdministratorInstallation, clearInstallationReceipt, loadInstallationReceipt, markLegacyInstallation, redeemInstallationCode, saveInstallationReceipt, verifyInstallationActivation } from "../security/installationActivation";
@@ -49,6 +49,7 @@ import { CloudWarmupStatus } from "../features/autenticacion/CloudWarmupStatus";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const PUBLIC_DEMO_MODE = import.meta.env.VITE_PUBLIC_DEMO === "true";
+const REQUIRE_DEVICE_ACTIVATION = import.meta.env.VITE_REQUIRE_DEVICE_ACTIVATION === "true";
 const PUBLIC_DEMO_IDENTITY = { usuarioId: "cuenta:2", tenantId: "2", rol: "Dueño", nombre: "María", superAdmin: false, publicDemo: true };
 const DEMO_INTRO_TUTORIAL_KEY = "__demo_intro__";
 const TUTORIAL_VIEW_NAMES = { home: "Inicio", notificaciones: "Notificaciones", stock: "Stock", vitrina: "Vitrina", ventas: "Ventas y caja", compras: "Compras", gastos: "Gastos", clientes: "Clientes", reportes: "Reportes", gestion: "Gestión", administracion: "Administración" };
@@ -256,6 +257,7 @@ export default function KioscoApp() {
   const [identidad, setIdentidad] = useState(null); // { rol, nombre }
   const [loginError, setLoginError] = useState("");
   const [loginNotice, setLoginNotice] = useState("");
+  const [passwordResetToken, setPasswordResetToken] = useState(() => PUBLIC_DEMO_MODE ? "" : (new URLSearchParams(window.location.search).get("reset_token") || ""));
   const [notasAdmin, setNotasAdmin] = useState([]);
   const [authSecurity, setAuthSecurity] = useState({});
   const [sessionExpiresAt, setSessionExpiresAt] = useState(null);
@@ -354,8 +356,12 @@ export default function KioscoApp() {
       if (!PUBLIC_DEMO_MODE && window.kioscoDesktop?.runtime?.get) {
         try { runtime = await window.kioscoDesktop.runtime.get(); } catch {}
       }
-      if (runtime?.requiresActivation) {
-        const config = loadCloudConfig();
+      const activationConfig = PUBLIC_DEMO_MODE ? null : loadCloudConfig();
+      const desktopRequiresActivation = Boolean(runtime?.requiresActivation);
+      const publishedWebRequiresActivation = Boolean(REQUIRE_DEVICE_ACTIVATION && activationConfig?.enabled && activationConfig?.apiUrl);
+      if (desktopRequiresActivation || publishedWebRequiresActivation) {
+        const config = activationConfig;
+        const activationVersion = runtime?.version || import.meta.env.VITE_APP_VERSION || "web";
         const receipt = loadInstallationReceipt();
         const hasExistingInstallation = Boolean(
           (validSession(sesion) && accountsToLoad.some((account) => String(account.id) === String(sesion.accountId)))
@@ -363,14 +369,14 @@ export default function KioscoApp() {
           || (datosGuardados && Object.keys(datosGuardados).some((id) => !["1", "2", "3"].includes(String(id)))),
         );
         setActivationDeviceId(config.deviceId);
-        setActivationAppVersion(runtime.version || "");
+        setActivationAppVersion(activationVersion);
         if (receipt?.activated && receipt.deviceId === config.deviceId) {
-          if (receipt.mode === "legacy" && !hasExistingInstallation) {
+          if (receipt.mode === "legacy" && (!desktopRequiresActivation || !hasExistingInstallation)) {
             clearInstallationReceipt();
             requiresActivation = true;
           } else if (["code", "administrator"].includes(receipt.mode)) {
             try {
-              const verified = await verifyInstallationActivation(config.apiUrl, config.deviceId, runtime.version);
+              const verified = await verifyInstallationActivation(config.apiUrl, config.deviceId, activationVersion);
               if (!verified.activated) {
                 clearInstallationReceipt();
                 requiresActivation = true;
@@ -383,11 +389,11 @@ export default function KioscoApp() {
         } else {
           let knownByCloud = false;
           try {
-            const verified = await verifyInstallationActivation(config.apiUrl, config.deviceId, runtime.version);
+            const verified = await verifyInstallationActivation(config.apiUrl, config.deviceId, activationVersion);
             knownByCloud = Boolean(verified.activated);
             if (knownByCloud) saveInstallationReceipt({ activated: true, mode: "code", deviceId: config.deviceId, activationId: verified.activation?.id || null, activatedAt: verified.activation?.activatedAt || new Date().toISOString() });
           } catch {}
-          if (!knownByCloud && hasExistingInstallation) markLegacyInstallation(config.deviceId);
+          if (!knownByCloud && hasExistingInstallation && desktopRequiresActivation) markLegacyInstallation(config.deviceId);
           else if (!knownByCloud) requiresActivation = true;
         }
       }
@@ -1100,7 +1106,29 @@ export default function KioscoApp() {
     setLoginError("Usuario o contraseña incorrectos.");
   };
 
-  const handleRegister = async ({ nombre, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "", referralCode = "", termsAccepted = false, termsVersion = "" }) => {
+  const handleForgotPassword = async ({ email }) => {
+    setLoginError("");
+    setLoginNotice("");
+    const cloudConfig = loadCloudConfig();
+    if (!cloudConfig.enabled || !cloudConfig.apiUrl) {
+      setLoginError("Esta instalación no está conectada a la nube.");
+      return { ok: false };
+    }
+    if (!navigator.onLine) {
+      setLoginError("Necesitás Internet para solicitar la recuperación.");
+      return { ok: false };
+    }
+    try {
+      const result = await requestCloudPasswordReset(cloudConfig.apiUrl, email);
+      setLoginNotice(result.message || "Si el correo corresponde a una cuenta, te enviaremos un enlace para crear una contraseña nueva.");
+      return { ok: true };
+    } catch (error) {
+      setLoginError(error?.message || "No se pudo solicitar la recuperación en este momento.");
+      return { ok: false };
+    }
+  };
+
+  const handleRegister = async ({ nombre, email, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "", referralCode = "", termsAccepted = false, termsVersion = "" }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "").trim();
     if (cuentas.some((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())) {
@@ -1128,6 +1156,7 @@ export default function KioscoApp() {
       const result = await registerCloudAccount(cloudConfig.apiUrl, {
         deviceId: cloudConfig.deviceId,
         name: nombre,
+        email,
         username: normalizedUser,
         password: normalizedPassword,
         businessName: nombreNegocio,
@@ -1231,6 +1260,26 @@ export default function KioscoApp() {
     setCargando(false);
   };
 
+  const handleCloudPasswordReset = async (password) => {
+    const cloudConfig = loadCloudConfig();
+    if (!cloudConfig.enabled || !cloudConfig.apiUrl) throw new Error("La aplicación no tiene configurada la dirección de la nube.");
+    if (!navigator.onLine) throw new Error("Necesitás Internet para cambiar la contraseña.");
+    return resetCloudPassword(cloudConfig.apiUrl, passwordResetToken, password);
+  };
+
+  const closePasswordReset = ({ completed = false } = {}) => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("reset_token");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    setPasswordResetToken("");
+    setLoginError("");
+    setLoginNotice(completed ? "Contraseña actualizada. Iniciá sesión con tu contraseña nueva." : "");
+  };
+
+  if (passwordResetToken) {
+    return <PasswordResetView onSubmit={handleCloudPasswordReset} onDone={closePasswordReset}/>;
+  }
+
   if (activationStatus === "required") {
     return <ActivationView deviceId={activationDeviceId} onActivate={handleInstallationActivation} onAdminActivate={handleAdministratorActivation} cloudWarmupState={cloudWarmupState} onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}/>;
   }
@@ -1252,6 +1301,7 @@ export default function KioscoApp() {
       <LoginView
         onLogin={handleLogin}
         onRegister={handleRegister}
+        onForgotPassword={handleForgotPassword}
         error={loginError}
         notice={loginNotice}
         onReset={handleReset}

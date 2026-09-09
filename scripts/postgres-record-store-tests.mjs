@@ -17,13 +17,15 @@ const state = {
   barcodeCatalog: { 7791: { status: "verified" } },
   activationCodes: { code: { uses: 0 } },
   activations: { "device-a": { id: "activation-a" } },
+  passwordResetTokens: { "token-hash": { id: "reset-a", subjectKey: "business-a:owner:owner", expiresAt: "2030-01-01T00:00:00.000Z" } },
+  passwordResetRateLimits: { "email-hash": { requests: [1] } },
 };
 
 const rows = stateToRecords(state).map(({ scope, key, payload }) => ({ scope, record_key: key, payload }));
 assert.deepEqual(recordsToState(rows), state, "el estado debe sobrevivir una ida y vuelta por registros");
 
 const scopes = new Set(rows.map((entry) => entry.scope));
-for (const expected of ["meta", "system", "account", "tenant", "tenant_section", "tenant_entity", "change", "accepted", "device", "user", "session", "catalog", "activation_code", "activation"]) {
+for (const expected of ["meta", "system", "account", "tenant", "tenant_section", "tenant_entity", "change", "accepted", "device", "user", "session", "catalog", "activation_code", "activation", "password_reset", "password_reset_rate"]) {
   assert.equal(scopes.has(expected), true, `falta separar el alcance ${expected}`);
 }
 

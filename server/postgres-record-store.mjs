@@ -13,6 +13,8 @@ const emptyState = () => ({
   barcodeCatalog: {},
   activationCodes: {},
   activations: {},
+  passwordResetTokens: {},
+  passwordResetRateLimits: {},
 });
 
 const normalizePayload = (value) => {
@@ -87,6 +89,8 @@ export function stateToRecords(value) {
   addObjectRecords("catalog", state.barcodeCatalog);
   addObjectRecords("activation_code", state.activationCodes);
   addObjectRecords("activation", state.activations);
+  addObjectRecords("password_reset", state.passwordResetTokens);
+  addObjectRecords("password_reset_rate", state.passwordResetRateLimits);
   for (const [key, cursor] of Object.entries(stateValue(state.accepted))) {
     records.push(record("accepted", key, { cursor: Number(cursor || 0) }));
   }
@@ -144,6 +148,8 @@ export function recordsToState(rows = []) {
     else if (scope === "catalog") state.barcodeCatalog[key] = stateValue(payload);
     else if (scope === "activation_code") state.activationCodes[key] = stateValue(payload);
     else if (scope === "activation") state.activations[key] = stateValue(payload);
+    else if (scope === "password_reset") state.passwordResetTokens[key] = stateValue(payload);
+    else if (scope === "password_reset_rate") state.passwordResetRateLimits[key] = stateValue(payload);
     else if (scope === "accepted") state.accepted[key] = Number(payload?.cursor || 0);
     else if (scope === "change") changes.push({ key, payload: stateValue(payload) });
   }
