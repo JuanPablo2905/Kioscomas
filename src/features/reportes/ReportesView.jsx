@@ -427,7 +427,7 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
                               className="flex items-start justify-between gap-3 text-xs text-gray-600"
                             >
                               <span className="min-w-0 break-words">
-                                {it.cantidad} x {it.nombre}
+                                {it.cantidad} x {it.nombre}{it.promocion?.nombre && <small className="mt-0.5 block font-semibold text-violet-700">{it.promocion.etiqueta || "PROMO"} · {it.promocion.nombre}{Number(it.descuentoPromocion || 0) > 0 ? ` · -${money(it.descuentoPromocion)}` : ""}</small>}
                               </span>
                               <span>{money(it.subtotal)}</span>
                             </div>

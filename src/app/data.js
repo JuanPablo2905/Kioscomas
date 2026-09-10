@@ -317,7 +317,7 @@ const datosSurDemo = () => ({
   cajaAbierta: true, cart: [],
   tareas: [{ id: 1, titulo: "Controlar vencimientos de lácteos", completa: false }, { id: 2, titulo: "Actualizar precios de bebidas", completa: true }],
   metas: [{ id: 1, tipo: "diaria", objetivo: 180000 }],
-  promociones: [{ id: 1, nombre: "Combo merienda", tipo: "combo", valor: 2500, productIds: [203, 202], activa: true, desde: fechaSoloDemo(-10), hasta: fechaSoloDemo(20) }, { id: 2, nombre: "Energizantes 10%", tipo: "porcentaje", valor: 10, productIds: [215, 216, 217, 218, 219], activa: true, desde: fechaSoloDemo(-3), hasta: fechaSoloDemo(7) }],
+  promociones: [{ id: 1, nombre: "Combo merienda", tipo: "combo", precioCombo: 2500, productIds: [203, 202], activa: true, mostrarEnPantalla: true, desde: fechaSoloDemo(-10), hasta: fechaSoloDemo(20) }, { id: 2, nombre: "Energizantes 10%", tipo: "porcentaje", valor: 10, productIds: [215, 216, 217, 218, 219], activa: true, mostrarEnPantalla: true, desde: fechaSoloDemo(-3), hasta: fechaSoloDemo(7) }],
   reservas: [{ id: 1, fecha: fechaDemo(0, 10), cliente: "Club Social", items: [{ productId: 201, cantidad: 12 }, { productId: 203, cantidad: 20 }], total: 41200, estado: "pendiente" }],
   presupuestos: [{ id: 1, fecha: fechaDemo(1, 16), cliente: "Oficina Norte", items: [{ productId: 209, cantidad: 6 }, { productId: 221, cantidad: 8 }], total: 28000, estado: "borrador" }],
   arqueos: [{ id: 1, fecha: fechaDemo(1, 20), esperado: 171000, contado: 169500, diferencia: -1500, responsable: "María" }],

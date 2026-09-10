@@ -10,7 +10,7 @@ import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money,
 import { SectionHeader } from "../../shared/layout";
 import { ScanModal } from "../../shared/ScanModal";
 import { AppSelect, ConfirmDialog, NumberInput } from "../../shared/controls";
-import { calcularDescuento, calcularMejorPromocion } from "./salesRules";
+import { calcularDescuento, calcularPromocionesAplicadas, promocionesParaPantalla } from "./salesRules";
 import { groupProductFamilies, productVariant } from "../../shared/productFamilies";
 import { openCashDrawer, printTicket } from "../../shared/ticketPrint";
 import { SmallBusinessTools } from "../gestion/SmallBusinessTools";
@@ -903,30 +903,49 @@ export function VentasView({
     (sum, c) => sum + (c.product ? c.product.venta * c.cantidad : 0),
     0
   );
-  const promoAplicada = calcularMejorPromocion(cartItems, promociones);
+  const promoAplicada = calcularPromocionesAplicadas(cartItems, promociones);
   const descuentoPromocion = Math.min(subtotal, promoAplicada.descuento);
   const descuentoLimitado = descuentoTipo === "porcentaje" ? Math.min(Number(descuentoValor) || 0, Number(preferences.maxDiscount ?? 100)) : descuentoValor;
   const descuentoManual = puedeAplicarDescuentos ? calcularDescuento(subtotal - descuentoPromocion, descuentoTipo, descuentoLimitado) : 0;
   const descuento = descuentoPromocion + descuentoManual;
   const total = subtotal - descuento;
+  const displayPromotions = useMemo(() => promocionesParaPantalla(promociones, products), [promociones, products]);
   const customerDisplayState = customerCompletion || {
     mode: cartItems.length ? "sale" : "idle",
     businessName,
     businessImage: preferences.customerDisplayShowLogo === false ? null : businessImage,
     welcomeMessage: preferences.customerDisplayWelcome || "Bienvenido",
+    thanksMessage: preferences.customerDisplayThanksMessage || "¡Gracias por tu compra!",
+    contactLine: preferences.customerDisplayContactLine || "",
+    showClock: preferences.customerDisplayShowClock !== false,
+    slideSeconds: Math.max(4, Number(preferences.customerDisplaySlideSeconds || 8)),
+    rotation: preferences.customerDisplayRotation || "ordered",
+    showPromotionsDuringSale: preferences.customerDisplayShowPromotionsDuringSale !== false,
+    promotions: displayPromotions,
     items: cartItems.filter((item) => item.product).map((item) => {
       const unit = unidadInfo(item.product.unidad);
+      const lineSubtotal = Number(item.product.venta || 0) * Number(item.cantidad || 0);
+      const linePromotionDiscount = Number(promoAplicada.descuentosPorProducto?.[String(item.productId)] || 0);
+      const linePromotion = promoAplicada.promocionesPorProducto?.[String(item.productId)] || null;
       return {
         id: item.productId,
         name: item.product.nombre,
         quantity: item.cantidad,
         quantityLabel: `${formatQuantity(item.cantidad)} ${unit.ventaAbbr}`,
         unitPrice: Number(item.product.venta || 0),
-        subtotal: Number(item.product.venta || 0) * Number(item.cantidad || 0),
+        subtotal: lineSubtotal,
+        finalSubtotal: Math.max(0, lineSubtotal - linePromotionDiscount),
+        promotion: linePromotionDiscount > 0 && linePromotion ? { id: linePromotion.id, name: linePromotion.nombre, badge: linePromotion.etiqueta, discount: linePromotionDiscount } : null,
       };
     }),
     subtotal,
+    promotionDiscount: descuentoPromocion,
+    manualDiscount: descuentoManual,
     discount: descuento,
+    discountLines: [
+      ...promoAplicada.detalles.map((detail) => ({ kind: "promotion", label: detail.promocion.nombre, badge: detail.etiqueta, amount: detail.descuento })),
+      ...(descuentoManual > 0 ? [{ kind: "manual", label: "Descuento manual", amount: descuentoManual }] : []),
+    ],
     total,
     payment: cobrarOpen ? customerPayment : null,
     paymentQrImage: preferences.customerDisplayQrImage || null,
@@ -1115,6 +1134,8 @@ export function VentasView({
           const costoUnitario = c.product.costo / info.factor;
           const subtotalBruto = c.product.venta * c.cantidad;
           const subtotalNeto = subtotal > 0 ? subtotalBruto * total / subtotal : subtotalBruto;
+          const descuentoPromocionItem = Number(promoAplicada.descuentosPorProducto?.[String(c.product.id)] || 0);
+          const promocionItem = promoAplicada.promocionesPorProducto?.[String(c.product.id)] || null;
           return {
             productId: c.product.id,
             nombre: c.product.nombre,
@@ -1125,15 +1146,18 @@ export function VentasView({
             costoTotal: costoUnitario * c.cantidad,
             subtotalBruto,
             subtotal: Math.round(subtotalNeto * 100) / 100,
+            descuentoPromocion: descuentoPromocionItem,
+            promocion: descuentoPromocionItem > 0 && promocionItem ? { id: promocionItem.id, nombre: promocionItem.nombre, etiqueta: promocionItem.etiqueta } : null,
           };
         }),
         total,
         subtotal,
         descuento,
         descuentoPromocion,
-        promocion: promoAplicada.promocion ? { id: promoAplicada.promocion.id, nombre: promoAplicada.promocion.nombre } : null,
-        descuentoTipo: descuento > 0 ? descuentoTipo : null,
-        descuentoValor: descuento > 0 ? Number(descuentoValor) : 0,
+        promocion: promoAplicada.promociones[0] ? { id: promoAplicada.promociones[0].id, nombre: promoAplicada.promociones[0].nombre } : null,
+        promociones: promoAplicada.detalles.map((detail) => ({ id: detail.promocion.id, nombre: detail.promocion.nombre, etiqueta: detail.etiqueta, descuento: detail.descuento })),
+        descuentoTipo: descuentoManual > 0 ? descuentoTipo : null,
+        descuentoValor: descuentoManual > 0 ? Number(descuentoValor) : 0,
       };
       queueMicrotask(() => setTicketParaImprimir(ticket));
       return [...prev, ticket];
@@ -1436,7 +1460,11 @@ export function VentasView({
         </div>
       ) : (
         <div data-tour="sales-cart" className="space-y-2">
-          {cartItems.map((c) => (
+          {cartItems.map((c) => {
+            const linePromotionDiscount = Number(promoAplicada.descuentosPorProducto?.[String(c.productId)] || 0);
+            const linePromotion = promoAplicada.promocionesPorProducto?.[String(c.productId)] || null;
+            const lineSubtotal = Number(c.product.venta || 0) * Number(c.cantidad || 0);
+            return (
             <div
               key={c.productId}
               className="sales-cart-item flex flex-col items-stretch gap-3 border border-gray-200 rounded-xl px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4"
@@ -1451,6 +1479,7 @@ export function VentasView({
                   ) / 100}{" "}
                   {unidadInfo(c.product.unidad).ventaAbbr}
                 </p>
+                {linePromotionDiscount > 0 && linePromotion && <div className="mt-2 flex flex-wrap items-center gap-2"><span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-black uppercase text-violet-800">{linePromotion.etiqueta}</span><span className="text-xs font-semibold text-violet-700">{linePromotion.nombre}</span><span className="text-xs font-bold text-emerald-700">-{money(linePromotionDiscount)}</span></div>}
               </div>
               <div className="flex min-w-0 items-center justify-between gap-2 sm:justify-end sm:gap-3">
                 <div className="flex items-center gap-2">
@@ -1471,9 +1500,7 @@ export function VentasView({
                     <Plus size={14} />
                   </button>
                 </div>
-                <p className="min-w-0 flex-1 text-right text-sm font-semibold text-gray-900 sm:w-24 sm:flex-none">
-                  {money(c.product.venta * c.cantidad)}
-                </p>
+                <div className="min-w-0 flex-1 text-right sm:w-28 sm:flex-none">{linePromotionDiscount > 0 && <p className="text-[10px] font-medium text-gray-400 line-through">{money(lineSubtotal)}</p>}<p className="text-sm font-semibold text-gray-900">{money(Math.max(0, lineSubtotal - linePromotionDiscount))}</p></div>
                 <button
                   onClick={() => removeFromCart(c.productId)}
                   className="text-gray-400 hover:text-red-600"
@@ -1482,7 +1509,7 @@ export function VentasView({
                 </button>
               </div>
             </div>
-          ))}
+          );})}
 
           <div className="mt-4 grid gap-3 border-t border-gray-200 pt-4 md:grid-cols-2">
             <div>
@@ -1490,7 +1517,7 @@ export function VentasView({
               {puedeAplicarDescuentos && <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 min-[430px]:flex"><span className="text-xs text-gray-500">Descuento</span><select value={descuentoTipo} onChange={(e) => setDescuentoTipo(e.target.value)} className="min-w-0 rounded-lg border bg-white px-2 py-1.5 text-xs"><option value="porcentaje">Porcentaje</option><option value="fijo">Monto fijo</option></select><input type="number" min="0" max={descuentoTipo === "porcentaje" ? Number(preferences.maxDiscount ?? 100) : undefined} value={descuentoValor || ""} onChange={(e) => setDescuentoValor(e.target.value)} className="col-span-2 w-full rounded-lg border px-2 py-1.5 text-sm min-[430px]:col-span-1 min-[430px]:w-28" placeholder={descuentoTipo === "porcentaje" ? `% (máx. ${preferences.maxDiscount ?? 100})` : "$"}/></div>}
             </div>
             <div className="text-left md:text-right">
-              {descuento > 0 && <><p className="text-sm text-gray-500">Subtotal: {money(subtotal)}</p>{descuentoPromocion > 0 && <p className="text-sm font-medium text-violet-600">Promo “{promoAplicada.promocion?.nombre}”: -{money(descuentoPromocion)}</p>}{descuentoManual > 0 && <p className="text-sm font-medium text-green-600">Descuento manual: -{money(descuentoManual)}</p>}</>}
+              {descuento > 0 && <><p className="text-sm text-gray-500">Subtotal: {money(subtotal)}</p>{promoAplicada.detalles.map((detail) => <p key={detail.promocion.id} className="text-sm font-medium text-violet-600">{detail.etiqueta} · {detail.promocion.nombre}: -{money(detail.descuento)}</p>)}{descuentoManual > 0 && <p className="text-sm font-medium text-green-600">Descuento manual: -{money(descuentoManual)}</p>}</>}
               <p className="text-lg font-bold text-gray-900">Total: {money(total)}</p>
             </div>
           </div>

@@ -327,6 +327,25 @@ body[data-tutorial-active="true"] .app-date-menu {
 .kiosco-themed .promotion-product-option:hover { background: var(--app-hover) !important; color: var(--app-hover-text) !important; }
 .kiosco-themed .promotion-product-option.is-selected { background: var(--app-selection) !important; color: var(--app-selection-text) !important; }
 .kiosco-themed .promotion-product-option.is-selected * { color: inherit !important; }
+.admin-notification-tabs {
+  background: color-mix(in srgb, var(--app-card-text, #111827) 9%, var(--app-card, #fff)) !important;
+  border: 1px solid color-mix(in srgb, var(--app-card-text, #111827) 14%, transparent);
+}
+.kiosco-themed .admin-notification-tab,
+.admin-notification-tab {
+  background: transparent !important;
+  color: color-mix(in srgb, var(--app-card-text, #111827) 72%, transparent) !important;
+}
+.kiosco-themed .admin-notification-tab.is-active,
+.admin-notification-tab.is-active {
+  background: #ffffff !important;
+  color: #16433d !important;
+  border-color: color-mix(in srgb, #16433d 24%, transparent) !important;
+}
+.kiosco-themed .admin-notification-tab.is-active *,
+.admin-notification-tab.is-active * { color: inherit !important; }
+.kiosco-themed .admin-notification-tab.is-active .bg-red-600,
+.admin-notification-tab.is-active .bg-red-600 { background: #dc2626 !important; color: #fff !important; }
 .ticket-color-grid input[type="color"] { display: block; min-width: 0; max-width: 100%; padding: .2rem; }
 .kiosco-themed label.bg-blue-50,
 .kiosco-themed button.bg-blue-50 {

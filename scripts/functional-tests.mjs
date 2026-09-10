@@ -161,6 +161,19 @@ try {
   const promoCart = [{ cantidad: 3, product: { id: 10, venta: 100 } }];
   test("promoción 3x2 calcula una unidad gratis", salesRules.calcularPromocion(promoCart, { activa: true, tipo: "nxm", lleva: 3, paga: 2, productIds: [10] }) === 100);
   test("elige la promoción automática más conveniente", salesRules.calcularMejorPromocion(promoCart, [{ id: 1, activa: true, tipo: "porcentaje", valor: 10 }, { id: 2, activa: true, tipo: "nxm", lleva: 3, paga: 2, productIds: [10] }]).promocion.id === 2);
+  const promotionDetail = salesRules.calcularMejorPromocion(promoCart, [{ id: 2, nombre: "Tres por dos", activa: true, tipo: "nxm", lleva: 3, paga: 2, productIds: [10] }]);
+  test("la promoción informa el ahorro de cada producto", promotionDetail.descuentosPorProducto["10"] === 100 && promotionDetail.etiqueta === "3×2");
+  const multiplePromotionCart = [{ cantidad: 2, product: { id: 10, venta: 100 } }, { cantidad: 1, product: { id: 11, venta: 200 } }];
+  const multiplePromotions = salesRules.calcularPromocionesAplicadas(multiplePromotionCart, [{ id: "a", nombre: "Dos por uno", activa: true, tipo: "nxm", lleva: 2, paga: 1, productIds: [10] }, { id: "b", nombre: "Otra promo", activa: true, tipo: "porcentaje", valor: 25, productIds: [11] }]);
+  test("dos productos distintos pueden aprovechar promociones diferentes", multiplePromotions.descuento === 150 && multiplePromotions.promociones.length === 2 && multiplePromotions.promocionesPorProducto["10"].id === "a" && multiplePromotions.promocionesPorProducto["11"].id === "b");
+  const overlappingPromotions = salesRules.calcularPromocionesAplicadas([{ cantidad: 2, product: { id: 10, venta: 100 } }], [{ id: "menor", activa: true, tipo: "porcentaje", valor: 10, productIds: [10] }, { id: "mejor", activa: true, tipo: "nxm", lleva: 2, paga: 1, productIds: [10] }]);
+  test("un producto no acumula promociones y conserva la más conveniente", overlappingPromotions.descuento === 100 && overlappingPromotions.promociones.length === 1 && overlappingPromotions.promociones[0].id === "mejor");
+  const comboDetail = salesRules.calcularDetallePromocion([{ cantidad: 1, product: { id: 20, venta: 100 } }, { cantidad: 1, product: { id: 21, venta: 200 } }], { id: 3, activa: true, tipo: "combo", precioCombo: 240, productIds: [20, 21] });
+  test("el descuento de un combo se reparte sin perder centavos", comboDetail.descuento === 60 && Object.values(comboDetail.descuentosPorProducto).reduce((sum, value) => sum + value, 0) === 60);
+  const scheduledAt = new Date(2026, 8, 7, 10, 30);
+  test("la promoción respeta días y horarios", salesRules.promocionVigente({ activa: true, diasSemana: [scheduledAt.getDay()], horaDesde: "10:00", horaHasta: "11:00" }, scheduledAt) && !salesRules.promocionVigente({ activa: true, diasSemana: [(scheduledAt.getDay() + 1) % 7], horaDesde: "10:00", horaHasta: "11:00" }, scheduledAt));
+  const displayPromotion = { id: 4, nombre: "Bebida destacada", activa: true, mostrarEnPantalla: true, tipo: "porcentaje", valor: 20, productIds: [30] };
+  test("la publicidad oculta promociones cuyos productos están agotados", salesRules.promocionesParaPantalla([displayPromotion], [{ id: 30, nombre: "Bebida", vitrina: 0 }]).length === 0 && salesRules.promocionesParaPantalla([displayPromotion], [{ id: 30, nombre: "Bebida", vitrina: 2 }])[0].badge === "20% OFF");
   const replenishmentResult = replenishment.buildReplenishmentSuggestions([{ id: 10, nombre: "Bebida", unidad: "unidad", deposito: 1, vitrina: 1, minimo: 3 }], [{ fecha: new Date().toISOString(), items: [{ productId: 10, cantidad: 30 }] }]);
   test("reposición inteligente considera ventas recientes", replenishmentResult.length === 1 && replenishmentResult[0].recomendada >= 8);
   const automaticLowStock = replenishment.buildAutomaticLowStockItems(

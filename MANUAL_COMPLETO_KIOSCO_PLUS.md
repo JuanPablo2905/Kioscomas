@@ -268,7 +268,11 @@ La venta descuenta stock y registra el movimiento de caja correspondiente. Tambi
 
 ### 9.3 Pantalla para clientes
 
-El dueño puede activarla en **Configuración > Funcionamiento > Operación**. La configuración y el QR se guardan para el negocio, de modo que sus cajas autorizadas comparten el mismo criterio. Durante una venta muestra únicamente nombre y cantidad de productos, precios, descuentos, total, medio de pago, efectivo recibido y vuelto. Si el negocio carga un QR estático de Mercado Pago o transferencia, aparece al elegir ese medio; el vendedor debe comprobar el pago manualmente.
+El dueño puede activarla en **Configuración > Funcionamiento > Operación**. La configuración y el QR se guardan para el negocio, de modo que sus cajas autorizadas comparten el mismo criterio. Durante una venta muestra únicamente nombre y cantidad de productos, precio original, promoción aplicada a cada producto, ahorro, precio final, descuentos generales, total, medio de pago, efectivo recibido y vuelto. Si el negocio carga un QR estático de Mercado Pago o transferencia, aparece al elegir ese medio; el vendedor debe comprobar el pago manualmente.
+
+Cuando no hay una venta, la pantalla funciona como vidriera digital. Puede alternar las promociones activas que tengan marcada la opción **Anunciar en la segunda pantalla**, junto con su imagen, texto y productos incluidos. En Configuración se define el mensaje de bienvenida y agradecimiento, contacto o redes, reloj, duración y orden de los anuncios y si durante la venta se mantiene una franja promocional. Los botones **Probar publicidad** y **Simular venta** permiten revisar el resultado sin registrar una operación.
+
+La publicidad no constituye un descuento separado. Se alimenta de las mismas promociones comerciales que calcula la caja, por lo que lo anunciado y lo cobrado coinciden. Una promoción vencida, pausada o cuyos productos seleccionados ya no están disponibles se oculta automáticamente de la vidriera. El ticket y el historial conservan el nombre y el ahorro de la promoción aplicada.
 
 En la aplicación de escritorio Kiosco+ detecta los monitores y puede abrirla automáticamente en la pantalla secundaria. En la versión web se abre una ventana independiente que debe moverse manualmente. Esta ventana no inicia otra sesión, no consume otra activación y no recibe stock, costos, usuarios ni información administrativa.
 
@@ -335,7 +339,11 @@ Creá tareas operativas y una meta diaria de ventas. Marcar una tarea como compl
 
 ### Promociones
 
-Configurá reglas promocionales y revisá su aplicación antes de usarlas en caja. Evitá solapamientos que puedan producir descuentos no previstos.
+Configurá reglas porcentuales, por cantidad, 2×1/3×2 o combos a precio fijo y revisá su aplicación antes de usarlas en caja. Cada regla puede limitarse por fecha, días de la semana y franja horaria. También puede editarse, duplicarse, pausarse o eliminarse.
+
+Kiosco+ puede aplicar promociones distintas a productos diferentes dentro del mismo carrito. Cuando dos reglas compiten por el mismo producto, no las acumula: elige la combinación vigente que produzca el mayor ahorro total. El carrito identifica cada producto alcanzado, la regla aplicada, su ahorro y el precio resultante; un descuento manual aparece separado en el resumen.
+
+Para convertir una regla en publicidad, activá **Anunciar en la segunda pantalla** y, si querés, agregá un texto y una imagen. La imagen se reduce antes de guardarse. No cargues información confidencial: este contenido está pensado para ser visible por cualquier cliente frente a la caja.
 
 ### Etiquetas
 
