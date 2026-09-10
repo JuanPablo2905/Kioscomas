@@ -249,6 +249,10 @@ try {
   const businessNotifications = await request("/v1/notifications", { headers: pendingHeaders });
   const businessNotice = businessNotifications.value.notifications?.find((item) => item.id === publishedNotice.value.notification?.id);
   test("el negocio recibe el aviso dirigido dentro de la app", businessNotifications.response.ok && businessNotice && !businessNotice.readAt && businessNotice.action?.view === "ventas");
+  const adminOwnNotifications = await request("/v1/notifications", { headers: centralHeaders });
+  const adminBusinessPreview = await request("/v1/notifications", { headers: { ...centralHeaders, "x-kiosco-preview-business": registeredAccount.id } });
+  test("la bandeja propia del administrador no mezcla avisos dirigidos a negocios", !adminOwnNotifications.value.notifications?.some((item) => item.id === publishedNotice.value.notification?.id));
+  test("al entrar a un negocio el administrador ve su bandeja y no sus alertas administrativas", adminBusinessPreview.value.preview === true && adminBusinessPreview.value.notifications?.some((item) => item.id === publishedNotice.value.notification?.id) && !adminBusinessPreview.value.notifications?.some((item) => item.audience?.type === "admin"));
   const readNotice = await request(`/v1/notifications/${businessNotice.id}/read`, { method: "POST", headers: pendingHeaders, body: "{}" });
   const businessNotificationsAfterRead = await request("/v1/notifications", { headers: pendingHeaders });
   test("cada usuario puede marcar el aviso como leído", readNotice.response.ok && !!businessNotificationsAfterRead.value.notifications?.find((item) => item.id === businessNotice.id)?.readAt);

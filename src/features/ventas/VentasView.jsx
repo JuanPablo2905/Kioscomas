@@ -4,7 +4,7 @@ import {
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
   MessageCircle, Mail, Copy, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
-  ChevronRight, Star, Zap,
+  ChevronRight, MonitorUp, Star, Zap,
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money, formatQuantity, roundQuantity } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
@@ -16,6 +16,7 @@ import { openCashDrawer, printTicket } from "../../shared/ticketPrint";
 import { SmallBusinessTools } from "../gestion/SmallBusinessTools";
 import { Budgets, CustomerOrders } from "./SalesSupportTools";
 import { copyText, openEmailDraft, openWhatsApp, ticketMessage } from "../../shared/share";
+import { openCustomerDisplay, publishCustomerDisplay } from "./customerDisplay";
 
 const DENOMINACIONES = [20000, 10000, 2000, 1000, 500, 200, 100, 50, 20, 10];
 const UMBRAL_DIFERENCIA_INUSUAL = 1000;
@@ -571,7 +572,7 @@ function MercadoPagoBadge() {
   );
 }
 
-function CobrarModal({ total, clientes, onClose, onConfirm }) {
+function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange }) {
   const [medio, setMedio] = useState("Efectivo");
   const [recibido, setRecibido] = useState(String(total));
   const [clienteId, setClienteId] = useState("");
@@ -583,6 +584,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm }) {
   const esFiado = medio === "Cuenta corriente";
   const esMixto = medio === "Pago combinado";
   const totalMixto = Object.values(pagosMixtos).reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const pagosSeleccionados = esMixto ? Object.entries(pagosMixtos).filter(([, value]) => Number(value) > 0).map(([metodo, montoPago]) => ({ metodo, monto: Number(montoPago) })) : [];
   const puedeConfirmar = esEfectivo
     ? monto >= total
     : esFiado
@@ -594,8 +596,12 @@ function CobrarModal({ total, clientes, onClose, onConfirm }) {
   const confirmSale = () => {
     if (!puedeConfirmar || confirmingRef.current) return;
     confirmingRef.current = true;
-    onConfirm({ medio, clienteId: clienteId ? Number(clienteId) : null, pagos: esMixto ? Object.entries(pagosMixtos).filter(([, value]) => Number(value) > 0).map(([metodo, montoPago]) => ({ metodo, monto: Number(montoPago) })) : [] });
+    onConfirm({ medio, clienteId: clienteId ? Number(clienteId) : null, pagos: pagosSeleccionados, received: esEfectivo ? monto : null, change: esEfectivo ? Math.max(0, vuelto) : null });
   };
+
+  useEffect(() => {
+    onPaymentChange?.({ method: medio, received: esEfectivo ? monto : null, change: esEfectivo ? Math.max(0, vuelto) : null, payments: pagosSeleccionados });
+  }, [medio, monto, vuelto, esEfectivo, totalMixto, pagosMixtos]);
 
   useEffect(() => {
     const onEnter = (event) => {
@@ -802,6 +808,8 @@ export function VentasView({
   preferences = {},
   ticketConfig = {},
   businessName = "Mi negocio",
+  businessId = "",
+  businessImage = null,
   supportData = {},
   supportSetters = {},
   staffOptions = [],
@@ -814,6 +822,8 @@ export function VentasView({
   const [movOpen, setMovOpen] = useState(false);
   const [movListOpen, setMovListOpen] = useState(false);
   const [cobrarOpen, setCobrarOpen] = useState(false);
+  const [customerPayment, setCustomerPayment] = useState(null);
+  const [customerCompletion, setCustomerCompletion] = useState(null);
   const [aperturaOpen, setAperturaOpen] = useState(false);
   const [cierreOpen, setCierreOpen] = useState(false);
   const [historialOpen, setHistorialOpen] = useState(false);
@@ -828,6 +838,7 @@ export function VentasView({
   const [ticketCopied, setTicketCopied] = useState(false);
   const lastEnterRef = useRef(0);
   const lastAutoPrintedRef = useRef(null);
+  const customerDisplayOpenedRef = useRef(false);
   const salesTabs = [["venta","Venta"],["pedidos","Pedidos de clientes"],["presupuestos","Presupuestos"],["cambio","Cambio"],["turnos","Turnos"],["resumen","Resumen diario"]].filter(([id]) => hasEmployees || id !== "turnos");
   const salesNavigation = <><div data-tour="sales-tabs" className="desktop-section-tabs mb-5 flex flex-wrap gap-2">{salesTabs.map(([id,label]) => <button data-tour={`sales-tab-${id}`} key={id} type="button" onClick={() => setSalesArea(id)} className={`rounded-lg border px-3 py-2 text-sm font-medium ${salesArea === id ? "bg-gray-900 text-white" : "bg-white"}`}>{label}</button>)}</div><div data-tour="sales-tabs" className="mobile-section-select mobile-section-select--content sales-mobile-navigation"><span>Área de Ventas</span><AppSelect value={salesArea} onChange={setSalesArea} options={salesTabs.map(([value,label])=>({value,label}))}/></div></>;
   useEffect(() => {
@@ -898,6 +909,58 @@ export function VentasView({
   const descuentoManual = puedeAplicarDescuentos ? calcularDescuento(subtotal - descuentoPromocion, descuentoTipo, descuentoLimitado) : 0;
   const descuento = descuentoPromocion + descuentoManual;
   const total = subtotal - descuento;
+  const customerDisplayState = customerCompletion || {
+    mode: cartItems.length ? "sale" : "idle",
+    businessName,
+    businessImage: preferences.customerDisplayShowLogo === false ? null : businessImage,
+    welcomeMessage: preferences.customerDisplayWelcome || "Bienvenido",
+    items: cartItems.filter((item) => item.product).map((item) => {
+      const unit = unidadInfo(item.product.unidad);
+      return {
+        id: item.productId,
+        name: item.product.nombre,
+        quantity: item.cantidad,
+        quantityLabel: `${formatQuantity(item.cantidad)} ${unit.ventaAbbr}`,
+        unitPrice: Number(item.product.venta || 0),
+        subtotal: Number(item.product.venta || 0) * Number(item.cantidad || 0),
+      };
+    }),
+    subtotal,
+    discount: descuento,
+    total,
+    payment: cobrarOpen ? customerPayment : null,
+    paymentQrImage: preferences.customerDisplayQrImage || null,
+    showUnitPrices: preferences.customerDisplayShowUnitPrices !== false,
+    showChange: preferences.customerDisplayShowChange !== false,
+    connected: true,
+  };
+  const customerDisplayStateKey = JSON.stringify(customerDisplayState);
+
+  useEffect(() => {
+    if (!preferences.customerDisplayEnabled || !businessId) return;
+    publishCustomerDisplay({ businessId, state: customerDisplayState });
+  }, [preferences.customerDisplayEnabled, businessId, customerDisplayStateKey]);
+
+  useEffect(() => {
+    if (!customerCompletion) return undefined;
+    const remaining = Math.max(0, Number(customerCompletion.until || 0) - Date.now());
+    const timer = window.setTimeout(() => setCustomerCompletion(null), remaining);
+    return () => window.clearTimeout(timer);
+  }, [customerCompletion]);
+  useEffect(() => {
+    if (customerCompletion && cartItems.length > 0) setCustomerCompletion(null);
+  }, [customerCompletion, cartItems.length]);
+
+  useEffect(() => {
+    if (!preferences.customerDisplayEnabled || !preferences.customerDisplayAutoOpen || !window.kioscoDesktop?.customerDisplay || customerDisplayOpenedRef.current) return;
+    customerDisplayOpenedRef.current = true;
+    openCustomerDisplay({ businessId, displayId: preferences.customerDisplayId, fullscreen: preferences.customerDisplayFullscreen !== false, state: customerDisplayState }).catch(() => { customerDisplayOpenedRef.current = false; });
+  }, [preferences.customerDisplayEnabled, preferences.customerDisplayAutoOpen, businessId]);
+
+  const openSaleCustomerDisplay = () => {
+    customerDisplayOpenedRef.current = true;
+    openCustomerDisplay({ businessId, displayId: preferences.customerDisplayId, fullscreen: preferences.customerDisplayFullscreen !== false, state: customerDisplayState }).catch((error) => window.alert(error?.message || "No se pudo abrir la pantalla del cliente."));
+  };
 
   useEffect(() => {
     const handleQuickCheckout = (event) => {
@@ -1431,13 +1494,16 @@ export function VentasView({
               <p className="text-lg font-bold text-gray-900">Total: {money(total)}</p>
             </div>
           </div>
-          <button
-            data-tour="sales-charge"
-            onClick={() => setCobrarOpen(true)}
-            className="w-full bg-gray-900 text-white rounded-lg px-4 py-3 text-sm font-semibold hover:bg-gray-800"
-          >
-            Cobrar {money(total)}
-          </button>
+          <div className={`grid gap-2 ${preferences.customerDisplayEnabled ? "sm:grid-cols-[auto_minmax(0,1fr)]" : ""}`}>
+            {preferences.customerDisplayEnabled && <button type="button" onClick={openSaleCustomerDisplay} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-900"><MonitorUp size={17}/>Pantalla del cliente</button>}
+            <button
+              data-tour="sales-charge"
+              onClick={() => { setCustomerPayment(null); setCobrarOpen(true); }}
+              className="w-full bg-gray-900 text-white rounded-lg px-4 py-3 text-sm font-semibold hover:bg-gray-800"
+            >
+              Cobrar {money(total)}
+            </button>
+          </div>
         </div>
       )}
 
@@ -1445,10 +1511,14 @@ export function VentasView({
         <CobrarModal
           total={total}
           clientes={clientes}
-          onClose={() => setCobrarOpen(false)}
+          onPaymentChange={setCustomerPayment}
+          onClose={() => { setCobrarOpen(false); setCustomerPayment(null); }}
           onConfirm={(payload) => {
+            const payment = { method: payload.medio, received: payload.received, change: payload.change, payments: payload.pagos || [] };
+            setCustomerCompletion({ ...customerDisplayState, mode: "complete", payment, total, connected: true, until: Date.now() + Math.max(2, Number(preferences.customerDisplayThanksSeconds || 6)) * 1000 });
             handleCobrar(payload);
             setCobrarOpen(false);
+            setCustomerPayment(null);
           }}
         />
       )}

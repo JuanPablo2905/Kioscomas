@@ -47,6 +47,7 @@ import { defaultDataset, migrarCuentasDemo, migrarDatosDemo, permisosDe, seedCue
 import { WifiOff } from "lucide-react";
 import { getCloudWarmupState, startCloudWarmup, subscribeCloudWarmup } from "../cloud/cloudWarmup";
 import { CloudWarmupStatus } from "../features/autenticacion/CloudWarmupStatus";
+import { openAdminBusinessWindow, secondaryWindowContext } from "../shared/secondaryWindows";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const PUBLIC_DEMO_MODE = import.meta.env.VITE_PUBLIC_DEMO === "true";
@@ -54,6 +55,9 @@ const REQUIRE_DEVICE_ACTIVATION = import.meta.env.VITE_REQUIRE_DEVICE_ACTIVATION
 const PUBLIC_DEMO_IDENTITY = { usuarioId: "cuenta:2", tenantId: "2", rol: "Dueño", nombre: "María", superAdmin: false, publicDemo: true };
 const DEMO_INTRO_TUTORIAL_KEY = "__demo_intro__";
 const TUTORIAL_VIEW_NAMES = { home: "Inicio", notificaciones: "Notificaciones", stock: "Stock", vitrina: "Vitrina", ventas: "Ventas y caja", compras: "Compras", gastos: "Gastos", clientes: "Clientes", reportes: "Reportes", gestion: "Gestión", administracion: "Administración" };
+const APP_WINDOW_CONTEXT = secondaryWindowContext();
+const IS_SECONDARY_ADMIN_WINDOW = APP_WINDOW_CONTEXT.mode === "admin-business";
+const CUSTOMER_DISPLAY_PREFERENCE_KEYS = Object.keys(DEFAULT_PREFERENCES).filter((key) => key.startsWith("customerDisplay"));
 
 function OfflineStatusBanner({ pending = 0, floating = false }) {
   return <div role="status" className={`${floating ? "fixed left-4 right-4 top-3 z-[190] mx-auto max-w-2xl rounded-xl shadow-lg" : "sticky top-0 z-50"} flex flex-wrap items-center justify-between gap-2 border border-amber-300 bg-amber-50 px-4 py-3 text-amber-950`}>
@@ -266,6 +270,7 @@ export default function KioscoApp() {
   const [menuPreferences, setMenuPreferences] = useState({});
   const [userPreferences, setUserPreferences] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState("apariencia");
   const [readOnlyNotice, setReadOnlyNotice] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [bugReportDraft, setBugReportDraft] = useState({ captura: null, detalleTecnico: "", vista: null });
@@ -478,6 +483,26 @@ export default function KioscoApp() {
     return () => window.removeEventListener("kiosco-cloud-update", reloadRemote);
   }, []);
   useEffect(() => {
+    if (!IS_SECONDARY_ADMIN_WINDOW || cargando || !APP_WINDOW_CONTEXT.businessId) return;
+    if (String(currentUserId) === APP_WINDOW_CONTEXT.businessId && identidad?.secondaryWindow) return;
+    const business = cuentas.find((account) => String(account.id) === APP_WINDOW_CONTEXT.businessId && !account.superAdmin);
+    const adminAccount = cuentas.find((account) => account.superAdmin);
+    if (!business || !adminAccount || !(identidad?.superAdmin || identidad?.adminApp)) return;
+    setCurrentUserId(business.id);
+    setIdentidad((previous) => ({
+      ...previous,
+      usuarioId: previous?.usuarioId || `cuenta:${adminAccount.id}`,
+      tenantId: String(business.id),
+      adminId: previous?.adminId || adminAccount.id,
+      operandoNegocio: true,
+      adminApp: true,
+      superAdmin: false,
+      secondaryWindow: true,
+      rol: "Administrador de la app",
+    }));
+    setView("home");
+  }, [cargando, cuentas, currentUserId, identidad?.superAdmin, identidad?.adminApp, identidad?.secondaryWindow]);
+  useEffect(() => {
     if (PUBLIC_DEMO_MODE) return;
     const sync = () => repository.syncNow().catch(() => {});
     const cloudConfig = loadCloudConfig();
@@ -505,6 +530,7 @@ export default function KioscoApp() {
 
   useEffect(() => {
     if (cargando || PUBLIC_DEMO_MODE) return;
+    if (IS_SECONDARY_ADMIN_WINDOW) return;
     if (currentUserId && identidad && sessionExpiresAt) repository.set("sesion", { accountId: currentUserId, identity: identidad, expiresAt: sessionExpiresAt }).catch(() => {});
     else repository.delete("sesion").catch(() => {});
   }, [currentUserId, identidad, sessionExpiresAt, cargando]);
@@ -554,6 +580,13 @@ export default function KioscoApp() {
       : [...new Set(localPreferences.tutorialsCompleted || [])],
   };
   const currentPreferences = tutorialOpen && tutorialPreferences ? tutorialPreferences : savedPreferences;
+  const customerDisplayPreferenceKey = `business-display:${String(currentUserId || "")}`;
+  const customerDisplayPreferences = userPreferences[customerDisplayPreferenceKey] || {};
+  const salesPreferences = { ...currentPreferences, ...customerDisplayPreferences };
+  const updateCustomerDisplayPreferences = (next) => {
+    const displayOnly = Object.fromEntries(CUSTOMER_DISPLAY_PREFERENCE_KEYS.map((key) => [key, next?.[key] ?? DEFAULT_PREFERENCES[key]]));
+    setUserPreferences((previous) => ({ ...previous, [customerDisplayPreferenceKey]: displayOnly }));
+  };
   const cleanOperationalHistory = (months = currentPreferences.operationalHistoryRetentionMonths || 12) => {
     if (!currentUserId || tutorialOpen) return { total: 0 };
     let summary = { total: 0 };
@@ -702,6 +735,10 @@ export default function KioscoApp() {
     const captura = await captureAppScreenshot();
     setBugReportDraft({ captura, detalleTecnico, vista: vistaReportada });
     setBugReportOpen(true);
+  };
+  const openSettings = (section = "apariencia") => {
+    setSettingsInitialSection(section);
+    setSettingsOpen(true);
   };
 
   const makeSetter = (key) => (updater) => {
@@ -1339,12 +1376,17 @@ export default function KioscoApp() {
           setIdentidad((prev) => ({ ...prev, tenantId: String(id), operandoNegocio: true, adminApp: true, superAdmin: false, rol: "Administrador de la app" }));
           setView("home");
         }}
+        onOpenNegocioSecondary={(id) => {
+          const negocio = cuentas.find((item) => item.id === id);
+          if (!negocio || !canAccessAccount(negocio)) return;
+          openAdminBusinessWindow({ businessId: id, businessName: negocio.nombreNegocio }).catch((error) => window.alert(error?.message || "No se pudo abrir la segunda pantalla."));
+        }}
         onLogout={handleLogout}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => openSettings("apariencia")}
         syncStatus={syncStatus}
         onSyncNow={() => repository.syncNow()}
       />
-      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} syncStatus={syncStatus} onClose={() => setSettingsOpen(false)}/>}
+      {settingsOpen && <SettingsModal initialSection={settingsInitialSection} preferences={currentPreferences} customerDisplayPreferences={customerDisplayPreferences} onCustomerDisplayChange={updateCustomerDisplayPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} syncStatus={syncStatus} onReportProblem={() => abrirReporteProblema()} onClose={() => setSettingsOpen(false)}/>}
       </>
     );
   }
@@ -1363,7 +1405,7 @@ export default function KioscoApp() {
     }
     switch (view) {
       case "notificaciones":
-        return <NotificacionesView data={data} onNavigate={handleNavigate} preferences={currentPreferences} onPreferencesChange={(patch) => updateCurrentPreferences({ ...currentPreferences, ...patch })} />;
+        return <NotificacionesView data={data} onNavigate={handleNavigate} onOpenNotificationSettings={() => openSettings("notificaciones")} previewBusinessId={identidad?.adminApp && identidad?.operandoNegocio ? String(currentUserId) : ""} previewBusinessName={cuentaActual?.nombreNegocio || ""} />;
       case "stock":
         return <StockArea products={data.products} setProducts={setProducts} proveedores={data.proveedores || []} puedeEditarPrecios={puede("editar_precios")} puedeEliminar={puede("eliminar_productos")} puedeCrearDirecto={esDueno} sugerencias={data.sugerencias || []} setSugerencias={setSugerencias} identidad={identidad} perdidas={data.perdidas || []} setPerdidas={setPerdidas} inventarios={data.inventarios || []} setInventarios={setInventarios} preferences={currentPreferences} autoconsumos={data.autoconsumos || []} setAutoconsumos={setAutoconsumos} tutorialMode={stockTutorialActive} initialProduct={pendingStockProduct} onInitialProductHandled={() => setPendingStockProduct(null)} />;
       case "vitrina":
@@ -1388,9 +1430,11 @@ export default function KioscoApp() {
             setVentasSuspendidas={ventasTutorialActive ? () => {} : setVentasSuspendidas}
             promociones={data.promociones || []}
             puedeAplicarDescuentos={puede("aplicar_descuentos")}
-            preferences={currentPreferences}
+            preferences={salesPreferences}
             ticketConfig={data.configuracionFiscal || {}}
             businessName={cuentaActual?.nombreNegocio || "Mi negocio"}
+            businessId={currentUserId}
+            businessImage={cuentaActual?.imagenNegocio || null}
             supportData={{ reservas: data.reservas || [], presupuestos: data.presupuestos || [], cambioCaja: data.cambioCaja || {}, turnos: data.turnos || [], gastos: data.gastos || [] }}
             supportSetters={{ setReservas, setPresupuestos, setCambioCaja, setTurnos }}
             staffOptions={[cuentaActual?.nombre, ...(hasEmployees ? (cuentaActual?.empleados || []).filter((empleado) => empleado.estado !== "bloqueado").map((empleado) => empleado.nombre) : [])].filter(Boolean)}
@@ -1497,25 +1541,26 @@ export default function KioscoApp() {
         cuenta={cuentaActual}
         identidad={identidad}
         permisos={permisos}
-        onLogout={handleLogout}
+        onLogout={IS_SECONDARY_ADMIN_WINDOW ? () => window.close() : handleLogout}
         products={data.products}
         data={data}
         menuOrder={menuPreferences[identidad?.usuarioId || `cuenta:${currentUserId}`] || []}
         onMenuOrderChange={(order) => setMenuPreferences((prev) => ({ ...prev, [identidad?.usuarioId || `cuenta:${currentUserId}`]: order }))}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => openSettings("apariencia")}
         onReportProblem={() => abrirReporteProblema()}
         onGlobalScan={() => setGlobalScanOpen(true)}
         onHelp={() => { autoTutorialRef.current = false; setTutorialPrompt(null); setTutorialCatalog(true); setTutorialOpen(true); }}
         syncStatus={syncStatus}
         onSyncNow={() => repository.syncNow()}
-        onReturnAdmin={identidad?.operandoNegocio ? () => {
+        onReturnAdmin={identidad?.operandoNegocio ? (IS_SECONDARY_ADMIN_WINDOW ? () => window.close() : () => {
           setCurrentUserId(identidad.adminId || 1);
           setIdentidad((prev) => ({ ...prev, tenantId: String(prev.adminId || 1), operandoNegocio: false, adminApp: true, superAdmin: true, rol: "Administrador de la app" }));
           setView("home");
-        } : null}
+        }) : null}
         demoMode={PUBLIC_DEMO_MODE}
       />
       <div className="app-content flex-1 overflow-y-auto bg-white">
+        {IS_SECONDARY_ADMIN_WINDOW && <div className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-950"><span><b>Segunda pantalla administrativa:</b> {cuentaActual?.nombreNegocio || "negocio"}</span><button type="button" onClick={() => window.close()} className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 font-semibold">Cerrar esta ventana</button></div>}
         {!PUBLIC_DEMO_MODE && (!networkOnline || syncStatus?.state === "offline") && <OfflineStatusBanner pending={syncStatus?.pending || 0}/>}
         {accountAccess.readOnly && <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"><div><b>Abono vencido: modo consulta.</b> Podés revisar y exportar tus datos, pero los cambios quedan bloqueados hasta renovar.</div><span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-bold">Venció {formatAccessExpiration(cuentaActual)}</span></div>}
         <ViewErrorBoundary view={view} onRecover={() => setView("home")} onReport={abrirReporteProblema}>
@@ -1523,7 +1568,7 @@ export default function KioscoApp() {
         </ViewErrorBoundary>
       </div>
       {readOnlyNotice && <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/45 p-4" onMouseDown={() => setReadOnlyNotice(false)}><div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><p className="text-xs font-bold uppercase tracking-wide text-amber-700">Modo consulta</p><h2 className="mt-1 text-xl font-bold">El abono está vencido</h2><p className="mt-3 text-sm leading-6 text-gray-600">La información sigue disponible y se puede exportar, pero no se guardarán ventas, cambios de stock ni otras modificaciones hasta registrar un nuevo pago.</p><button onClick={() => setReadOnlyNotice(false)} className="mt-5 w-full rounded-lg bg-[#1C4A44] px-4 py-3 text-sm font-semibold text-white">Entendido</button></div></div>}
-      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness={esDueno} onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} syncStatus={syncStatus} onClose={() => setSettingsOpen(false)}/>}
+      {settingsOpen && <SettingsModal initialSection={settingsInitialSection} preferences={currentPreferences} customerDisplayPreferences={customerDisplayPreferences} onCustomerDisplayChange={updateCustomerDisplayPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness={esDueno} onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} syncStatus={syncStatus} notificationPreviewMode={Boolean(identidad?.adminApp && identidad?.operandoNegocio)} onReportProblem={() => abrirReporteProblema()} onClose={() => setSettingsOpen(false)}/>}
       {PUBLIC_DEMO_MODE && tutorialPrompt && <DemoTutorialPrompt view={tutorialPrompt.view} declined={tutorialPrompt.declined} onStart={startDemoTutorial} onDecline={declineDemoTutorial} onClose={() => setTutorialPrompt(null)}/>} 
       {PUBLIC_DEMO_MODE && helpSpotlightOpen && <HelpButtonSpotlight onClose={() => setHelpSpotlightOpen(false)}/>} 
       <TutorialOverlay open={tutorialOpen} view={view} hasEmployees={hasEmployees} showCatalog={tutorialCatalog} onClose={closeTutorial} onComplete={completeTutorial}/>

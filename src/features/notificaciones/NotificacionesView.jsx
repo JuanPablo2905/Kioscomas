@@ -1,222 +1,72 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bell, BellOff, BellRing, CheckCircle2, ChevronRight, Cloud, Package, SlidersHorizontal, Store } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, ChevronRight, Cloud, Package, Settings, Store } from "lucide-react";
 import { SectionHeader } from "../../shared/layout";
 import { buildNotifications } from "./notificationRules";
-import { DEFAULT_PUSH_PREFERENCES, disablePushNotifications, enablePushNotifications, loadPlatformNotifications, markPlatformNotificationRead, normalizePushPreferences, NOTIFICATION_CATEGORY_OPTIONS, pushCapability, updatePushNotificationPreferences } from "./notificationService";
+import { loadPlatformNotifications, markPlatformNotificationRead } from "./notificationService";
 
 const LEVELS = ["critica", "alta", "media", "baja"];
 const levelUi = {
-  critica: {
-    label: "Críticas",
-    hint: "Atención inmediata",
-    card: "border-red-200 border-l-red-600 bg-red-50/80",
-    icon: "bg-red-600 text-white",
-    badge: "bg-red-600 text-white",
-    text: "text-red-800",
-    count: "text-red-700",
-  },
-  alta: {
-    label: "Altas",
-    hint: "Revisar pronto",
-    card: "border-orange-200 border-l-orange-500 bg-orange-50/80",
-    icon: "bg-orange-500 text-white",
-    badge: "bg-orange-500 text-white",
-    text: "text-orange-800",
-    count: "text-orange-700",
-  },
-  media: {
-    label: "Medias",
-    hint: "Conviene revisar",
-    card: "border-amber-200 border-l-amber-500 bg-amber-50/80",
-    icon: "bg-amber-400 text-amber-950",
-    badge: "bg-amber-400 text-amber-950",
-    text: "text-amber-900",
-    count: "text-amber-700",
-  },
-  baja: {
-    label: "Bajas",
-    hint: "Información",
-    card: "border-slate-200 border-l-slate-400 bg-slate-50/90",
-    icon: "bg-slate-500 text-white",
-    badge: "bg-slate-500 text-white",
-    text: "text-slate-800",
-    count: "text-slate-700",
-  },
+  critica: { label: "Críticas", hint: "Atención inmediata", card: "border-red-200 border-l-red-600 bg-red-50/80", icon: "bg-red-600 text-white", badge: "bg-red-600 text-white", text: "text-red-800", count: "text-red-700" },
+  alta: { label: "Altas", hint: "Revisar pronto", card: "border-orange-200 border-l-orange-500 bg-orange-50/80", icon: "bg-orange-500 text-white", badge: "bg-orange-500 text-white", text: "text-orange-800", count: "text-orange-700" },
+  media: { label: "Medias", hint: "Conviene revisar", card: "border-amber-200 border-l-amber-500 bg-amber-50/80", icon: "bg-amber-400 text-amber-950", badge: "bg-amber-400 text-amber-950", text: "text-amber-900", count: "text-amber-700" },
+  baja: { label: "Bajas", hint: "Información", card: "border-slate-200 border-l-slate-400 bg-slate-50/90", icon: "bg-slate-500 text-white", badge: "bg-slate-500 text-white", text: "text-slate-800", count: "text-slate-700" },
 };
 const icons = { stock: Package, vitrina: Store };
 
-export function NotificacionesView({ data, onNavigate, preferences = {}, onPreferencesChange }) {
+export function NotificacionesView({ data, onNavigate, onOpenNotificationSettings, previewBusinessId = "", previewBusinessName = "" }) {
   const [filter, setFilter] = useState("todas");
   const [platform, setPlatform] = useState([]);
   const [platformError, setPlatformError] = useState("");
-  const [pushState, setPushState] = useState(() => pushCapability());
   const [pushConfigured, setPushConfigured] = useState(null);
-  const [pushBusy, setPushBusy] = useState(false);
-  const [preferencesOpen, setPreferencesOpen] = useState(false);
-  const pushPreferences = normalizePushPreferences(preferences.pushNotifications || DEFAULT_PUSH_PREFERENCES);
   const notifications = useMemo(() => buildNotifications(data), [data]);
-  const counts = useMemo(() => Object.fromEntries(LEVELS.map((level) => [
-    level,
-    notifications.filter((item) => item.level === level).length,
-  ])), [notifications]);
+  const counts = useMemo(() => Object.fromEntries(LEVELS.map((level) => [level, notifications.filter((item) => item.level === level).length])), [notifications]);
   const visible = filter === "todas" ? notifications : notifications.filter((item) => item.level === filter);
-  const groups = LEVELS
-    .map((level) => ({ level, items: visible.filter((item) => item.level === level) }))
-    .filter((group) => group.items.length);
+  const groups = LEVELS.map((level) => ({ level, items: visible.filter((item) => item.level === level) })).filter((group) => group.items.length);
+  const previewMode = Boolean(previewBusinessId);
 
   const refreshPlatform = async () => {
     try {
-      const detail = await loadPlatformNotifications();
+      const detail = await loadPlatformNotifications({ previewBusinessId });
       setPlatform(detail.notifications || []);
       setPushConfigured(Boolean(detail.pushConfigured));
       setPlatformError("");
-    } catch (error) {
-      setPlatformError(error?.message || "No se pudieron cargar las novedades de Kiosco+.");
-    }
+    } catch (error) { setPlatformError(error?.message || "No se pudieron cargar las novedades de Kiosco+."); }
   };
 
   useEffect(() => {
     refreshPlatform();
-    if (pushCapability() === "granted") enablePushNotifications(pushPreferences).catch(() => {});
     const timer = setInterval(refreshPlatform, 60000);
     const reloadAfterLogin = () => refreshPlatform();
     window.addEventListener("kiosco-cloud-session-changed", reloadAfterLogin);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener("kiosco-cloud-session-changed", reloadAfterLogin);
-    };
-  }, []);
+    return () => { clearInterval(timer); window.removeEventListener("kiosco-cloud-session-changed", reloadAfterLogin); };
+  }, [previewBusinessId]);
 
   const openPlatformNotification = async (item) => {
     if (!item.readAt) {
       try {
-        const result = await markPlatformNotificationRead(item.id);
+        const result = await markPlatformNotificationRead(item.id, { previewBusinessId });
         setPlatform((previous) => previous.map((entry) => entry.id === item.id ? { ...entry, readAt: result.readAt } : entry));
-      } catch { /* La tarjeta sigue siendo utilizable aunque falle el recibo. */ }
+      } catch {}
     }
     if (item.action?.view) onNavigate(item.action.view);
   };
 
-  const activatePush = async () => {
-    setPushBusy(true);
-    setPlatformError("");
-    try {
-      await enablePushNotifications(pushPreferences);
-      setPushState("granted");
-    } catch (error) {
-      setPushState(pushCapability());
-      setPlatformError(error?.message || "No se pudieron activar los avisos.");
-    } finally { setPushBusy(false); }
-  };
+  return <div data-tour="notifications-center" className="p-4 sm:p-8">
+    <SectionHeader title="Centro de notificaciones" subtitle="Primero aparecen los asuntos más urgentes. Tocá una tarjeta para ir a resolverla." />
+    {previewMode && <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900"><b>Vista administrativa de {previewBusinessName || "este negocio"}</b><p className="mt-1 text-xs">Estás revisando qué ve este comercio. Sus preferencias y el estado de lectura del dueño no se modifican.</p></div>}
 
-  const changePushPreferences = (patch) => {
-    const next = normalizePushPreferences({ ...pushPreferences, ...patch });
-    onPreferencesChange?.({ pushNotifications: next });
-    updatePushNotificationPreferences(next).catch((error) => setPlatformError(error?.message || "La preferencia quedó guardada en este dispositivo, pero todavía no pudo enviarse a la nube."));
-  };
+    <section className="mb-6 rounded-2xl border border-emerald-100 bg-[#F5FAF7] p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#1C4A44] text-white"><Cloud size={19}/></span><div><h2 className="font-bold text-[#173F3A]">Novedades de Kiosco+</h2><p className="text-xs leading-5 text-gray-600">Mensajes del administrador, avisos de mantenimiento y novedades importantes.</p></div></div>{!previewMode && <button type="button" onClick={onOpenNotificationSettings} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border bg-white px-3 text-xs font-bold text-[#173F3A]"><Settings size={15}/>Configurar avisos</button>}</div>
+      {pushConfigured === false && !previewMode && <p className="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-600">Los mensajes quedan acá; los avisos fuera de la app todavía no están habilitados en el servidor.</p>}
+      {platformError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{platformError}</p>}
+      {platform.length > 0 ? <div className="mt-4 space-y-2">{platform.map((item) => {
+        const colors = item.level === "urgente" ? "border-red-200 bg-red-50 text-red-900" : item.level === "mantenimiento" ? "border-blue-200 bg-blue-50 text-blue-900" : item.level === "importante" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-100 bg-white text-gray-800";
+        return <button type="button" key={item.id} onClick={() => openPlatformNotification(item)} className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition hover:shadow-sm ${colors} ${item.readAt ? "opacity-65" : "shadow-sm"}`}><Bell size={17} className="mt-0.5 shrink-0"/><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><b className="text-sm">{item.title}</b>{!item.readAt && <span className="rounded-full bg-[#D96B32] px-2 py-0.5 text-[9px] font-black uppercase text-white">Nuevo</span>}</span><span className="mt-1 block text-xs leading-5 opacity-80">{item.message}</span><span className="mt-1 block text-[10px] opacity-55">{new Date(item.publishAt || item.createdAt).toLocaleString("es-AR")}</span></span>{item.action?.view && <ChevronRight size={17} className="mt-2 shrink-0"/>}</button>;
+      })}</div> : !platformError && <p className="mt-4 text-xs text-gray-500">No hay mensajes generales pendientes.</p>}
+    </section>
 
-  const deactivatePush = async () => {
-    setPushBusy(true);
-    try {
-      await disablePushNotifications();
-      setPushState(pushCapability() === "granted" ? "available" : pushCapability());
-    } catch (error) { setPlatformError(error?.message || "No se pudieron desactivar los avisos."); }
-    finally { setPushBusy(false); }
-  };
+    <div data-tour="notifications-filters" className="mb-6 grid grid-cols-2 gap-2 lg:grid-cols-4"><button onClick={() => setFilter("todas")} className={`min-h-20 rounded-xl border p-3 text-left transition-all ${filter === "todas" ? "border-gray-900 bg-gray-900 text-white shadow-md" : "bg-white hover:-translate-y-0.5 hover:shadow-sm"}`}><span className="block text-[11px] font-bold uppercase tracking-wide opacity-65">Todas</span><strong className="mt-1 block text-2xl leading-none">{notifications.length}</strong><span className="mt-1 block text-xs opacity-70">Alertas pendientes</span></button>{LEVELS.slice(0, 3).map((level) => { const ui = levelUi[level]; return <button key={level} onClick={() => setFilter(level)} className={`min-h-20 rounded-xl border p-3 text-left transition-all ${filter === level ? `${ui.card} ring-2 ring-current shadow-md` : `${ui.card} hover:-translate-y-0.5 hover:shadow-sm`}`}><span className={`block text-[11px] font-black uppercase tracking-wide ${ui.text}`}>{ui.label}</span><strong className={`mt-1 block text-2xl leading-none ${ui.count}`}>{counts[level]}</strong><span className={`mt-1 block text-xs ${ui.text} opacity-75`}>{ui.hint}</span></button>; })}</div>
 
-  return (
-    <div data-tour="notifications-center" className="p-4 sm:p-8">
-      <SectionHeader title="Centro de notificaciones" subtitle="Primero aparecen los asuntos más urgentes. Tocá una tarjeta para ir a resolverla." />
-
-      <section className="mb-6 rounded-2xl border border-emerald-100 bg-[#F5FAF7] p-4 sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#1C4A44] text-white"><Cloud size={19}/></span><div><h2 className="font-bold text-[#173F3A]">Novedades de Kiosco+</h2><p className="text-xs leading-5 text-gray-600">Mensajes del administrador, avisos de mantenimiento y novedades importantes.</p></div></div>
-          {pushConfigured && pushState === "available" && <button type="button" disabled={pushBusy} onClick={activatePush} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"><BellRing size={16}/>{pushBusy ? "Activando..." : "Avisarme en este dispositivo"}</button>}
-          <div className="flex flex-wrap items-center gap-2">{pushConfigured && pushState === "granted" && <span className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-2 text-xs font-bold text-green-800"><CheckCircle2 size={15}/>Avisos al dispositivo activos</span>}<button type="button" onClick={() => setPreferencesOpen((value) => !value)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-bold text-[#173F3A]"><SlidersHorizontal size={15}/>Preferencias</button></div>
-          {pushConfigured === false && <span className="rounded-xl bg-gray-100 px-3 py-2 text-xs text-gray-600">Los mensajes quedan acá; los avisos fuera de la app todavía no están habilitados.</span>}
-          {pushState === "denied" && <span className="rounded-xl bg-amber-100 px-3 py-2 text-xs text-amber-900">Los avisos están bloqueados en el navegador. Podés habilitarlos desde los permisos del sitio.</span>}
-        </div>
-        {preferencesOpen && <div className="mt-4 rounded-xl border bg-white p-3 sm:p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="text-sm font-bold">Avisos en este dispositivo</h3><p className="mt-1 text-xs text-gray-500">Estas opciones pertenecen a tu usuario en este dispositivo. Los mensajes críticos igual quedan guardados dentro de Kiosco+.</p></div>{pushState === "granted" && <button type="button" disabled={pushBusy} onClick={deactivatePush} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 px-3 text-xs font-semibold text-red-700"><BellOff size={15}/>Desactivar en este dispositivo</button>}</div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-gray-600">Cuándo avisar<select value={pushPreferences.mode} onChange={(event) => changePushPreferences({ mode: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border bg-white px-3 text-sm font-normal"><option value="all">Todos los avisos elegidos</option><option value="important">Sólo importantes y urgentes</option><option value="none">Ninguno fuera de la app</option></select></label><label className="flex min-h-10 items-center justify-between gap-3 rounded-lg border px-3 text-xs font-semibold text-gray-700">Silenciar por la noche<input type="checkbox" checked={pushPreferences.quietHoursEnabled} onChange={(event) => changePushPreferences({ quietHoursEnabled: event.target.checked })} className="h-4 w-4"/></label>{pushPreferences.quietHoursEnabled && <><label className="text-xs font-semibold text-gray-600">Desde<input type="time" value={pushPreferences.quietStart} onChange={(event) => changePushPreferences({ quietStart: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border px-3 text-sm font-normal"/></label><label className="text-xs font-semibold text-gray-600">Hasta<input type="time" value={pushPreferences.quietEnd} onChange={(event) => changePushPreferences({ quietEnd: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border px-3 text-sm font-normal"/></label></>}</div><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{NOTIFICATION_CATEGORY_OPTIONS.map(([id, label]) => <label key={id} className="flex min-h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium"><input type="checkbox" checked={pushPreferences.categories[id] !== false} onChange={(event) => changePushPreferences({ categories: { ...pushPreferences.categories, [id]: event.target.checked } })}/><span>{label}</span></label>)}</div></div>}
-        {platformError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{platformError}</p>}
-        {platform.length > 0 ? <div className="mt-4 space-y-2">{platform.map((item) => {
-          const colors = item.level === "urgente" ? "border-red-200 bg-red-50 text-red-900" : item.level === "mantenimiento" ? "border-blue-200 bg-blue-50 text-blue-900" : item.level === "importante" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-100 bg-white text-gray-800";
-          return <button type="button" key={item.id} onClick={() => openPlatformNotification(item)} className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition hover:shadow-sm ${colors} ${item.readAt ? "opacity-65" : "shadow-sm"}`}><Bell size={17} className="mt-0.5 shrink-0"/><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><b className="text-sm">{item.title}</b>{!item.readAt && <span className="rounded-full bg-[#D96B32] px-2 py-0.5 text-[9px] font-black uppercase text-white">Nuevo</span>}</span><span className="mt-1 block text-xs leading-5 opacity-80">{item.message}</span><span className="mt-1 block text-[10px] opacity-55">{new Date(item.publishAt || item.createdAt).toLocaleString("es-AR")}</span></span>{item.action?.view && <ChevronRight size={17} className="mt-2 shrink-0"/>}</button>;
-        })}</div> : !platformError && <p className="mt-4 text-xs text-gray-500">No hay mensajes generales pendientes.</p>}
-      </section>
-
-      <div data-tour="notifications-filters" className="mb-6 grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <button
-          onClick={() => setFilter("todas")}
-          className={`min-h-20 rounded-xl border p-3 text-left transition-all ${filter === "todas" ? "border-gray-900 bg-gray-900 text-white shadow-md" : "bg-white hover:-translate-y-0.5 hover:shadow-sm"}`}
-        >
-          <span className="block text-[11px] font-bold uppercase tracking-wide opacity-65">Todas</span>
-          <strong className="mt-1 block text-2xl leading-none">{notifications.length}</strong>
-          <span className="mt-1 block text-xs opacity-70">Alertas pendientes</span>
-        </button>
-        {LEVELS.slice(0, 3).map((level) => {
-          const ui = levelUi[level];
-          return (
-            <button
-              key={level}
-              onClick={() => setFilter(level)}
-              className={`min-h-20 rounded-xl border p-3 text-left transition-all ${filter === level ? `${ui.card} ring-2 ring-current shadow-md` : `${ui.card} hover:-translate-y-0.5 hover:shadow-sm`}`}
-            >
-              <span className={`block text-[11px] font-black uppercase tracking-wide ${ui.text}`}>{ui.label}</span>
-              <strong className={`mt-1 block text-2xl leading-none ${ui.count}`}>{counts[level]}</strong>
-              <span className={`mt-1 block text-xs ${ui.text} opacity-75`}>{ui.hint}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {visible.length === 0 ? (
-        <div data-tour="notifications-list" className="rounded-xl border border-dashed p-8 text-center sm:p-14">
-          <CheckCircle2 size={32} className="mx-auto mb-3 text-green-500" />
-          <p className="font-semibold">No hay alertas en este grupo</p>
-          <p className="mt-1 text-sm text-gray-400">El negocio está al día.</p>
-        </div>
-      ) : (
-        <div data-tour="notifications-list" className="space-y-6">
-          {groups.map(({ level, items }) => {
-            const ui = levelUi[level];
-            return (
-              <section key={level} aria-label={`Notificaciones ${ui.label.toLowerCase()}`}>
-                <div className="mb-2 flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${ui.icon.split(" ")[0]}`} />
-                  <h2 className="text-sm font-bold">{ui.label}</h2>
-                  <span className="rounded-full border px-2 py-0.5 text-[10px] font-bold opacity-65">{items.length}</span>
-                  <span className="text-xs opacity-50">{ui.hint}</span>
-                </div>
-                <div className="space-y-2">
-                  {items.map((item) => {
-                    const Icon = icons[item.type] || (item.level === "critica" ? AlertTriangle : Bell);
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => onNavigate(item.view)}
-                        className={`group relative flex min-h-[5.25rem] w-full items-center gap-3 overflow-hidden rounded-xl border border-l-4 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md sm:p-4 ${ui.card}`}
-                      >
-                        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full shadow-sm ${ui.icon}`}>
-                          <Icon size={19} />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className={`block break-words text-sm font-bold ${ui.text}`}>{item.title}</span>
-                          <span className={`mt-1 block break-words text-xs leading-relaxed ${ui.text} opacity-75`}>{item.detail}</span>
-                        </span>
-                        <span className="flex shrink-0 flex-col items-end gap-2">
-                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${ui.badge}`}>{level}</span>
-                          <span className={`hidden items-center gap-1 text-[10px] font-semibold opacity-60 sm:flex ${ui.text}`}>Abrir sección <ChevronRight size={13} /></span>
-                        </span>
-                        <ChevronRight size={18} className={`shrink-0 opacity-55 sm:hidden ${ui.text}`} />
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
+    {visible.length === 0 ? <div data-tour="notifications-list" className="rounded-xl border border-dashed p-8 text-center sm:p-14"><CheckCircle2 size={32} className="mx-auto mb-3 text-green-500"/><p className="font-semibold">No hay alertas en este grupo</p><p className="mt-1 text-sm text-gray-400">El negocio está al día.</p></div> : <div data-tour="notifications-list" className="space-y-6">{groups.map(({ level, items }) => { const ui = levelUi[level]; return <section key={level} aria-label={`Notificaciones ${ui.label.toLowerCase()}`}><div className="mb-2 flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${ui.icon.split(" ")[0]}`}/><h2 className="text-sm font-bold">{ui.label}</h2><span className="rounded-full border px-2 py-0.5 text-[10px] font-bold opacity-65">{items.length}</span><span className="text-xs opacity-50">{ui.hint}</span></div><div className="space-y-2">{items.map((item) => { const Icon = icons[item.type] || (item.level === "critica" ? AlertTriangle : Bell); return <button key={item.id} onClick={() => onNavigate(item.view)} className={`group relative flex min-h-[5.25rem] w-full items-center gap-3 overflow-hidden rounded-xl border border-l-4 p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md sm:p-4 ${ui.card}`}><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full shadow-sm ${ui.icon}`}><Icon size={19}/></span><span className="min-w-0 flex-1"><span className={`block break-words text-sm font-bold ${ui.text}`}>{item.title}</span><span className={`mt-1 block break-words text-xs leading-relaxed ${ui.text} opacity-75`}>{item.detail}</span></span><span className="flex shrink-0 flex-col items-end gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${ui.badge}`}>{level}</span><span className={`hidden items-center gap-1 text-[10px] font-semibold opacity-60 sm:flex ${ui.text}`}>Abrir sección <ChevronRight size={13}/></span></span><ChevronRight size={18} className={`shrink-0 opacity-55 sm:hidden ${ui.text}`}/></button>; })}</div></section>; })}</div>}
+  </div>;
 }

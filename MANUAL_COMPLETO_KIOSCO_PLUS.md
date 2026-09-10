@@ -266,19 +266,25 @@ Ingresá el efectivo inicial y confirmá la apertura. Ese monto no es una venta;
 
 La venta descuenta stock y registra el movimiento de caja correspondiente. También se admiten medios como efectivo, Mercado Pago o transferencia, según la configuración disponible.
 
-### 9.3 Venta suspendida
+### 9.3 Pantalla para clientes
+
+El dueño puede activarla en **Configuración > Funcionamiento > Operación**. La configuración y el QR se guardan para el negocio, de modo que sus cajas autorizadas comparten el mismo criterio. Durante una venta muestra únicamente nombre y cantidad de productos, precios, descuentos, total, medio de pago, efectivo recibido y vuelto. Si el negocio carga un QR estático de Mercado Pago o transferencia, aparece al elegir ese medio; el vendedor debe comprobar el pago manualmente.
+
+En la aplicación de escritorio Kiosco+ detecta los monitores y puede abrirla automáticamente en la pantalla secundaria. En la versión web se abre una ventana independiente que debe moverse manualmente. Esta ventana no inicia otra sesión, no consume otra activación y no recibe stock, costos, usuarios ni información administrativa.
+
+### 9.4 Venta suspendida
 
 Usala para guardar temporalmente un carrito y atender otra operación. Al recuperarla, revisá si reemplazará la venta actual.
 
-### 9.4 Pedidos y presupuestos
+### 9.5 Pedidos y presupuestos
 
 Los pedidos reservan una lista para seguimiento y los presupuestos calculan importes sin descontar existencias. No equivalen a una venta hasta que se confirme la operación correspondiente.
 
-### 9.5 Anular o devolver
+### 9.6 Anular o devolver
 
 Una anulación debe pedir un motivo, revertir el cobro y restaurar el stock cuando corresponda. El ticket permanece visible para auditoría. No borres manualmente movimientos para corregir una venta: usá la acción específica.
 
-### 9.6 Cerrar la caja
+### 9.7 Cerrar la caja
 
 1. Contá el dinero y medios de cobro.
 2. Compará el total esperado con el real.
@@ -367,11 +373,11 @@ Los permisos se dividen entre acceso a menús y acciones sensibles, por ejemplo:
 
 Aplicá el principio de mínimo acceso: cada empleado debe ver y modificar sólo lo necesario. No compartas la cuenta del dueño para operar la caja.
 
-El administrador general de Kiosco+ es distinto del dueño de un negocio. Puede aprobar cuentas, administrar pruebas y pagos, generar claves de instalación, revocar dispositivos y gestionar el catálogo global.
+El administrador general de Kiosco+ es distinto del dueño de un negocio. Puede aprobar cuentas, administrar pruebas y pagos, generar claves de instalación, revocar dispositivos y gestionar el catálogo global. El botón **Otra pantalla** abre un negocio sin abandonar el panel central: en escritorio elige otro monitor automáticamente y en navegador abre una ventana independiente. Esa vista conserva la identidad administrativa, no crea otra activación y no reemplaza la sesión principal guardada.
 
 ## 16. Configuración
 
-La ventana de Configuración se organiza en:
+La ventana de Configuración se organiza en cinco grupos principales para evitar una lista extensa de menús:
 
 ### Negocio
 
@@ -379,31 +385,21 @@ Nombre, datos visibles y preferencias propias del comercio. Sólo aparece a quie
 
 ### Apariencia
 
-Tema, colores, identidad visual y estilos claros u oscuros.
+Reúne Colores, Interfaz y Sonido y movimiento. Incluye tema, identidad visual, distribución, densidad, confirmaciones, animaciones y respuesta sonora.
 
-### Interfaz
+### Notificaciones
 
-Distribución, visibilidad y preferencias del menú.
-
-### Sonido y movimiento
-
-Confirmaciones, animaciones y respuesta visual o sonora.
+Permite activar o desactivar avisos en el dispositivo, probar su entrega y elegir por grupos qué eventos se reciben. La configuración detallada y el horario silencioso quedan dentro del mismo grupo.
 
 ### Funcionamiento
 
-Reglas de operación, comportamiento de caja, ventas y funciones automáticas.
+Reúne Operación e Impresión y caja. Contiene reglas de operación, comportamiento de ventas, funciones automáticas, papel, tickets, resúmenes y cajón de dinero. También configura la pantalla para clientes y su QR estático. El pulso directo ESC/POS está disponible en la aplicación de Windows y requiere una impresora compatible.
 
-### Impresión y cajón
+### Datos y seguridad
 
-Papel, plantillas, impresión de tickets, resúmenes e integración con cajón de dinero. El pulso directo ESC/POS está disponible en la aplicación de Windows y requiere una impresora compatible.
+Reúne Archivo, Seguridad y Nube y dispositivos: exportación, limpieza controlada, opciones sensibles, sesiones, tickets, sincronización, dispositivos y actualizaciones.
 
-### Datos y archivo
-
-Exportación, importación, archivo y limpieza controlada de información.
-
-### Seguridad y tickets
-
-Opciones sensibles, permisos y comportamiento de comprobantes.
+**Ayuda y versión** queda como acceso separado: muestra la versión instalada, permite repetir tutoriales, copiar un diagnóstico seguro, informar un problema y abrir los documentos legales.
 
 ### Nube y dispositivos
 

@@ -525,6 +525,13 @@ const notificationAudienceMatches = (notification, subject = {}) => {
   }
   return false;
 };
+const notificationSubjectForRequest = (db, req, session) => {
+  const previewBusinessId = cleanCatalogText(req.headers["x-kiosco-preview-business"], 100);
+  if (!previewBusinessId || session?.role !== "superAdmin") return session;
+  const accountExists = (db.system?.cuentas || []).some((account) => !account?.superAdmin && String(account?.id) === String(previewBusinessId));
+  if (!accountExists) return session;
+  return { ...session, businessId: String(previewBusinessId), role: "owner", adminPreview: true };
+};
 const notificationView = (db, notification, session) => ({
   ...notification,
   readAt: db.notificationReads?.[`${notification.id}:${session.userId}`]?.readAt || null,
@@ -1683,16 +1690,19 @@ const handleRequest = async (req, res) => {
     }
 
     if (req.method === "GET" && req.url === "/v1/notifications") {
+      const notificationSubject = notificationSubjectForRequest(db, req, session);
       return send(res, 200, {
-        notifications: visiblePlatformNotifications(db, session).map((entry) => notificationView(db, entry, session)),
+        notifications: visiblePlatformNotifications(db, notificationSubject).map((entry) => notificationView(db, entry, session)),
         pushConfigured: pushDeliveryConfigured,
+        preview: Boolean(notificationSubject.adminPreview),
       });
     }
     const notificationReadMatch = req.url?.match(/^\/v1\/notifications\/([^/?]+)\/read$/);
     if (req.method === "POST" && notificationReadMatch) {
       const notificationId = decodeURIComponent(notificationReadMatch[1]);
       const notification = db.platformNotifications?.[notificationId];
-      if (!notification || !notificationAudienceMatches(notification, session)) return send(res, 404, { error: "Notificación inexistente" });
+      const notificationSubject = notificationSubjectForRequest(db, req, session);
+      if (!notification || !notificationAudienceMatches(notification, notificationSubject)) return send(res, 404, { error: "Notificación inexistente" });
       db.notificationReads ||= {};
       const key = `${notificationId}:${session.userId}`;
       db.notificationReads[key] = { notificationId, userId: session.userId, businessId: session.businessId, readAt: new Date().toISOString() };
@@ -1727,6 +1737,33 @@ const handleRequest = async (req, res) => {
       };
       await writeDb(db);
       return send(res, 201, { ok: true, id });
+    }
+    if (req.method === "POST" && req.url === "/v1/notifications/test") {
+      if (!pushDeliveryConfigured) return send(res, 503, { error: "Los avisos al celular todavía no están configurados en el servidor" });
+      const entries = Object.values(db.pushSubscriptions || {}).filter((entry) => !entry?.revokedAt && entry.userId === session.userId && String(entry.deviceId || "") === String(deviceId || ""));
+      if (!entries.length) return send(res, 409, { error: "Primero activá los avisos en este dispositivo" });
+      const payload = JSON.stringify({
+        id: `test-${Date.now()}`,
+        title: "Kiosco+ está conectado",
+        body: "Las notificaciones funcionan correctamente en este dispositivo.",
+        level: "info",
+        url: "/?view=notificaciones",
+      });
+      let sent = 0;
+      for (const entry of entries) {
+        try {
+          await webpush.sendNotification(entry.subscription, payload, { TTL: 300 });
+          entry.lastSuccessAt = new Date().toISOString();
+          sent += 1;
+        } catch (error) {
+          entry.lastErrorAt = new Date().toISOString();
+          entry.lastError = String(error?.message || error).slice(0, 180);
+          if ([404, 410].includes(Number(error?.statusCode))) entry.revokedAt = entry.lastErrorAt;
+        }
+      }
+      await writeDb(db);
+      if (!sent) return send(res, 502, { error: "El servicio no pudo entregar el aviso de prueba" });
+      return send(res, 200, { ok: true, sent });
     }
     if (req.method === "DELETE" && req.url === "/v1/notifications/push-subscriptions") {
       const payload = await body(req);

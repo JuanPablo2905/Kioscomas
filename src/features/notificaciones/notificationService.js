@@ -24,8 +24,9 @@ const request = async (path, options = {}) => {
   return detail;
 };
 
-export const loadPlatformNotifications = () => request("/v1/notifications");
-export const markPlatformNotificationRead = (id) => request(`/v1/notifications/${encodeURIComponent(id)}/read`, { method: "POST", body: "{}" });
+const previewHeaders = (previewBusinessId) => previewBusinessId ? { "x-kiosco-preview-business": String(previewBusinessId) } : {};
+export const loadPlatformNotifications = ({ previewBusinessId = "" } = {}) => request("/v1/notifications", { headers: previewHeaders(previewBusinessId) });
+export const markPlatformNotificationRead = (id, { previewBusinessId = "" } = {}) => request(`/v1/notifications/${encodeURIComponent(id)}/read`, { method: "POST", body: "{}", headers: previewHeaders(previewBusinessId) });
 export const loadAdminNotifications = () => request("/v1/admin/notifications");
 export const publishPlatformNotification = (values) => request("/v1/admin/notifications", { method: "POST", body: JSON.stringify(values) });
 export const archivePlatformNotification = (id) => request(`/v1/admin/notifications/${encodeURIComponent(id)}/archive`, { method: "POST", body: "{}" });
@@ -33,6 +34,7 @@ export const reportPlatformIssue = (values) => request("/v1/issues", { method: "
 export const loadAdminIssues = () => request("/v1/admin/issues");
 export const updateAdminIssueStatus = (id, status) => request(`/v1/admin/issues/${encodeURIComponent(id)}/status`, { method: "POST", body: JSON.stringify({ status }) });
 export const archiveAdminIssue = (id) => request(`/v1/admin/issues/${encodeURIComponent(id)}/archive`, { method: "POST", body: "{}" });
+export const sendPushNotificationTest = () => request("/v1/notifications/test", { method: "POST", body: "{}" });
 
 export const NOTIFICATION_CATEGORY_OPTIONS = [
   ["subscription", "Suscripción y acceso"],

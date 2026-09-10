@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Notification } = require("electron");
+const { app, BrowserWindow, ipcMain, Notification, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFile, spawn } = require("child_process");
@@ -8,6 +8,10 @@ let desktopUpdater = null;
 let updateCheckTimer = null;
 let updateNoticeShownFor = "";
 let updatePolicy = { autoCheck: true, channel: "stable" };
+let mainWindow = null;
+let customerDisplayWindow = null;
+let customerDisplayState = null;
+const adminBusinessWindows = new Map();
 let updateState = {
   supported: false,
   status: "unavailable",
@@ -183,6 +187,100 @@ function stopLocalCloud() {
   localCloudProcess = null;
 }
 
+function resolveIndexToLoad() {
+  const executableDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
+  const externalCandidates = [
+    path.join(executableDir, "dist", "index.html"),
+    path.resolve(executableDir, "..", "dist", "index.html"),
+    path.resolve(executableDir, "..", "..", "dist", "index.html"),
+  ];
+  const externalIndex = isDevelopmentLauncher()
+    ? externalCandidates.find((candidate) => fs.existsSync(candidate))
+    : null;
+  return externalIndex || path.join(__dirname, "..", "dist", "index.html");
+}
+
+function secondaryDisplay(sourceWindow, requestedId = "") {
+  const displays = screen.getAllDisplays();
+  const requested = displays.find((display) => String(display.id) === String(requestedId));
+  if (requested) return requested;
+  const sourceDisplay = sourceWindow && !sourceWindow.isDestroyed()
+    ? screen.getDisplayMatching(sourceWindow.getBounds())
+    : screen.getPrimaryDisplay();
+  return displays.find((display) => display.id !== sourceDisplay.id) || sourceDisplay;
+}
+
+function secondaryWindowOptions(targetDisplay, overrides = {}) {
+  const area = targetDisplay.workArea;
+  return {
+    x: area.x,
+    y: area.y,
+    width: Math.max(720, area.width),
+    height: Math.max(560, area.height),
+    minWidth: 640,
+    minHeight: 480,
+    autoHideMenuBar: true,
+    backgroundColor: "#16433D",
+    icon: path.join(__dirname, process.platform === "win32" ? "icon.ico" : "icon.png"),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      preload: path.join(__dirname, "preload.cjs"),
+    },
+    ...overrides,
+  };
+}
+
+async function openCustomerDisplay(event, options = {}) {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+  const target = secondaryDisplay(sourceWindow, options.displayId);
+  if (!customerDisplayWindow || customerDisplayWindow.isDestroyed()) {
+    customerDisplayWindow = new BrowserWindow(secondaryWindowOptions(target, {
+      title: "Kiosco+ · Pantalla del cliente",
+      fullscreenable: true,
+    }));
+    customerDisplayWindow.on("closed", () => { customerDisplayWindow = null; });
+    await customerDisplayWindow.loadFile(resolveIndexToLoad(), {
+      query: { window: "customer-display", channel: String(options.channelId || "desktop") },
+    });
+  } else {
+    customerDisplayWindow.setBounds(target.workArea);
+  }
+  customerDisplayState = options.state || customerDisplayState;
+  if (customerDisplayState) customerDisplayWindow.webContents.send("kiosco:customer-display:state", customerDisplayState);
+  customerDisplayWindow.setFullScreen(options.fullscreen !== false);
+  customerDisplayWindow.show();
+  customerDisplayWindow.focus();
+  return { ok: true, mode: "desktop", displayId: String(target.id) };
+}
+
+async function openAdminBusinessWindow(event, options = {}) {
+  const businessId = String(options.businessId || "");
+  if (!businessId) return { ok: false, error: "Negocio no identificado" };
+  const existing = adminBusinessWindows.get(businessId);
+  if (existing && !existing.isDestroyed()) {
+    existing.show(); existing.focus();
+    return { ok: true, reused: true };
+  }
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+  const target = secondaryDisplay(sourceWindow);
+  const area = target.workArea;
+  const window = new BrowserWindow(secondaryWindowOptions(target, {
+    x: area.x + 24,
+    y: area.y + 24,
+    width: Math.max(900, area.width - 48),
+    height: Math.max(650, area.height - 48),
+    title: `Kiosco+ · ${String(options.businessName || "Negocio")}`,
+    backgroundColor: "#F6F1E7",
+  }));
+  adminBusinessWindows.set(businessId, window);
+  window.on("closed", () => adminBusinessWindows.delete(businessId));
+  await window.loadFile(resolveIndexToLoad(), { query: { window: "admin-business", businessId } });
+  window.show(); window.focus();
+  return { ok: true, mode: "desktop", displayId: String(target.id) };
+}
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 1440,
@@ -207,6 +305,8 @@ function createWindow() {
   window.once("ready-to-show", () => {
     window.focus();
   });
+  mainWindow = window;
+  window.on("closed", () => { if (mainWindow === window) mainWindow = null; });
 
   window.webContents.on("console-message", (...args) => {
     console.log("[renderer]", ...args.map((item) => item?.message || item));
@@ -255,17 +355,7 @@ function createWindow() {
     }
   });
 
-  const executableDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
-  const externalCandidates = [
-    path.join(executableDir, "dist", "index.html"),
-    path.resolve(executableDir, "..", "dist", "index.html"),
-    path.resolve(executableDir, "..", "..", "dist", "index.html"),
-  ];
-  const externalIndex = isDevelopmentLauncher()
-    ? externalCandidates.find((candidate) => fs.existsSync(candidate))
-    : null;
-  const bundledIndex = path.join(__dirname, "..", "dist", "index.html");
-  const indexToLoad = externalIndex || bundledIndex;
+  const indexToLoad = resolveIndexToLoad();
 
   window.loadFile(indexToLoad).catch((error) => {
     console.error("[startup] No se pudo cargar la aplicación", error);
@@ -293,6 +383,34 @@ function createWindow() {
 }
 
 ipcMain.handle("kiosco:updates:get-state", () => updateState);
+ipcMain.handle("kiosco:secondary-window:open-business", openAdminBusinessWindow);
+ipcMain.handle("kiosco:customer-display:list", () => ({
+  mode: "desktop",
+  displays: screen.getAllDisplays().map((display) => ({
+    id: String(display.id),
+    label: display.label || `Pantalla ${display.id}`,
+    primary: display.id === screen.getPrimaryDisplay().id,
+    width: display.workAreaSize.width,
+    height: display.workAreaSize.height,
+  })),
+}));
+ipcMain.handle("kiosco:customer-display:open", openCustomerDisplay);
+ipcMain.handle("kiosco:customer-display:publish", (_event, detail = {}) => {
+  customerDisplayState = detail.state || null;
+  if (customerDisplayWindow && !customerDisplayWindow.isDestroyed() && customerDisplayState) {
+    customerDisplayWindow.webContents.send("kiosco:customer-display:state", customerDisplayState);
+  }
+  return { ok: true };
+});
+ipcMain.handle("kiosco:customer-display:ready", (event) => {
+  if (customerDisplayState) event.sender.send("kiosco:customer-display:state", customerDisplayState);
+  return { ok: true };
+});
+ipcMain.handle("kiosco:customer-display:close", () => {
+  if (customerDisplayWindow && !customerDisplayWindow.isDestroyed()) customerDisplayWindow.close();
+  customerDisplayWindow = null;
+  return { ok: true };
+});
 ipcMain.handle("kiosco:runtime:get", () => ({
   requiresActivation: app.isPackaged && !isDevelopmentLauncher(),
   version: app.getVersion(),

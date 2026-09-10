@@ -10,6 +10,9 @@ const terms = fs.readFileSync("src/terminos.jsx", "utf8");
 const privacy = fs.readFileSync("src/privacidad.jsx", "utf8");
 const notificationService = fs.readFileSync("src/features/notificaciones/notificationService.js", "utf8");
 const settings = fs.readFileSync("src/shared/SettingsModal.jsx", "utf8");
+const customerDisplay = fs.readFileSync("src/features/ventas/CustomerDisplayScreen.jsx", "utf8");
+const customerDisplaySettings = fs.readFileSync("src/features/ventas/CustomerDisplaySettings.jsx", "utf8");
+const adminPanel = fs.readFileSync("src/features/administracion/AdminAppPanel.jsx", "utf8");
 const styles = fs.readFileSync("src/styles.css", "utf8");
 
 const checks = [
@@ -33,6 +36,10 @@ const checks = [
   [notificationService.includes("Notification.requestPermission") && notificationService.includes("pushManager.subscribe"), "La app debe pedir permiso antes de registrar el dispositivo para avisos."],
   [settings.includes("VITE_APP_VERSION") && settings.includes("Versión actual:") && settings.includes("Aplicación web instalada"), "Configuración debe mostrar claramente la versión y el tipo de aplicación."],
   [settings.includes("settings-mobile-safe-header") && styles.includes("(display-mode: standalone)") && styles.includes("env(safe-area-inset-top) + .75rem") && styles.includes("backdrop-filter: none"), "Las pestañas de Configuración deben quedar debajo del área segura de iPhone sin arrastrar el degradado."],
+  [settings.includes('id: "notificaciones"') && settings.includes("NotificationSettingsPanel") && settings.includes("Ayuda y versión"), "Configuración debe agrupar los avisos y la ayuda sin volver a mostrar una lista extensa de menús."],
+  [main.includes('mode === "customer-display"') && customerDisplay.includes("Tu compra") && customerDisplay.includes("Total a pagar"), "La pantalla para clientes debe tener una entrada aislada y mostrar sólo la información de la venta."],
+  [customerDisplaySettings.includes("QR estático") && customerDisplaySettings.includes("no confirma el pago automáticamente"), "La configuración debe explicar que el QR estático requiere confirmación del vendedor."],
+  [adminPanel.includes("Otra pantalla"), "El administrador debe poder abrir un negocio en otra pantalla sin abandonar el panel."],
 ];
 
 for (const [condition, message] of checks) {
