@@ -1,4 +1,7 @@
-export const DEFAULT_MONTHLY_PLAN_PRICE = 30000;
+export const DEFAULT_MONTHLY_PLAN_PRICE = 50000;
+export const INTRODUCTORY_MONTHLY_PLAN_PRICE = 30000;
+export const INTRODUCTORY_PAID_MONTHS = 3;
+export const BETA_TRIAL_DAYS = 30;
 export const REFERRAL_DISCOUNT_PERCENT = 20;
 export const MAX_REFERRAL_DISCOUNTS = 5;
 export const ARGENTINA_TIME_ZONE = "America/Argentina/Buenos_Aires";
@@ -17,6 +20,7 @@ const dateKeyFormatter = new Intl.DateTimeFormat("en-CA", {
 
 export const argentinaDateKey = (value) => {
   if (value == null || value === "") return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return String(value);
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
   const parts = Object.fromEntries(dateKeyFormatter.formatToParts(date).map((part) => [part.type, part.value]));
@@ -30,6 +34,12 @@ export const hasValidPayment = (account = {}) => (
 
 // Alias compatible con versiones anteriores.
 export const hasPaidSubscription = hasValidPayment;
+
+export const validPayments = (account = {}) => (Array.isArray(account.pagos) ? account.pagos : [])
+  .filter((payment) => payment && !payment.revertedAt && !["revertido", "reversed", "cancelado"].includes(payment.status));
+
+export const paidBillingCycles = (account = {}) => validPayments(account)
+  .reduce((total, payment) => total + Math.max(1, Number(payment.meses) || 1), 0);
 
 export function referralStatus(account = {}, now = Date.now()) {
   if (!account.referredByAccountId) return "sin_referido";
@@ -68,28 +78,60 @@ export function referralStats(accounts = [], referrerId, now = Date.now()) {
   };
 }
 
-const accountBaseMonthlyPrice = (account = {}) => {
+const accountBaseMonthlyPrice = (account = {}, completedPaidCycles = paidBillingCycles(account)) => {
   if (account.planGratis === true) return 0;
-  if (account.planPrecio === "" || account.planPrecio == null) return DEFAULT_MONTHLY_PLAN_PRICE;
+  const standardPrice = completedPaidCycles < INTRODUCTORY_PAID_MONTHS
+    ? INTRODUCTORY_MONTHLY_PLAN_PRICE
+    : DEFAULT_MONTHLY_PLAN_PRICE;
+  if (account.planPrecio === "" || account.planPrecio == null) return standardPrice;
   const value = Number(account.planPrecio);
-  return Number.isFinite(value) && value > 0 ? value : DEFAULT_MONTHLY_PLAN_PRICE;
+  return Number.isFinite(value) && value > 0 ? value : standardPrice;
 };
 
 export function monthlyPriceFor(account = {}, accounts = [], months = 1, now = Date.now()) {
-  const baseMonthlyPrice = accountBaseMonthlyPrice(account);
   const stats = referralStats(accounts, account.id, now);
+  const completedPaidCycles = paidBillingCycles(account);
+  const introductory = account.planGratis !== true
+    && !(Number(account.planPrecio) > 0)
+    && completedPaidCycles < INTRODUCTORY_PAID_MONTHS;
   const manualDiscounts = activeManualDiscounts(account, now);
   const manualDiscountPercent = Math.min(100, manualDiscounts.reduce((total, discount) => total + Number(discount.percent || 0), 0));
-  const discountPercent = Math.min(100, stats.automaticDiscountPercent + manualDiscountPercent);
+  // La promoción de lanzamiento ya es un descuento fuerte. Los referidos se
+  // acumulan desde el cuarto ciclo pago; los descuentos manuales siguen
+  // disponibles para resolver casos comerciales puntuales.
+  const appliedReferralDiscountPercent = introductory ? 0 : stats.automaticDiscountPercent;
+  const discountPercent = Math.min(100, appliedReferralDiscountPercent + manualDiscountPercent);
+  const baseMonthlyPrice = accountBaseMonthlyPrice(account, completedPaidCycles);
   const monthlyPrice = Math.max(0, Math.round(baseMonthlyPrice * (1 - discountPercent / 100)));
+  const billingBreakdown = Array.from({ length: Math.max(1, Number(months) || 1) }, (_, offset) => {
+    const cycle = completedPaidCycles + offset;
+    const cycleIsIntroductory = account.planGratis !== true && !(Number(account.planPrecio) > 0) && cycle < INTRODUCTORY_PAID_MONTHS;
+    const cycleBasePrice = accountBaseMonthlyPrice(account, cycle);
+    const cycleReferralDiscount = cycleIsIntroductory ? 0 : stats.automaticDiscountPercent;
+    const cycleDiscountPercent = Math.min(100, cycleReferralDiscount + manualDiscountPercent);
+    return {
+      cycle: cycle + 1,
+      introductory: cycleIsIntroductory,
+      basePrice: cycleBasePrice,
+      referralDiscountPercent: cycleReferralDiscount,
+      manualDiscountPercent,
+      discountPercent: cycleDiscountPercent,
+      price: Math.max(0, Math.round(cycleBasePrice * (1 - cycleDiscountPercent / 100))),
+    };
+  });
   return {
     ...stats,
+    completedPaidCycles,
+    introductory,
+    introductoryPaidMonthsRemaining: introductory ? Math.max(0, INTRODUCTORY_PAID_MONTHS - completedPaidCycles) : 0,
+    appliedReferralDiscountPercent,
     manualDiscounts,
     manualDiscountPercent,
     discountPercent,
     baseMonthlyPrice,
     monthlyPrice,
-    totalPrice: monthlyPrice * Math.max(1, Number(months) || 1),
+    billingBreakdown,
+    totalPrice: billingBreakdown.reduce((total, cycle) => total + cycle.price, 0),
   };
 }
 

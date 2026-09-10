@@ -515,6 +515,8 @@ const ensureReferralMetadata = (db) => {
   return db;
 };
 const notificationAudienceMatches = (notification, subject = {}) => {
+  const targetRoles = Array.isArray(notification?.targetRoles) ? notification.targetRoles : [];
+  if (targetRoles.length && !targetRoles.includes(subject.role)) return false;
   const audience = notification?.audience || { type: "all" };
   if (audience.type === "all") return true;
   if (audience.type === "admin") return subject.role === "superAdmin";
@@ -545,6 +547,8 @@ const createPlatformNotification = (db, values = {}) => {
     title: cleanCatalogText(values.title, 120),
     message: cleanCatalogText(values.message, 700),
     level: ["info", "importante", "urgente", "mantenimiento"].includes(values.level) ? values.level : "info",
+    category: cleanCatalogText(values.category || "maintenance", 40).replace(/[^a-z0-9_-]/gi, "") || "maintenance",
+    targetRoles: Array.isArray(values.targetRoles) ? values.targetRoles.filter((role) => ["superAdmin", "owner", "employee"].includes(role)) : [],
     audience: values.audience || { type: "all" },
     action: safeNotificationAction(values.action),
     sourceKey: sourceKey || null,
@@ -556,6 +560,28 @@ const createPlatformNotification = (db, values = {}) => {
   };
   db.platformNotifications[notification.id] = notification;
   return { notification, created: true };
+};
+const notificationPreferenceAllows = (entry, notification) => {
+  const preferences = entry?.preferences || {};
+  if (preferences.mode === "none") return false;
+  if (preferences.mode === "important" && !["importante", "urgente"].includes(notification.level)) return false;
+  if (preferences.categories?.[notification.category] === false) return false;
+  if (!preferences.quietHoursEnabled || notification.level === "urgente") return true;
+  const hourMinute = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+  const current = Number(hourMinute.slice(0, 2)) * 60 + Number(hourMinute.slice(3, 5));
+  const minutes = (value, fallback) => {
+    const match = String(value || fallback).match(/^(\d{2}):(\d{2})$/);
+    return match ? Number(match[1]) * 60 + Number(match[2]) : 0;
+  };
+  const start = minutes(preferences.quietStart, "22:00");
+  const end = minutes(preferences.quietEnd, "08:00");
+  const quiet = start === end ? false : start < end ? current >= start && current < end : current >= start || current < end;
+  return !quiet;
 };
 const visiblePlatformNotifications = (db, session) => {
   const now = Date.now();
@@ -584,7 +610,7 @@ const sendPushNotification = async (db, notification) => {
     url: notification.action?.url || (actionView ? `/?view=${encodeURIComponent(actionView)}` : "/?view=notificaciones"),
   });
   await Promise.all(Object.values(db.pushSubscriptions || {}).map(async (entry) => {
-    if (!entry || entry.revokedAt || !notificationAudienceMatches(notification, entry)) return;
+    if (!entry || entry.revokedAt || !notificationAudienceMatches(notification, entry) || !notificationPreferenceAllows(entry, notification)) return;
     try {
       await webpush.sendNotification(entry.subscription, payload, { TTL: 60 * 60 * 24 });
       entry.lastSuccessAt = new Date().toISOString();
@@ -624,8 +650,25 @@ const ensureAutomaticNotifications = (db) => {
           title: days < 0 ? `Abono vencido: ${account.nombreNegocio}` : `Abono por vencer: ${account.nombreNegocio}`,
           message: days < 0 ? `El abono venció el ${expirationKey}. Revisá el pago y el acceso de la cuenta.` : `El abono vence ${days === 0 ? "hoy" : `en ${days} día${days === 1 ? "" : "s"}`}.`,
           level: days <= 0 ? "urgente" : "importante",
+          category: "subscription",
           audience: { type: "admin" },
           action: { view: "administracion" },
+        });
+        if (result.created) created.push(result.notification);
+      }
+      if ([2, 0].includes(days) || days < 0) {
+        const bucket = days < 0 ? "vencido" : `faltan-${days}`;
+        const result = createPlatformNotification(db, {
+          sourceKey: `business-subscription:${account.id}:${expirationKey}:${bucket}`,
+          title: days < 0 ? "Tu suscripción está vencida" : days === 0 ? "Tu suscripción vence hoy" : "Tu suscripción vence en 2 días",
+          message: days < 0
+            ? `Venció el ${expirationKey}. Tus datos siguen disponibles en modo consulta; contactanos para renovar.`
+            : `El acceso vigente finaliza el ${expirationKey}. Podés renovarlo sin perder información.`,
+          level: days <= 0 ? "urgente" : "importante",
+          category: "subscription",
+          audience: { type: "business", businessIds: [account.id] },
+          targetRoles: ["owner"],
+          action: { view: "notificaciones" },
         });
         if (result.created) created.push(result.notification);
       }
@@ -637,8 +680,52 @@ const ensureAutomaticNotifications = (db) => {
         title: "Descuento por referido pausado",
         message: `${account.nombreNegocio} dejó de tener un abono vigente${referrer ? `; ya no suma descuento a ${referrer.nombreNegocio}` : ""}.`,
         level: "importante",
+        category: "subscription",
         audience: { type: "admin" },
         action: { view: "administracion" },
+      });
+      if (result.created) created.push(result.notification);
+    }
+    if (!expirationKey) {
+      const trialExpirationKey = argentinaDateKey(account.trialExpiresAt);
+      if (trialExpirationKey) {
+        const trialDays = argentinaDayNumber(trialExpirationKey) - argentinaDayNumber(todayKey);
+        if ([2, 0].includes(trialDays) || trialDays < 0) {
+          const bucket = trialDays < 0 ? "vencida" : `faltan-${trialDays}`;
+          const result = createPlatformNotification(db, {
+            sourceKey: `business-trial:${account.id}:${trialExpirationKey}:${bucket}`,
+            title: trialDays < 0 ? "Tu beta finalizó" : trialDays === 0 ? "Tu beta termina hoy" : "Tu beta termina en 2 días",
+            message: trialDays < 0
+              ? "Tus datos siguen guardados. Contactanos si querés continuar con el plan Kiosco+."
+              : `Podés seguir probando hasta el ${trialExpirationKey}. No se realizará ningún cobro automático.`,
+            level: trialDays <= 0 ? "urgente" : "importante",
+            category: "subscription",
+            audience: { type: "business", businessIds: [account.id] },
+            targetRoles: ["owner"],
+            action: { view: "notificaciones" },
+          });
+          if (result.created) created.push(result.notification);
+        }
+      }
+    }
+    const orders = Object.values(db.tenants?.[String(account.id)]?.entities?.pedidos || {}).map((record) => record?.value || record);
+    for (const order of orders) {
+      if (!order || ["recibido", "cancelado"].includes(order.estado) || !order.fechaEntregaEsperada) continue;
+      const deliveryKey = argentinaDateKey(order.fechaEntregaEsperada);
+      const days = argentinaDayNumber(deliveryKey) - argentinaDayNumber(todayKey);
+      if (![1, 0].includes(days) && days >= 0) continue;
+      const bucket = days < 0 ? "demorado" : days === 0 ? "hoy" : "manana";
+      const provider = cleanCatalogText(order.proveedorNombre || "tu proveedor", 100);
+      const result = createPlatformNotification(db, {
+        sourceKey: `order-delivery:${account.id}:${order.id}:${deliveryKey}:${bucket}`,
+        title: days < 0 ? "Entrega demorada" : days === 0 ? "Hoy llega un pedido" : "Mañana llega un pedido",
+        message: days < 0
+          ? `El pedido de ${provider} estaba previsto para el ${deliveryKey} y todavía figura pendiente.`
+          : `${provider}${order.horaEntregaEsperada ? ` · ${order.horaEntregaEsperada} h` : ""}.`,
+        level: days < 0 ? "importante" : "info",
+        category: "orders",
+        audience: { type: "business", businessIds: [account.id] },
+        action: { view: "compras" },
       });
       if (result.created) created.push(result.notification);
     }
@@ -1259,6 +1346,7 @@ const handleRequest = async (req, res) => {
 
       const businessId = crypto.randomUUID();
       const now = new Date().toISOString();
+      const trialExpiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
       const account = {
         id: businessId,
         tenantId: businessId,
@@ -1269,6 +1357,9 @@ const handleRequest = async (req, res) => {
         modoNegocio: businessMode,
         superAdmin: false,
         estado: "pendiente",
+        trialStartedAt: now,
+        trialExpiresAt,
+        trialDays: 30,
         roles: [],
         empleados: [],
         pagos: [],
@@ -1314,6 +1405,7 @@ const handleRequest = async (req, res) => {
         title: "Nueva cuenta pendiente",
         message: `${businessName} (${name}) creó su cuenta y está esperando aprobación.`,
         level: "urgente",
+        category: "accounts",
         audience: { type: "admin" },
         action: { view: "administracion" },
       }).notification;
@@ -1520,12 +1612,74 @@ const handleRequest = async (req, res) => {
       return send(res, 403, { error: "El abono está vencido. La cuenta se encuentra en modo consulta." });
     }
 
-    if (req.method === "GET" && req.url === "/v1/admin/accounts") {
+    if (req.url?.startsWith("/v1/admin/accounts")) {
       if (session?.role !== "superAdmin") return send(res, 403, { error: "Se requiere la cuenta administradora de Kiosco+" });
-      return send(res, 200, {
-        accounts: (db.system?.cuentas || []).filter((account) => account && !account.superAdmin),
-        cursor: Number(db.cursor || 0),
-      });
+      if (req.method === "GET" && req.url === "/v1/admin/accounts") {
+        return send(res, 200, {
+          accounts: (db.system?.cuentas || []).filter((account) => account && !account.superAdmin),
+          cursor: Number(db.cursor || 0),
+        });
+      }
+      const accountDeleteMatch = req.url.match(/^\/v1\/admin\/accounts\/([^/?]+)$/);
+      if (req.method === "DELETE" && accountDeleteMatch) {
+        const accountId = decodeURIComponent(accountDeleteMatch[1]);
+        const account = (db.system?.cuentas || []).find((candidate) => String(candidate?.id) === accountId && !candidate?.superAdmin);
+        if (!account) return send(res, 404, { error: "El negocio ya no existe en el servidor" });
+        const removedUserIds = new Set(Object.values(db.users || {})
+          .filter((user) => String(user?.businessId) === accountId)
+          .map((user) => String(user?.id || "")));
+        db.system.cuentas = (db.system.cuentas || []).filter((candidate) => String(candidate?.id) !== accountId);
+        for (const [key, user] of Object.entries(db.users || {})) {
+          if (String(user?.businessId) === accountId) delete db.users[key];
+        }
+        for (const [key, active] of Object.entries(db.sessions || {})) {
+          if (String(active?.businessId) === accountId) delete db.sessions[key];
+        }
+        for (const [key, device] of Object.entries(db.devices || {})) {
+          if (String(device?.tenantId) === accountId) delete db.devices[key];
+        }
+        for (const [key, subscription] of Object.entries(db.pushSubscriptions || {})) {
+          if (String(subscription?.businessId) === accountId) delete db.pushSubscriptions[key];
+        }
+        for (const [key, receipt] of Object.entries(db.notificationReads || {})) {
+          if (String(receipt?.businessId) === accountId || removedUserIds.has(String(receipt?.userId || ""))) delete db.notificationReads[key];
+        }
+        for (const [key, reset] of Object.entries(db.passwordResetTokens || {})) {
+          if (String(reset?.businessId) === accountId) delete db.passwordResetTokens[key];
+        }
+        for (const [key, issue] of Object.entries(db.reportedIssues || {})) {
+          if (String(issue?.businessId || issue?.negocioId) === accountId) delete db.reportedIssues[key];
+        }
+        delete db.tenants?.[accountId];
+        const now = new Date().toISOString();
+        db.system.accountTombstones ||= {};
+        db.system.accountTombstones[accountId] = {
+          deletedAt: now,
+          deletedByUserId: session.userId || null,
+        };
+        ensureReferralMetadata(db);
+        db.cursor += 1;
+        db.changes.push({
+          id: `account-delete:${accountId}:${crypto.randomUUID()}`,
+          deviceId,
+          tenantId,
+          type: "system_set",
+          key: "cuentas",
+          value: db.system.cuentas,
+          removedAccountIds: [accountId],
+          createdAt: now,
+          cursor: db.cursor,
+          serverAt: now,
+        });
+        db.changes = compactChangeLog(db.changes);
+        await writeDb(db);
+        return send(res, 200, {
+          ok: true,
+          removedAccountId: accountId,
+          accounts: db.system.cuentas.filter((candidate) => candidate && !candidate.superAdmin),
+        });
+      }
+      return send(res, 404, { error: "Ruta administrativa de negocios inexistente" });
     }
 
     if (req.method === "GET" && req.url === "/v1/notifications") {
@@ -1560,6 +1714,13 @@ const handleRequest = async (req, res) => {
         role: session.role,
         deviceId,
         userAgent: cleanCatalogText(req.headers["user-agent"], 240),
+        preferences: {
+          mode: ["all", "important", "none"].includes(payload.preferences?.mode) ? payload.preferences.mode : "all",
+          quietHoursEnabled: payload.preferences?.quietHoursEnabled !== false,
+          quietStart: /^\d{2}:\d{2}$/.test(payload.preferences?.quietStart || "") ? payload.preferences.quietStart : "22:00",
+          quietEnd: /^\d{2}:\d{2}$/.test(payload.preferences?.quietEnd || "") ? payload.preferences.quietEnd : "08:00",
+          categories: Object.fromEntries(Object.entries(payload.preferences?.categories || {}).map(([key, value]) => [cleanCatalogText(key, 40), value !== false])),
+        },
         createdAt: db.pushSubscriptions[id]?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         revokedAt: null,
@@ -1597,6 +1758,7 @@ const handleRequest = async (req, res) => {
           title: payload.title,
           message: payload.message,
           level: payload.level,
+          category: payload.category || "maintenance",
           audience: { type: audienceType, businessIds },
           publishAt: payload.publishAt,
           expiresAt: payload.expiresAt,
@@ -1845,47 +2007,45 @@ const handleRequest = async (req, res) => {
           }
           db.cursor += 1;
           if (operation.key === "cuentas" && Array.isArray(operation.value)) {
-            const operationCreatedAt = Date.parse(operation.createdAt || "") || Date.now();
             const currentById = new Map((db.system.cuentas || []).map((account) => [String(account?.id), account]));
-            const incomingAccounts = operation.value.filter((account) => account && !account.superAdmin).map((account) => {
-              const current = currentById.get(String(account.id));
-              const supplied = (key) => Object.prototype.hasOwnProperty.call(account, key);
-              const next = {
-                ...account,
-                referralCode: current?.referralCode || account.referralCode,
-                referredByAccountId: supplied("referredByAccountId") ? account.referredByAccountId : (current?.referredByAccountId || null),
-                referredByCode: supplied("referredByCode") ? account.referredByCode : (current?.referredByCode || null),
-                referralInvalidatedAt: supplied("referralInvalidatedAt") ? account.referralInvalidatedAt : (current?.referralInvalidatedAt || null),
-                referralInvalidatedReason: supplied("referralInvalidatedReason") ? account.referralInvalidatedReason : (current?.referralInvalidatedReason || null),
-                manualDiscounts: supplied("manualDiscounts") ? account.manualDiscounts : (current?.manualDiscounts || []),
-                termsAcceptedAt: current?.termsAcceptedAt || account.termsAcceptedAt || null,
-                termsVersion: current?.termsVersion || account.termsVersion || null,
-              };
-              if (current && current.estado !== "aprobada" && next.estado === "aprobada" && isValidEmail(next.email)) {
-                accountReadyEmails.push({
-                  to: normalizeEmail(next.email),
-                  name: next.nombre,
-                  businessName: next.nombreNegocio,
-                  accountId: next.id,
-                  eventId: operation.id,
-                });
-              }
-              return next;
-            });
+            const tombstonedIds = new Set(Object.keys(db.system?.accountTombstones || {}));
+            const incomingAccounts = operation.value
+              .filter((account) => account && !account.superAdmin && !tombstonedIds.has(String(account.id)))
+              .map((account) => {
+                const current = currentById.get(String(account.id));
+                const supplied = (key) => Object.prototype.hasOwnProperty.call(account, key);
+                const next = {
+                  ...account,
+                  referralCode: current?.referralCode || account.referralCode,
+                  referredByAccountId: supplied("referredByAccountId") ? account.referredByAccountId : (current?.referredByAccountId || null),
+                  referredByCode: supplied("referredByCode") ? account.referredByCode : (current?.referredByCode || null),
+                  referralInvalidatedAt: supplied("referralInvalidatedAt") ? account.referralInvalidatedAt : (current?.referralInvalidatedAt || null),
+                  referralInvalidatedReason: supplied("referralInvalidatedReason") ? account.referralInvalidatedReason : (current?.referralInvalidatedReason || null),
+                  manualDiscounts: supplied("manualDiscounts") ? account.manualDiscounts : (current?.manualDiscounts || []),
+                  termsAcceptedAt: current?.termsAcceptedAt || account.termsAcceptedAt || null,
+                  termsVersion: current?.termsVersion || account.termsVersion || null,
+                };
+                if (current && current.estado !== "aprobada" && next.estado === "aprobada" && isValidEmail(next.email)) {
+                  accountReadyEmails.push({
+                    to: normalizeEmail(next.email),
+                    name: next.nombre,
+                    businessName: next.nombreNegocio,
+                    accountId: next.id,
+                    eventId: operation.id,
+                  });
+                }
+                return next;
+              });
             const incomingIds = new Set(incomingAccounts.map((account) => String(account.id)));
-            const removedIds = new Set(
-              (Array.isArray(operation.removedAccountIds) ? operation.removedAccountIds : [])
-                .map((id) => String(id)),
-            );
-            // Las versiones viejas publicaban la lista completa y una PC sin
-            // datos podía mandar un arreglo vacío. Sólo se elimina un negocio
-            // cuando la operación nueva declara su id expresamente.
+            // Las listas globales sólo actualizan y agregan. Las bajas pasan
+            // exclusivamente por DELETE /v1/admin/accounts/:id, que también
+            // limpia accesos y deja una marca para impedir resurrecciones.
+            // Esto neutraliza tanto arreglos vacíos como removedAccountIds
+            // atrasados enviados por versiones anteriores de la aplicación.
             const preservedAccounts = (db.system.cuentas || []).filter((account) => {
               const id = String(account?.id);
               if (account?.superAdmin || incomingIds.has(id)) return false;
-              const registeredAfterOperation = account?.registrationDeviceId
-                && Date.parse(account.createdAt || "") > operationCreatedAt;
-              return !removedIds.has(id) || registeredAfterOperation;
+              return true;
             });
             operation = { ...operation, value: [...incomingAccounts, ...preservedAccounts] };
           }

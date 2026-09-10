@@ -77,6 +77,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
   const [activatedDevices, setActivatedDevices] = useState([]);
   const [activationLoading, setActivationLoading] = useState(true);
   const [activationError, setActivationError] = useState("");
+  const [accountActionError, setAccountActionError] = useState("");
   const [generatedCode, setGeneratedCode] = useState(null);
   const [activationForm, setActivationForm] = useState({ label: "", expiresInDays: 7, maxUses: 1 });
   const negocios = useMemo(() => cuentas.filter((cuenta) => !cuenta.superAdmin), [cuentas]);
@@ -280,11 +281,21 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
     setTextoNota("");
   };
 
-  const confirmarBorrado = () => {
+  const confirmarBorrado = async () => {
     if (!cuentaABorrarId) return;
-    setCuentas((prev) => prev.filter((item) => item.id !== cuentaABorrarId));
-    setDatos((prev) => { const next = { ...prev }; delete next[cuentaABorrarId]; return next; });
+    const accountId = cuentaABorrarId;
     setCuentaABorrarId(null);
+    setAccountActionError("");
+    try {
+      const detail = await activationRequest(`/v1/admin/accounts/${encodeURIComponent(accountId)}`, { method: "DELETE" });
+      setCuentas((previous) => {
+        const administrators = previous.filter((item) => item.superAdmin);
+        return withReferralStats([...administrators, ...(detail.accounts || [])]);
+      });
+      setDatos((previous) => { const next = { ...previous }; delete next[accountId]; return next; });
+    } catch (error) {
+      setAccountActionError(error?.message || "No se pudo eliminar el negocio del servidor.");
+    }
   };
 
   const totales = {
@@ -382,6 +393,8 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
           </div>
         </section>
 
+        <section className="mb-7 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-950 sm:p-5"><div className="flex items-start gap-3"><Lightbulb size={19} className="mt-0.5 shrink-0"/><div><h2 className="font-bold">Condición comercial de la beta</h2><p className="mt-1 leading-6">Cada alta nueva recibe 30 días sin cargo. Los primeros tres meses pagos se calculan a $30.000; desde el cuarto rige el precio de lista de $50.000. Los referidos se acumulan desde el primer pago válido y empiezan a descontar desde el cuarto mes del negocio que refiere. Mercado Pago sigue deshabilitado hasta conectar el enlace definitivo.</p></div></div></section>
+
         <AdminNotificationCenter accounts={negocios}/>
 
         <section className="mb-7 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
@@ -393,6 +406,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
               {busquedaNegocios && <button type="button" onClick={() => setBusquedaNegocios("")} className="rounded p-0.5 text-gray-400 hover:text-gray-700" aria-label="Limpiar búsqueda"><X size={15}/></button>}
             </label>
           </div>
+          {accountActionError && <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{accountActionError}</p>}
           {credencialTemporal && <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-900">
             <p className="font-semibold">Contraseña temporal actualizada para {credencialTemporal.nombre}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2"><code className="rounded-lg bg-white px-3 py-2">@{credencialTemporal.usuario} · {credencialTemporal.password}</code><button type="button" onClick={() => navigator.clipboard?.writeText(`${credencialTemporal.usuario}\n${credencialTemporal.password}`)} className="rounded-lg border border-green-300 bg-white px-3 py-2 text-xs font-semibold">Copiar acceso</button><button type="button" onClick={() => setCredencialTemporal(null)} className="rounded-lg px-2 py-2 text-xs">Ocultar</button></div>
@@ -404,7 +418,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
                 {editandoId === cuenta.id ? (
                   <div className="space-y-4 rounded-xl bg-gray-50 p-3">
                     <div><h3 className="text-xs font-bold uppercase tracking-wide text-gray-500">Identidad del negocio</h3><div className="mt-2 grid gap-2 md:grid-cols-2"><label className="text-xs text-gray-600">Responsable<input value={form.nombre || ""} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label><label className="text-xs text-gray-600">Nombre del negocio<input value={form.nombreNegocio || ""} onChange={(e) => setForm({ ...form, nombreNegocio: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label><label className="text-xs text-gray-600">Usuario del dueño<input value={form.usuario || ""} onChange={(e) => setForm({ ...form, usuario: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label><label className="text-xs text-gray-600">Correo electrónico<input type="email" value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label></div></div>
-                    <div><h3 className="text-xs font-bold uppercase tracking-wide text-gray-500">Plan y precio</h3><div className="mt-2 grid gap-2 md:grid-cols-3"><label className="text-xs text-gray-600">Nombre del plan<input value={form.planNombre || ""} onChange={(e) => setForm({ ...form, planNombre: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label><div className="text-xs text-gray-600">Forma de cobro<div className="mt-1"><AppSelect value={form.priceMode || "general"} onChange={(priceMode) => setForm({ ...form, priceMode })} options={[{ value: "general", label: "Precio general ($30.000)" }, { value: "custom", label: "Precio especial" }, { value: "free", label: "Cuenta gratuita" }]}/></div></div>{form.priceMode === "custom" ? <label className="text-xs text-gray-600">Precio especial por mes<input type="number" min="1" value={form.planPrecio || ""} onChange={(e) => setForm({ ...form, planPrecio: e.target.value })} placeholder="Ej.: 25000" className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label> : <div className="rounded-lg border border-dashed bg-white px-3 py-2 text-xs text-gray-500">{form.priceMode === "free" ? "Esta cuenta quedará explícitamente sin cargo." : "Usa el precio general; cambiarlo en el sistema actualizará esta cuenta."}</div>}</div><p className="mt-2 text-[11px] text-gray-500">La contraseña se cambia de forma segura desde el botón “Cuentas”, separado de estos datos.</p></div>
+                    <div><h3 className="text-xs font-bold uppercase tracking-wide text-gray-500">Plan y precio</h3><div className="mt-2 grid gap-2 md:grid-cols-3"><label className="text-xs text-gray-600">Nombre del plan<input value={form.planNombre || ""} onChange={(e) => setForm({ ...form, planNombre: e.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label><div className="text-xs text-gray-600">Forma de cobro<div className="mt-1"><AppSelect value={form.priceMode || "general"} onChange={(priceMode) => setForm({ ...form, priceMode })} options={[{ value: "general", label: "Precio según etapa ($30.000 / $50.000)" }, { value: "custom", label: "Precio especial" }, { value: "free", label: "Cuenta gratuita" }]}/></div></div>{form.priceMode === "custom" ? <label className="text-xs text-gray-600">Precio especial por mes<input type="number" min="1" value={form.planPrecio || ""} onChange={(e) => setForm({ ...form, planPrecio: e.target.value })} placeholder="Ej.: 25000" className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-gray-900" /></label> : <div className="rounded-lg border border-dashed bg-white px-3 py-2 text-xs text-gray-500">{form.priceMode === "free" ? "Esta cuenta quedará explícitamente sin cargo." : "Usa el precio de la etapa vigente: beta, lanzamiento o lista."}</div>}</div><p className="mt-2 text-[11px] text-gray-500">La contraseña se cambia de forma segura desde el botón “Cuentas”, separado de estos datos.</p></div>
                     <div className="grid grid-cols-2 gap-2 md:flex"><button onClick={() => guardarCuenta(cuenta)} className="rounded-lg bg-gray-900 px-3 py-2 text-sm text-white">Guardar cambios</button><button onClick={() => setEditandoId(null)} className="rounded-lg border bg-white px-3 py-2 text-sm">Cancelar</button></div>
                   </div>
                 ) : (

@@ -23,6 +23,19 @@ export function buildNotifications(data) {
   if (unusual.length) notifications.push({ id: "caja", type: "caja", level: "critica", title: "Diferencias de caja", detail: `${unusual.length} cierre(s) inusual(es)`, view: "administracion" });
   const overdueExpenses = (data.gastos || []).filter((item) => isExpenseOverdue(item));
   if (overdueExpenses.length) notifications.push({ id: "gastos-vencidos", type: "gastos", level: "critica", title: "Gastos vencidos", detail: `${overdueExpenses.length} pago(s) pendiente(s)`, view: "gastos" });
+  (data.pedidos || []).filter((item) => item && !["recibido", "cancelado"].includes(item.estado) && item.fechaEntregaEsperada).forEach((order) => {
+    const days = daysUntil(order.fechaEntregaEsperada);
+    if (days == null || days > 1) return;
+    const provider = order.proveedorNombre || "Proveedor sin nombre";
+    notifications.push({
+      id: `pedido-entrega-${order.id}-${order.fechaEntregaEsperada}`,
+      type: "pedidos",
+      level: days < 0 ? "alta" : "media",
+      title: days < 0 ? "Entrega demorada" : days === 0 ? "Entrega prevista para hoy" : "Entrega prevista para mañana",
+      detail: `${provider}${order.horaEntregaEsperada ? ` · ${order.horaEntregaEsperada} h` : ""}`,
+      view: "compras",
+    });
+  });
   const rank = { critica: 0, alta: 1, media: 2, baja: 3 };
   return notifications.sort((a, b) => rank[a.level] - rank[b.level]);
 }

@@ -1,10 +1,10 @@
-import { argentinaDateKey } from "../billing/referrals";
+import { argentinaDateKey, BETA_TRIAL_DAYS } from "../billing/referrals";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const allowedTrialDays = (days) => (Number(days) === 7 ? 7 : 1);
+const allowedTrialDays = (days) => ([1, 7, BETA_TRIAL_DAYS].includes(Number(days)) ? Number(days) : BETA_TRIAL_DAYS);
 
-export function grantTrialAccess(account, days = 1, now = Date.now()) {
+export function grantTrialAccess(account, days = BETA_TRIAL_DAYS, now = Date.now()) {
   const durationDays = allowedTrialDays(days);
   return {
     ...account,

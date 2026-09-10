@@ -7,6 +7,7 @@ const login = fs.readFileSync("src/features/autenticacion/LoginView.jsx", "utf8"
 const app = fs.readFileSync("src/app/KioscoApp.jsx", "utf8");
 const serviceWorker = fs.readFileSync("public/sw.js", "utf8");
 const terms = fs.readFileSync("src/terminos.jsx", "utf8");
+const privacy = fs.readFileSync("src/privacidad.jsx", "utf8");
 const notificationService = fs.readFileSync("src/features/notificaciones/notificationService.js", "utf8");
 const settings = fs.readFileSync("src/shared/SettingsModal.jsx", "utf8");
 const styles = fs.readFileSync("src/styles.css", "utf8");
@@ -25,12 +26,13 @@ const checks = [
   [serviceWorker.includes("pwa-icon-maskable-512.png"), "Los íconos deben estar disponibles sin conexión."],
   [app.includes("Modo sin conexión: podés seguir trabajando") && app.includes('window.addEventListener("offline"'), "La app debe avisar claramente que puede seguir trabajando sin conexión."],
   [fs.existsSync("terminos.html") && terms.includes("BOTÓN DE BAJA DE SERVICIO") && terms.includes("BOTÓN DE ARREPENTIMIENTO"), "El sitio debe publicar los términos y los accesos de baja y arrepentimiento."],
+  [fs.existsSync("privacidad.html") && privacy.includes("Política de Privacidad") && serviceWorker.includes('"./privacidad.html"'), "La política de privacidad debe publicarse y quedar disponible sin conexión."],
   [login.includes("termsAccepted") && login.includes("Términos y Condiciones"), "El registro debe pedir aceptación expresa de los términos."],
   [serviceWorker.includes('addEventListener("push"') && serviceWorker.includes("showNotification"), "El service worker debe mostrar avisos push."],
   [serviceWorker.includes('addEventListener("notificationclick"') && serviceWorker.includes("openWindow"), "Los avisos deben abrir Kiosco+ al tocarlos."],
   [notificationService.includes("Notification.requestPermission") && notificationService.includes("pushManager.subscribe"), "La app debe pedir permiso antes de registrar el dispositivo para avisos."],
   [settings.includes("VITE_APP_VERSION") && settings.includes("Versión actual:") && settings.includes("Aplicación web instalada"), "Configuración debe mostrar claramente la versión y el tipo de aplicación."],
-  [settings.includes("settings-mobile-safe-header") && styles.includes("(display-mode: standalone)") && styles.includes("env(safe-area-inset-top) + 4rem"), "Las pestañas de Configuración deben quedar debajo del velo superior de iPhone en modo instalado."],
+  [settings.includes("settings-mobile-safe-header") && styles.includes("(display-mode: standalone)") && styles.includes("env(safe-area-inset-top) + .75rem") && styles.includes("backdrop-filter: none"), "Las pestañas de Configuración deben quedar debajo del área segura de iPhone sin arrastrar el degradado."],
 ];
 
 for (const [condition, message] of checks) {

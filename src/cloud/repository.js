@@ -186,16 +186,16 @@ export const repository = {
         // PC limpia. No es una modificación del padrón y no debe subir sola.
         if (!businesses.length && !previousBusinesses.length) return;
         if (JSON.stringify(previousBusinesses) === JSON.stringify(businesses)) return;
-        const nextIds = new Set(businesses.map((account) => String(account.id)));
-        const removedAccountIds = previousBusinesses
-          .filter((account) => !nextIds.has(String(account.id)))
-          .map((account) => String(account.id));
+        // Una diferencia entre dos fotos locales nunca se interpreta como una
+        // baja. Eliminar un negocio es una operación explícita del panel y va
+        // por su endpoint dedicado; así un render atrasado no puede borrar un
+        // alta que acaba de llegar desde la nube.
         await syncEngine.enqueue({
           type: "system_set",
           key: "cuentas",
           tenantId: String(context.tenantId),
           value: businesses,
-          removedAccountIds,
+          removedAccountIds: [],
         });
         scheduleSync();
       } else if (context.tenantId && SYNCABLE_KEYS.has(key)) {

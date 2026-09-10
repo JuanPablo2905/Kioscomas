@@ -9,6 +9,7 @@ import {
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
 import { AppSelect } from "../../shared/controls";
+import { KioscoDatePicker, datePickerHelpers } from "../../shared/KioscoDatePicker";
 import { buildAutomaticLowStockItems, buildReplenishmentSuggestions } from "./replenishmentRules";
 import { copyText, openEmailDraft, openWhatsApp, purchaseMessage } from "../../shared/share";
 
@@ -44,6 +45,9 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
   const [buscarProducto, setBuscarProducto] = useState("");
   const [pedidoParaCompartir, setPedidoParaCompartir] = useState(null);
   const [nuevoProductoOpen, setNuevoProductoOpen] = useState(false);
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const [fechaEntregaEsperada, setFechaEntregaEsperada] = useState(datePickerHelpers.dateValue(tomorrow));
+  const [horaEntregaEsperada, setHoraEntregaEsperada] = useState("09:00");
   const tieneCompraActiva = (productId, items = comprasItems) =>
     items.some((item) => item.productId === productId && item.estado !== "recibido");
   const nuevoItemId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -57,7 +61,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
     if (!items.length || !setPedidos) return;
     const proveedor = proveedorDeItem(items[0]);
     const pedidoId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setPedidos((prev) => [{ id: pedidoId, proveedorId: proveedor?.id || null, proveedorNombre: proveedor?.nombre || "Sin proveedor", estado: "pedido", fecha: new Date().toISOString(), items: items.map((item) => ({ itemId: item.id, productId: item.productId, nombre: item.nombre, cantidad: Math.max(1, Number(item.cantidad) || 1), cantidadRecibida: 0, cantidadPendiente: Math.max(1, Number(item.cantidad) || 1) })) }, ...prev]);
+    setPedidos((prev) => [{ id: pedidoId, proveedorId: proveedor?.id || null, proveedorNombre: proveedor?.nombre || "Sin proveedor", estado: "pedido", fecha: new Date().toISOString(), fechaEntregaEsperada, horaEntregaEsperada, items: items.map((item) => ({ itemId: item.id, productId: item.productId, nombre: item.nombre, cantidad: Math.max(1, Number(item.cantidad) || 1), cantidadRecibida: 0, cantidadPendiente: Math.max(1, Number(item.cantidad) || 1) })) }, ...prev]);
     const ids = new Set(items.map((item) => item.id));
     setComprasItems((prev) => prev.map((item) => ids.has(item.id) ? {
       ...item,
@@ -342,6 +346,12 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
         }
       />
 
+      {activos.some((item) => item.estado === "pendiente") && <div className="mb-6 grid gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3 sm:grid-cols-[minmax(0,1fr)_180px_130px] sm:items-end">
+        <div><p className="text-sm font-semibold text-gray-900">Entrega esperada del próximo pedido</p><p className="mt-1 text-xs text-gray-500">Se guarda en cada pedido y Kiosco+ te avisa el día anterior, el mismo día y si queda demorado.</p></div>
+        <label className="text-xs font-medium text-gray-600">Fecha<KioscoDatePicker value={fechaEntregaEsperada} min={datePickerHelpers.dateValue(new Date())} onChange={setFechaEntregaEsperada} allowClear={false}/></label>
+        <label className="text-xs font-medium text-gray-600">Hora<input type="time" value={horaEntregaEsperada} onChange={(event) => setHoraEntregaEsperada(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border bg-white px-3 text-sm"/></label>
+      </div>}
+
       <div className="relative mb-6">
         <label className="text-sm font-semibold text-gray-900 block mb-2">
           Buscar en tu Stock para agregar a la lista
@@ -567,7 +577,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
       {pedidos.length > 0 && (
         <div className="mt-8 border-t pt-6">
           <h2 className="mb-3 text-sm font-semibold">Historial de pedidos</h2>
-          <div className="space-y-2">{pedidos.slice(0, 20).map((pedido) => <div key={pedido.id} className="flex flex-col items-start gap-2 rounded-lg border px-3 py-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words text-sm font-medium">{pedido.proveedorNombre}</p><p className="text-xs text-gray-400">{new Date(pedido.fecha).toLocaleString("es-AR")} · {pedido.items.length} producto(s)</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${pedido.estado === "recibido" ? "bg-green-100 text-green-700" : pedido.estado === "parcial" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>{pedido.estado === "recibido" ? "Recibido" : pedido.estado === "parcial" ? "Recepción parcial" : "Pedido realizado"}</span></div>)}</div>
+          <div className="space-y-2">{pedidos.slice(0, 20).map((pedido) => <div key={pedido.id} className="rounded-lg border px-3 py-3"><div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="break-words text-sm font-medium">{pedido.proveedorNombre}</p><p className="text-xs text-gray-400">Pedido {new Date(pedido.fecha).toLocaleString("es-AR")} · {(pedido.items || []).length} producto(s)</p>{pedido.fechaEntregaEsperada && <p className="mt-1 text-xs font-medium text-blue-700">Entrega prevista: {new Date(`${pedido.fechaEntregaEsperada}T12:00:00`).toLocaleDateString("es-AR")}{pedido.horaEntregaEsperada ? ` · ${pedido.horaEntregaEsperada} h` : ""}</p>}</div><span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${pedido.estado === "recibido" ? "bg-green-100 text-green-700" : pedido.estado === "parcial" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>{pedido.estado === "recibido" ? "Recibido" : pedido.estado === "parcial" ? "Recepción parcial" : "Pedido realizado"}</span></div>{pedido.estado !== "recibido" && <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-[180px_130px_auto]"><KioscoDatePicker value={pedido.fechaEntregaEsperada || ""} min={datePickerHelpers.dateValue(new Date())} onChange={(fechaEntregaEsperada) => setPedidos((previous) => previous.map((item) => item.id === pedido.id ? { ...item, fechaEntregaEsperada } : item))}/><input type="time" value={pedido.horaEntregaEsperada || ""} onChange={(event) => setPedidos((previous) => previous.map((item) => item.id === pedido.id ? { ...item, horaEntregaEsperada: event.target.value } : item))} className="min-h-10 rounded-lg border px-3 text-sm"/><span className="self-center text-xs text-gray-500">Podés corregir la entrega mientras siga pendiente.</span></div>}</div>)}</div>
         </div>
       )}
 

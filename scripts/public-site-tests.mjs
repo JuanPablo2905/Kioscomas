@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 
 const read = (file) => fs.readFile(file, "utf8");
-const [landing, prices, responsive, navigation, adminPanel, cloudApp, cloudServer, publicEnv, cloudEnv] = await Promise.all([
+const [landing, prices, privacy, responsive, navigation, adminPanel, cloudApp, cloudServer, publicEnv, cloudEnv] = await Promise.all([
   read("src/landing.jsx"),
   read("src/precios.jsx"),
+  read("src/privacidad.jsx"),
   read("src/landing-responsive.css"),
   read("src/shared/PublicSiteNav.jsx"),
   read("src/features/administracion/AdminAppPanel.jsx"),
@@ -22,6 +23,9 @@ const test = (name, condition) => {
 
 test("la landing diferencia la demo de la aplicación real", landing.includes("demoUrl") && landing.includes("cloudAppUrl"));
 test("la página de precios enlaza la aplicación real", prices.includes("cloudAppUrl") && prices.includes("Ingresar a Kiosco+"));
+test("la beta publica precio, duración y ausencia de tarjeta", prices.includes("betaTrialDays") && prices.includes("launchPaidMonths") && prices.includes("sin tarjeta"));
+test("el sitio publica una política de privacidad completa", privacy.includes("Datos que pueden tratarse") && privacy.includes("Proveedores tecnológicos") && privacy.includes("Derechos del titular"));
+test("landing y precios enlazan la política de privacidad", landing.includes("./privacidad.html") && prices.includes("./privacidad.html"));
 test("el menú móvil incluye precios, demo e ingreso", navigation.includes('label: "Precios"') && navigation.includes("Probar demo") && navigation.includes("Ingresar a mi cuenta"));
 test("el menú móvil es accesible", navigation.includes("aria-expanded") && navigation.includes("aria-controls") && navigation.includes("closeOnEscape"));
 test("la demostración no puede superar el ancho disponible", responsive.includes(".demo-window") && responsive.includes("max-width: 100%"));

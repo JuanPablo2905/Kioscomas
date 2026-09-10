@@ -146,7 +146,7 @@ try {
     body: JSON.stringify({ deviceId: "activation-pc", name: "Cliente Nuevo", email: "new-owner@example.com", businessName: "Kiosco Nuevo", businessMode: "solo", username: "new-owner", password: "new-secret", ...acceptedTerms }),
   });
   const registeredAccount = registration.value.account;
-  test("una PC activada envía el alta como pendiente", registration.response.status === 201 && registeredAccount?.estado === "pendiente" && !registeredAccount?.trialExpiresAt);
+  test("una PC activada inicia una beta de 30 días sin pago", registration.response.status === 201 && registeredAccount?.estado === "pendiente" && registeredAccount?.trialDays === 30 && Date.parse(registeredAccount?.trialExpiresAt) > Date.now() + 29 * 86400000);
   test("la nube conserva la aceptación contractual", registeredAccount?.termsVersion === TERMS_VERSION && Boolean(registeredAccount?.termsAcceptedAt));
   test("la nube asigna un código de referido único al negocio", /^KIOS-[A-Z0-9]{6}$/.test(registeredAccount?.referralCode || ""));
   const invalidReferralRegistration = await request("/v1/auth/register", {
@@ -181,13 +181,65 @@ try {
     authorization: `Bearer ${pendingLogin.value.accessToken}`,
   };
   const pendingWrite = await request("/v1/sync/push", { method: "POST", headers: pendingHeaders, body: JSON.stringify({ operations: [] }) });
-  test("una cuenta pendiente no puede escribir datos antes del pago", pendingWrite.response.status === 403);
+  test("una cuenta en beta puede trabajar sin registrar un pago", pendingWrite.response.ok);
+  const deliveryDate = new Date().toISOString().slice(0, 10);
+  const betaOrder = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{
+      id: "beta-order-delivery",
+      deviceId: "activation-pc",
+      tenantId: registeredAccount.id,
+      type: "entity_upsert",
+      entity: "pedidos",
+      entityId: "order-beta",
+      value: { id: "order-beta", proveedorNombre: "Distribuidora Beta", estado: "pedido", fechaEntregaEsperada: deliveryDate, horaEntregaEsperada: "09:00", items: [] },
+    }] }),
+  });
+  const betaOrderNotifications = await request("/v1/notifications", { headers: pendingHeaders });
+  test("un pedido con entrega prevista genera un aviso persistente para el negocio", betaOrder.response.ok && betaOrderNotifications.value.notifications?.some((item) => item.sourceKey === `order-delivery:${registeredAccount.id}:order-beta:${deliveryDate}:hoy` && item.category === "orders"));
   const adminNotificationDirectory = await request("/v1/admin/notifications", { headers: centralHeaders });
   test("la solicitud nueva genera un aviso persistente para el administrador", adminNotificationDirectory.value.notifications?.some((item) => item.sourceKey === `registration:${registeredAccount.id}`));
   const authoritativeAccountDirectory = await request("/v1/admin/accounts", { headers: centralHeaders });
   test("el administrador puede reconstruir el padrón completo desde la nube", authoritativeAccountDirectory.response.ok && authoritativeAccountDirectory.value.accounts?.some((item) => item.id === registeredAccount.id));
+  const centralRegistrationPull = await request("/v1/sync/pull?since=0", { headers: centralHeaders });
+  test("el administrador recibe la nueva solicitud en su padrón", centralRegistrationPull.value.operations?.some((item) => item.type === "system_set" && item.value?.some((account) => account.id === registeredAccount.id)));
   const forbiddenAccountDirectory = await request("/v1/admin/accounts", { headers: pendingHeaders });
   test("un negocio no puede consultar el padrón general", forbiddenAccountDirectory.response.status === 403);
+  const disposableRegistration = await request("/v1/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Cuenta descartable", email: "disposable@example.com", businessName: "Negocio descartable", username: "disposable-owner", password: "new-secret", ...acceptedTerms }),
+  });
+  const disposableId = disposableRegistration.value.account?.id;
+  const deletedAccount = await request(`/v1/admin/accounts/${disposableId}`, { method: "DELETE", headers: centralHeaders });
+  const directoryAfterDelete = await request("/v1/admin/accounts", { headers: centralHeaders });
+  const deletedAccountLogin = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "disposable-owner", password: "new-secret", deviceId: "activation-pc" }),
+  });
+  test("el botón Eliminar borra el negocio y desvincula sus accesos", disposableRegistration.response.status === 201 && deletedAccount.response.ok && !directoryAfterDelete.value.accounts?.some((item) => item.id === disposableId) && deletedAccountLogin.response.status === 401);
+  const staleDeletedAccountPush = await request("/v1/sync/push", {
+    method: "POST",
+    headers: centralHeaders,
+    body: JSON.stringify({ operations: [{
+      id: "stale-deleted-account-copy",
+      deviceId: "old-admin-pc",
+      tenantId: "system-admin",
+      type: "system_set",
+      key: "cuentas",
+      value: [disposableRegistration.value.account],
+    }] }),
+  });
+  const directoryAfterResurrectionAttempt = await request("/v1/admin/accounts", { headers: centralHeaders });
+  test("una copia atrasada no puede revivir un negocio eliminado", staleDeletedAccountPush.response.ok && !directoryAfterResurrectionAttempt.value.accounts?.some((item) => item.id === disposableId));
+  const reusedDeletedIdentity = await request("/v1/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceId: "activation-pc", name: "Cuenta reutilizada", email: "disposable@example.com", businessName: "Negocio reutilizado", username: "disposable-owner", password: "new-secret", ...acceptedTerms }),
+  });
+  test("el correo y el usuario de un negocio eliminado se pueden volver a usar", reusedDeletedIdentity.response.status === 201);
   const publishedNotice = await request("/v1/admin/notifications", {
     method: "POST",
     headers: centralHeaders,
@@ -215,8 +267,6 @@ try {
   test("un problema reportado genera un aviso para el administrador", issueNoticeDirectory.value.notifications?.some((item) => item.sourceKey === `issue:${savedIssue.id}`));
   const resolvedIssue = await request(`/v1/admin/issues/${savedIssue.id}/status`, { method: "POST", headers: centralHeaders, body: JSON.stringify({ status: "resuelto" }) });
   test("el administrador puede resolver un reporte", resolvedIssue.value.issue?.estado === "resuelto");
-  const centralRegistrationPull = await request("/v1/sync/pull?since=0", { headers: centralHeaders });
-  test("el administrador recibe la nueva solicitud en su padrón", centralRegistrationPull.value.operations?.some((item) => item.type === "system_set" && item.value?.some((account) => account.id === registeredAccount.id)));
   const activationDirectory = await request("/v1/admin/activation-codes", { headers: centralHeaders });
   const savedActivationCode = activationDirectory.value.codes?.find((item) => item.id === createdActivationCode.value.item?.id);
   test("el panel muestra usos y equipos sin exponer la clave completa", savedActivationCode?.uses === 1 && !JSON.stringify(savedActivationCode).includes(createdActivationCode.value.code) && activationDirectory.value.activations?.some((item) => item.deviceId === "activation-pc"));
@@ -279,11 +329,12 @@ try {
       type: "system_set",
       key: "cuentas",
       value: [],
+      removedAccountIds: [registeredAccount.id, "business-lazy"],
     }] }),
   });
   const directoryAfterStalePush = await request("/v1/sync/bootstrap", { headers: centralHeaders });
   test(
-    "una lista vacía de una versión anterior no borra los negocios",
+    "una lista atrasada de una versión anterior no puede borrar negocios",
     staleEmptyDirectory.value.acceptedIds?.includes("stale-empty-account-directory")
       && directoryAfterStalePush.value.accounts?.some((account) => account.id === registeredAccount.id)
       && directoryAfterStalePush.value.accounts?.some((account) => account.id === "business-lazy"),

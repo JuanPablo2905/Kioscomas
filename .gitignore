@@ -9,6 +9,7 @@ dist/
 dist-public/
 dist-cloud-app/
 release/
+release-store/
 release-v*/
 release-installer-*/
 release-staging-v*/

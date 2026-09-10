@@ -1,10 +1,11 @@
-const CACHE_NAME = "kioscoplus-shell-v6";
+const CACHE_NAME = "kioscoplus-shell-v7";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll([
     "./",
     "./manifest.webmanifest",
     "./terminos.html",
+    "./privacidad.html",
     "./pwa-icon.svg",
     "./pwa-icon-192.png",
     "./pwa-icon-512.png",

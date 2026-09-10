@@ -1032,7 +1032,7 @@ body[data-tutorial-active="true"] .app-date-menu {
     border-right: 0 !important;
     border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
   }
-  .settings-mobile-safe-header { height: max(.45rem, env(safe-area-inset-top)); flex: 0 0 auto; }
+  .settings-mobile-safe-header { height: max(.45rem, env(safe-area-inset-top)); flex: 0 0 auto; background: var(--app-menu, #fff); }
   .settings-desktop-heading { display: none !important; }
   .settings-section-tabs {
     display: flex;
@@ -1083,7 +1083,15 @@ body[data-tutorial-active="true"] .app-date-menu {
 /* En iPhone, una PWA con barra de estado translúcida recibe un velo del sistema.
    Esta franja lo mantiene por encima de las pestañas de Configuración. */
 @media (max-width: 639px) and (display-mode: standalone) {
-  .settings-mobile-safe-header {
-    height: calc(env(safe-area-inset-top) + 4rem);
+  .settings-panel > aside {
+    background: var(--app-menu, #fff) !important;
+    backdrop-filter: none !important;
   }
+  .settings-mobile-safe-header {
+    height: calc(env(safe-area-inset-top) + .75rem);
+    background:
+      linear-gradient(to bottom, color-mix(in srgb, var(--app-accent) 8%, var(--app-menu, #fff)), var(--app-menu, #fff) 78%);
+  }
+  .settings-section-tabs { position: relative; z-index: 2; background: var(--app-menu, #fff); }
+  .settings-section-tabs > button { box-shadow: none !important; filter: none !important; }
 }

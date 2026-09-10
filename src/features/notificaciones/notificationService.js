@@ -34,6 +34,32 @@ export const loadAdminIssues = () => request("/v1/admin/issues");
 export const updateAdminIssueStatus = (id, status) => request(`/v1/admin/issues/${encodeURIComponent(id)}/status`, { method: "POST", body: JSON.stringify({ status }) });
 export const archiveAdminIssue = (id) => request(`/v1/admin/issues/${encodeURIComponent(id)}/archive`, { method: "POST", body: "{}" });
 
+export const NOTIFICATION_CATEGORY_OPTIONS = [
+  ["subscription", "Suscripción y acceso"],
+  ["orders", "Pedidos y entregas"],
+  ["stock", "Stock y reposición"],
+  ["expirations", "Vencimientos de productos"],
+  ["cash", "Caja y diferencias"],
+  ["expenses", "Gastos y pagos"],
+  ["accounts", "Clientes y cuentas corrientes"],
+  ["sync", "Nube y sincronización"],
+  ["maintenance", "Mantenimiento y novedades"],
+];
+export const DEFAULT_PUSH_PREFERENCES = {
+  mode: "all",
+  quietHoursEnabled: true,
+  quietStart: "22:00",
+  quietEnd: "08:00",
+  categories: Object.fromEntries(NOTIFICATION_CATEGORY_OPTIONS.map(([id]) => [id, true])),
+};
+
+export const normalizePushPreferences = (value = {}) => ({
+  ...DEFAULT_PUSH_PREFERENCES,
+  ...value,
+  mode: ["all", "important", "none"].includes(value.mode) ? value.mode : DEFAULT_PUSH_PREFERENCES.mode,
+  categories: { ...DEFAULT_PUSH_PREFERENCES.categories, ...(value.categories || {}) },
+});
+
 export const pushCapability = () => {
   if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "unsupported";
   if (Notification.permission === "denied") return "denied";
@@ -47,7 +73,7 @@ const urlBase64ToBytes = (value) => {
 };
 const sameBytes = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
 
-export async function enablePushNotifications() {
+export async function enablePushNotifications(preferences = DEFAULT_PUSH_PREFERENCES) {
   if (pushCapability() === "unsupported") throw new Error("Este navegador no admite avisos al celular.");
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("El permiso de notificaciones no fue autorizado.");
@@ -69,9 +95,20 @@ export async function enablePushNotifications() {
   });
   await request("/v1/notifications/push-subscriptions", {
     method: "POST",
-    body: JSON.stringify({ subscription: subscription.toJSON() }),
+    body: JSON.stringify({ subscription: subscription.toJSON(), preferences: normalizePushPreferences(preferences) }),
   });
   return subscription;
+}
+
+export async function updatePushNotificationPreferences(preferences) {
+  if (!("serviceWorker" in navigator)) return { savedLocally: true };
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  if (!subscription) return { savedLocally: true };
+  return request("/v1/notifications/push-subscriptions", {
+    method: "POST",
+    body: JSON.stringify({ subscription: subscription.toJSON(), preferences: normalizePushPreferences(preferences) }),
+  });
 }
 
 export async function disablePushNotifications() {

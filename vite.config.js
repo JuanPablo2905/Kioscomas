@@ -42,6 +42,7 @@ export default defineConfig({
         landing: resolve(import.meta.dirname, "landing.html"),
         precios: resolve(import.meta.dirname, "precios.html"),
         terminos: resolve(import.meta.dirname, "terminos.html"),
+        privacidad: resolve(import.meta.dirname, "privacidad.html"),
       },
     },
   },

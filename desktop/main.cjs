@@ -62,6 +62,14 @@ function configureDesktopUpdater() {
     publishUpdateState({ supported: false, status: "development" });
     return;
   }
+  // Las instalaciones MSIX/AppX publicadas en Microsoft Store reciben sus
+  // actualizaciones desde la propia Store. No hay que mezclar ese mecanismo
+  // con electron-updater, que queda reservado para el instalador NSIS de
+  // GitHub Releases.
+  if (process.windowsStore) {
+    publishUpdateState({ supported: false, status: "store", error: null });
+    return;
+  }
   // macOS exige que la aplicación esté firmada para aplicar actualizaciones
   // automáticas. Hasta incorporar la firma de Apple, las versiones para Mac
   // se actualizan descargando el DMG nuevo para evitar errores o bucles.

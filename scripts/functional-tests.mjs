@@ -107,6 +107,11 @@ try {
   test("cinco referidos activos dejan el abono en cero", referralBenefit.monthlyPrice === 0 && referralBenefit.totalPrice === 0);
   test("el precio mensual usa 30.000 como valor central predeterminado", referrals.monthlyPriceFor({ id: "new" }, []).monthlyPrice === 30000);
   test("un cero heredado no vuelve gratis una cuenta por accidente", referrals.monthlyPriceFor({ id: "legacy", planPrecio: 0 }, []).monthlyPrice === 30000);
+  const standardPriceAccount = { id: "standard", pagos: [{ id: "p1", meses: 1 }, { id: "p2", meses: 1 }, { id: "p3", meses: 1 }] };
+  test("después de tres meses pagos rige el precio de lista de 50.000", referrals.monthlyPriceFor(standardPriceAccount, []).monthlyPrice === 50000);
+  test("un pago que cruza el lanzamiento combina un mes a 30.000 y los siguientes a 50.000", referrals.monthlyPriceFor({ id: "transition", pagos: [{ id: "p1", meses: 2 }] }, [], 3).totalPrice === 130000);
+  const launchReferralAccounts = [{ id: "launch", pagos: [] }, { id: "launch-ref", referredByAccountId: "launch", pagos: [{ id: "r1" }], subscriptionExpiresAt: "2099-12-31T23:59:59.000Z" }];
+  test("los referidos se acumulan pero empiezan a descontar desde el cuarto mes pago", referrals.monthlyPriceFor(launchReferralAccounts[0], launchReferralAccounts).automaticDiscountPercent === 20 && referrals.monthlyPriceFor(launchReferralAccounts[0], launchReferralAccounts).appliedReferralDiscountPercent === 0);
   test("una cuenta gratuita debe estar marcada explícitamente", referrals.monthlyPriceFor({ id: "free", planGratis: true }, []).monthlyPrice === 0);
   const pausedReferralAccounts = [{ id: "origin" }, { id: "expired", referredByAccountId: "origin", pagos: [{ id: "past" }], subscriptionExpiresAt: "2020-01-01T12:00:00.000Z" }];
   const pausedReferral = referrals.monthlyPriceFor(pausedReferralAccounts[0], pausedReferralAccounts);

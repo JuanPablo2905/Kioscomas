@@ -228,7 +228,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
         {modo === "registro" && <div className="mb-4">
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs leading-relaxed text-gray-700">
             <input type="checkbox" checked={termsAccepted} onChange={(event) => { setTermsAccepted(event.target.checked); if (event.target.checked) setTermsError(""); }} className="mt-0.5 h-4 w-4 shrink-0 accent-[#1C4A44]"/>
-            <span>Leí y acepto los <a href="./terminos.html" target="_blank" rel="noopener noreferrer" className="font-semibold text-[#1C4A44] underline">Términos y Condiciones de Uso</a> (versión {TERMS_VERSION}).</span>
+            <span>Leí y acepto los <a href="./terminos.html" target="_blank" rel="noopener noreferrer" className="font-semibold text-[#1C4A44] underline">Términos y Condiciones de Uso</a> (versión {TERMS_VERSION}) y conozco la <a href="./privacidad.html" target="_blank" rel="noopener noreferrer" className="font-semibold text-[#1C4A44] underline">Política de Privacidad</a>.</span>
           </label>
           {termsError && <p className="mt-2 text-xs text-red-500">{termsError}</p>}
         </div>}
@@ -265,7 +265,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
         </p>}
 
         <div className="mt-4 pt-4 border-t border-gray-100 text-center">
-          <a href="./terminos.html" target="_blank" rel="noopener noreferrer" className="mb-3 inline-block text-xs font-medium text-gray-500 underline">Términos y Condiciones</a>
+          <div className="mb-3 flex flex-wrap justify-center gap-3 text-xs font-medium text-gray-500"><a href="./terminos.html" target="_blank" rel="noopener noreferrer" className="underline">Términos y Condiciones</a><a href="./privacidad.html" target="_blank" rel="noopener noreferrer" className="underline">Privacidad</a></div>
           {!confirmarReset ? (
             <button
               onClick={() => setConfirmarReset(true)}

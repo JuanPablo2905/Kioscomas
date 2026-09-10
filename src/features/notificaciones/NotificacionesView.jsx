@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bell, BellRing, CheckCircle2, ChevronRight, Cloud, Package, Store } from "lucide-react";
+import { AlertTriangle, Bell, BellOff, BellRing, CheckCircle2, ChevronRight, Cloud, Package, SlidersHorizontal, Store } from "lucide-react";
 import { SectionHeader } from "../../shared/layout";
 import { buildNotifications } from "./notificationRules";
-import { enablePushNotifications, loadPlatformNotifications, markPlatformNotificationRead, pushCapability } from "./notificationService";
+import { DEFAULT_PUSH_PREFERENCES, disablePushNotifications, enablePushNotifications, loadPlatformNotifications, markPlatformNotificationRead, normalizePushPreferences, NOTIFICATION_CATEGORY_OPTIONS, pushCapability, updatePushNotificationPreferences } from "./notificationService";
 
 const LEVELS = ["critica", "alta", "media", "baja"];
 const levelUi = {
@@ -45,13 +45,15 @@ const levelUi = {
 };
 const icons = { stock: Package, vitrina: Store };
 
-export function NotificacionesView({ data, onNavigate }) {
+export function NotificacionesView({ data, onNavigate, preferences = {}, onPreferencesChange }) {
   const [filter, setFilter] = useState("todas");
   const [platform, setPlatform] = useState([]);
   const [platformError, setPlatformError] = useState("");
   const [pushState, setPushState] = useState(() => pushCapability());
   const [pushConfigured, setPushConfigured] = useState(null);
   const [pushBusy, setPushBusy] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const pushPreferences = normalizePushPreferences(preferences.pushNotifications || DEFAULT_PUSH_PREFERENCES);
   const notifications = useMemo(() => buildNotifications(data), [data]);
   const counts = useMemo(() => Object.fromEntries(LEVELS.map((level) => [
     level,
@@ -75,7 +77,7 @@ export function NotificacionesView({ data, onNavigate }) {
 
   useEffect(() => {
     refreshPlatform();
-    if (pushCapability() === "granted") enablePushNotifications().catch(() => {});
+    if (pushCapability() === "granted") enablePushNotifications(pushPreferences).catch(() => {});
     const timer = setInterval(refreshPlatform, 60000);
     const reloadAfterLogin = () => refreshPlatform();
     window.addEventListener("kiosco-cloud-session-changed", reloadAfterLogin);
@@ -99,12 +101,27 @@ export function NotificacionesView({ data, onNavigate }) {
     setPushBusy(true);
     setPlatformError("");
     try {
-      await enablePushNotifications();
+      await enablePushNotifications(pushPreferences);
       setPushState("granted");
     } catch (error) {
       setPushState(pushCapability());
       setPlatformError(error?.message || "No se pudieron activar los avisos.");
     } finally { setPushBusy(false); }
+  };
+
+  const changePushPreferences = (patch) => {
+    const next = normalizePushPreferences({ ...pushPreferences, ...patch });
+    onPreferencesChange?.({ pushNotifications: next });
+    updatePushNotificationPreferences(next).catch((error) => setPlatformError(error?.message || "La preferencia quedó guardada en este dispositivo, pero todavía no pudo enviarse a la nube."));
+  };
+
+  const deactivatePush = async () => {
+    setPushBusy(true);
+    try {
+      await disablePushNotifications();
+      setPushState(pushCapability() === "granted" ? "available" : pushCapability());
+    } catch (error) { setPlatformError(error?.message || "No se pudieron desactivar los avisos."); }
+    finally { setPushBusy(false); }
   };
 
   return (
@@ -115,10 +132,11 @@ export function NotificacionesView({ data, onNavigate }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#1C4A44] text-white"><Cloud size={19}/></span><div><h2 className="font-bold text-[#173F3A]">Novedades de Kiosco+</h2><p className="text-xs leading-5 text-gray-600">Mensajes del administrador, avisos de mantenimiento y novedades importantes.</p></div></div>
           {pushConfigured && pushState === "available" && <button type="button" disabled={pushBusy} onClick={activatePush} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 py-2 text-xs font-bold text-white disabled:opacity-50"><BellRing size={16}/>{pushBusy ? "Activando..." : "Avisarme en este dispositivo"}</button>}
-          {pushConfigured && pushState === "granted" && <span className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-2 text-xs font-bold text-green-800"><CheckCircle2 size={15}/>Avisos al dispositivo activos</span>}
+          <div className="flex flex-wrap items-center gap-2">{pushConfigured && pushState === "granted" && <span className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-2 text-xs font-bold text-green-800"><CheckCircle2 size={15}/>Avisos al dispositivo activos</span>}<button type="button" onClick={() => setPreferencesOpen((value) => !value)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border bg-white px-3 py-2 text-xs font-bold text-[#173F3A]"><SlidersHorizontal size={15}/>Preferencias</button></div>
           {pushConfigured === false && <span className="rounded-xl bg-gray-100 px-3 py-2 text-xs text-gray-600">Los mensajes quedan acá; los avisos fuera de la app todavía no están habilitados.</span>}
           {pushState === "denied" && <span className="rounded-xl bg-amber-100 px-3 py-2 text-xs text-amber-900">Los avisos están bloqueados en el navegador. Podés habilitarlos desde los permisos del sitio.</span>}
         </div>
+        {preferencesOpen && <div className="mt-4 rounded-xl border bg-white p-3 sm:p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="text-sm font-bold">Avisos en este dispositivo</h3><p className="mt-1 text-xs text-gray-500">Estas opciones pertenecen a tu usuario en este dispositivo. Los mensajes críticos igual quedan guardados dentro de Kiosco+.</p></div>{pushState === "granted" && <button type="button" disabled={pushBusy} onClick={deactivatePush} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 px-3 text-xs font-semibold text-red-700"><BellOff size={15}/>Desactivar en este dispositivo</button>}</div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-gray-600">Cuándo avisar<select value={pushPreferences.mode} onChange={(event) => changePushPreferences({ mode: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border bg-white px-3 text-sm font-normal"><option value="all">Todos los avisos elegidos</option><option value="important">Sólo importantes y urgentes</option><option value="none">Ninguno fuera de la app</option></select></label><label className="flex min-h-10 items-center justify-between gap-3 rounded-lg border px-3 text-xs font-semibold text-gray-700">Silenciar por la noche<input type="checkbox" checked={pushPreferences.quietHoursEnabled} onChange={(event) => changePushPreferences({ quietHoursEnabled: event.target.checked })} className="h-4 w-4"/></label>{pushPreferences.quietHoursEnabled && <><label className="text-xs font-semibold text-gray-600">Desde<input type="time" value={pushPreferences.quietStart} onChange={(event) => changePushPreferences({ quietStart: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border px-3 text-sm font-normal"/></label><label className="text-xs font-semibold text-gray-600">Hasta<input type="time" value={pushPreferences.quietEnd} onChange={(event) => changePushPreferences({ quietEnd: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border px-3 text-sm font-normal"/></label></>}</div><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{NOTIFICATION_CATEGORY_OPTIONS.map(([id, label]) => <label key={id} className="flex min-h-10 items-center gap-2 rounded-lg border px-3 text-xs font-medium"><input type="checkbox" checked={pushPreferences.categories[id] !== false} onChange={(event) => changePushPreferences({ categories: { ...pushPreferences.categories, [id]: event.target.checked } })}/><span>{label}</span></label>)}</div></div>}
         {platformError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{platformError}</p>}
         {platform.length > 0 ? <div className="mt-4 space-y-2">{platform.map((item) => {
           const colors = item.level === "urgente" ? "border-red-200 bg-red-50 text-red-900" : item.level === "mantenimiento" ? "border-blue-200 bg-blue-50 text-blue-900" : item.level === "importante" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-100 bg-white text-gray-800";

@@ -1344,7 +1344,7 @@ export default function KioscoApp() {
         syncStatus={syncStatus}
         onSyncNow={() => repository.syncNow()}
       />
-      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} onClose={() => setSettingsOpen(false)}/>}
+      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} syncStatus={syncStatus} onClose={() => setSettingsOpen(false)}/>}
       </>
     );
   }
@@ -1363,7 +1363,7 @@ export default function KioscoApp() {
     }
     switch (view) {
       case "notificaciones":
-        return <NotificacionesView data={data} onNavigate={handleNavigate} />;
+        return <NotificacionesView data={data} onNavigate={handleNavigate} preferences={currentPreferences} onPreferencesChange={(patch) => updateCurrentPreferences({ ...currentPreferences, ...patch })} />;
       case "stock":
         return <StockArea products={data.products} setProducts={setProducts} proveedores={data.proveedores || []} puedeEditarPrecios={puede("editar_precios")} puedeEliminar={puede("eliminar_productos")} puedeCrearDirecto={esDueno} sugerencias={data.sugerencias || []} setSugerencias={setSugerencias} identidad={identidad} perdidas={data.perdidas || []} setPerdidas={setPerdidas} inventarios={data.inventarios || []} setInventarios={setInventarios} preferences={currentPreferences} autoconsumos={data.autoconsumos || []} setAutoconsumos={setAutoconsumos} tutorialMode={stockTutorialActive} initialProduct={pendingStockProduct} onInitialProductHandled={() => setPendingStockProduct(null)} />;
       case "vitrina":
@@ -1523,7 +1523,7 @@ export default function KioscoApp() {
         </ViewErrorBoundary>
       </div>
       {readOnlyNotice && <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/45 p-4" onMouseDown={() => setReadOnlyNotice(false)}><div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><p className="text-xs font-bold uppercase tracking-wide text-amber-700">Modo consulta</p><h2 className="mt-1 text-xl font-bold">El abono está vencido</h2><p className="mt-3 text-sm leading-6 text-gray-600">La información sigue disponible y se puede exportar, pero no se guardarán ventas, cambios de stock ni otras modificaciones hasta registrar un nuevo pago.</p><button onClick={() => setReadOnlyNotice(false)} className="mt-5 w-full rounded-lg bg-[#1C4A44] px-4 py-3 text-sm font-semibold text-white">Entendido</button></div></div>}
-      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness={esDueno} onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} onClose={() => setSettingsOpen(false)}/>} 
+      {settingsOpen && <SettingsModal preferences={currentPreferences} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness={esDueno} onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} syncStatus={syncStatus} onClose={() => setSettingsOpen(false)}/>}
       {PUBLIC_DEMO_MODE && tutorialPrompt && <DemoTutorialPrompt view={tutorialPrompt.view} declined={tutorialPrompt.declined} onStart={startDemoTutorial} onDecline={declineDemoTutorial} onClose={() => setTutorialPrompt(null)}/>} 
       {PUBLIC_DEMO_MODE && helpSpotlightOpen && <HelpButtonSpotlight onClose={() => setHelpSpotlightOpen(false)}/>} 
       <TutorialOverlay open={tutorialOpen} view={view} hasEmployees={hasEmployees} showCatalog={tutorialCatalog} onClose={closeTutorial} onComplete={completeTutorial}/>
