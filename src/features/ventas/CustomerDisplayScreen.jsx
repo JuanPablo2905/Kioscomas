@@ -116,7 +116,15 @@ function WeatherWidget({ widget }) {
 function SocialCard({ item }) {
   const platform = SOCIAL_PLATFORMS[item.platform] || SOCIAL_PLATFORMS.web;
   const qr = useQr(socialDestination(item));
-  return <div className="flex h-full w-full flex-col items-center justify-center rounded-[clamp(1rem,2.2vmin,2rem)] p-[clamp(.85rem,2vmin,1.75rem)] text-center shadow-lg" style={{ background: item.platform === "instagram" ? "linear-gradient(135deg,#833AB4,#FD1D1D,#FCAF45)" : platform.color, color: platform.foreground }}><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide">{item.label || platform.label}</p><p className="mt-1 break-all text-[clamp(.7rem,1.25vmin,1.05rem)] font-semibold">{item.value}</p>{qr && <img src={qr} alt={`QR de ${platform.label}`} className="mt-[clamp(.5rem,1.2vmin,1rem)] h-[clamp(4.5rem,10vmin,9rem)] w-[clamp(4.5rem,10vmin,9rem)] rounded-xl bg-white p-1.5"/>}</div>;
+  const textLength = `${item.label || platform.label} ${item.value || ""}`.trim().length;
+  const textDensity = textLength > 54 ? "long" : textLength > 32 ? "medium" : "short";
+  return <div className="customer-social-card rounded-[clamp(1rem,2.2vmin,2rem)] shadow-lg" data-text-density={textDensity} style={{ background: item.platform === "instagram" ? "linear-gradient(135deg,#833AB4,#FD1D1D,#FCAF45)" : platform.color, color: platform.foreground }}>
+    <div className="customer-social-card__text">
+      <p className="customer-social-card__title">{item.label || platform.label}</p>
+      <p className="customer-social-card__value">{item.value}</p>
+    </div>
+    {qr && <img src={qr} alt={`QR de ${platform.label}`} className="customer-social-card__qr"/>}
+  </div>;
 }
 
 const scheduleMinutes = (value) => {
@@ -166,7 +174,7 @@ function CanvasWidgetLayer({ state, config, mode }) {
     const widget = config.widgets[id];
     if (!widget || widget.enabled === false) return null;
     const placement = normalizeDisplayPlacement(rawPlacement);
-    return <div key={id} className="absolute overflow-hidden p-[clamp(.18rem,.45vmin,.4rem)] [&>*]:h-full [&>*]:w-full" style={{ left: `${placement.x}%`, top: `${placement.y}%`, width: `${placement.width}%`, height: `${placement.height}%`, zIndex: placement.z }}><BasicWidget widget={widget} state={state}/></div>;
+    return <div key={id} className="customer-display-widget-frame absolute overflow-hidden p-[clamp(.18rem,.45vmin,.4rem)] [&>*]:h-full [&>*]:w-full" style={{ left: `${placement.x}%`, top: `${placement.y}%`, width: `${placement.width}%`, height: `${placement.height}%`, zIndex: placement.z }}><BasicWidget widget={widget} state={state}/></div>;
   })}</div>;
 }
 
