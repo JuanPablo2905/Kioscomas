@@ -8,6 +8,7 @@ import {
 } from "./displayConfig";
 import { subscribeCustomerDisplay } from "./customerDisplay";
 import { AdaptiveSocialCard } from "./AdaptiveSocialCard";
+import { AdaptiveWelcomeCard } from "./AdaptiveWelcomeCard";
 
 export const fallbackCustomerDisplayState = {
   mode: "idle", businessName: "Kiosco+", welcomeMessage: "Bienvenido", thanksMessage: "¡Gracias por tu compra!",
@@ -155,7 +156,7 @@ function BasicWidget({ widget, state }) {
   if (type === "notice") return <div className="flex h-full w-full flex-col items-center justify-center rounded-2xl bg-amber-300 p-[clamp(1rem,2.5vmin,2.25rem)] text-center text-amber-950"><p className="text-[clamp(1rem,2vmin,1.65rem)] font-black">{widget.title || "Aviso"}</p><p className="mt-1 text-[clamp(.8rem,1.6vmin,1.35rem)]">{widget.text || "Escribí un aviso para tus clientes"}</p></div>;
   if (type === "featuredProduct") { const product = (state.featuredProducts || []).find((item) => String(item.id) === String(widget.productId)) || state.featuredProducts?.[0]; return product ? <div className="flex h-full w-full flex-col items-center justify-center rounded-2xl bg-white p-[clamp(1rem,2.5vmin,2.25rem)] text-center text-[#173F3A]">{product.image && <img src={product.image} alt="" className="mb-2 h-[clamp(6rem,16vmin,14rem)] w-full rounded-xl object-contain"/>}<p className="text-[clamp(1rem,2vmin,1.65rem)] font-bold">{product.name}</p><p className="mt-1 text-[clamp(1.5rem,4vmin,3.5rem)] font-black">{money(product.price)}</p></div> : null; }
   if (type === "image") return widget.src ? <img src={widget.src} alt={widget.alt || "Publicidad"} className="h-full w-full rounded-2xl object-contain"/> : <div className="grid h-full w-full place-items-center rounded-2xl border border-dashed border-white/25"><ImageIcon size={26}/></div>;
-  if (type === "welcome") return <div className="grid h-full place-items-center px-[clamp(1rem,3vw,3rem)] text-center"><div><span className="mx-auto grid h-[clamp(4.5rem,10vmin,9rem)] w-[clamp(4.5rem,10vmin,9rem)] place-items-center rounded-full bg-white/10"><Monitor className="h-[clamp(2.25rem,5vmin,4.5rem)] w-[clamp(2.25rem,5vmin,4.5rem)]"/></span><h1 className="mt-[clamp(1rem,2.5vmin,2.25rem)] font-serif text-[clamp(3.5rem,10vmin,9rem)] font-bold leading-[.95]">{state.welcomeMessage || "Bienvenido"}</h1><p className="mx-auto mt-[clamp(.8rem,2vmin,1.75rem)] max-w-4xl text-[clamp(1rem,2.4vmin,2rem)] text-emerald-100">{state.contactLine || "Gracias por elegirnos"}</p></div></div>;
+  if (type === "welcome") return <AdaptiveWelcomeCard title={state.welcomeMessage || "Bienvenido"} subtitle={state.contactLine || "Gracias por elegirnos"}/>;
   if (type === "promotions") return <PromotionsWidget state={state}/>;
   return null;
 }

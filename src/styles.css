@@ -1118,6 +1118,88 @@ body[data-tutorial-active="true"] .app-date-menu {
   container-type: size;
 }
 
+.customer-welcome-card {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--welcome-gap, .75rem);
+  overflow: hidden;
+  padding: var(--welcome-padding, 1rem);
+  text-align: center;
+}
+
+.customer-welcome-card--preview {
+  border-radius: .375rem;
+  background: rgb(255 255 255 / .1);
+}
+
+.customer-welcome-card__icon {
+  display: grid;
+  width: var(--welcome-icon-size, 4.5rem);
+  height: var(--welcome-icon-size, 4.5rem);
+  min-width: 0;
+  min-height: 0;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / .1);
+}
+
+.customer-welcome-card__icon svg {
+  width: 52%;
+  height: 52%;
+}
+
+.customer-welcome-card__copy {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.customer-welcome-card__title,
+.customer-welcome-card__subtitle {
+  display: block;
+  max-width: 100%;
+  flex: 0 0 auto;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.customer-welcome-card__title {
+  font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+  font-size: var(--welcome-title-size, 3rem);
+  font-weight: 700;
+  line-height: .96;
+}
+
+.customer-welcome-card__subtitle {
+  margin-top: var(--welcome-copy-gap, .65rem);
+  color: rgb(209 250 229);
+  font-size: var(--welcome-subtitle-size, 1rem);
+  line-height: 1.12;
+}
+
+.customer-welcome-card[data-orientation="horizontal"] {
+  flex-direction: row;
+  text-align: left;
+}
+
+.customer-welcome-card[data-orientation="horizontal"] .customer-welcome-card__copy {
+  height: 100%;
+  align-items: flex-start;
+}
+
 .customer-social-card {
   display: flex;
   width: 100%;

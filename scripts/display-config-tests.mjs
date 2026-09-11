@@ -43,6 +43,9 @@ assert(clamped.x === 60 && clamped.y === 70 && clamped.z === 100, "los widgets n
 const custom = normalizeDisplayConfig({ placements: { idle: { clock: { x: 11.5, y: 20, width: 37.5, height: 18, z: 4 } } } });
 assert(custom.placements.idle.clock.x === 11.5 && custom.placements.idle.clock.width === 37.5 && Object.keys(custom.placements.sale).length === 0, "la posición libre se conserva y un modo vacío permanece vacío");
 
+const freeWelcome = normalizeDisplayConfig({ placements: { idle: { welcome: { x: 7.5, y: 61, width: 38, height: 21, z: 9 } } } });
+assert(freeWelcome.placements.idle.welcome.x === 7.5 && freeWelcome.placements.idle.welcome.y === 61 && freeWelcome.placements.idle.welcome.width === 38, "la bienvenida conserva la posición y el tamaño libres elegidos por el negocio");
+
 const preset = applyDisplayPreset(custom, "classic");
 assert(preset.placements.idle["promo-top"].width === 96 && preset.placements.idle.welcome.height === 70, "un diseño rápido restaura también las posiciones libres");
 
