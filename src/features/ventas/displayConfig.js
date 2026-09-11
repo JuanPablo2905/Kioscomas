@@ -6,6 +6,38 @@ export const DISPLAY_MODES = {
 
 export const DISPLAY_ZONES = ["top", "left", "center", "right", "bottom"];
 
+export const DISPLAY_WIDGET_SIZES = {
+  small: { label: "Chico", weight: 1, scale: 0.84 },
+  medium: { label: "Mediano", weight: 2, scale: 1 },
+  large: { label: "Grande", weight: 3, scale: 1.16 },
+  hero: { label: "Protagonista", weight: 4, scale: 1.32 },
+};
+
+export const DISPLAY_SCHEDULE_DAYS = [
+  { id: "monday", label: "Lunes", shortLabel: "Lun", jsDay: 1 },
+  { id: "tuesday", label: "Martes", shortLabel: "Mar", jsDay: 2 },
+  { id: "wednesday", label: "Miércoles", shortLabel: "Mié", jsDay: 3 },
+  { id: "thursday", label: "Jueves", shortLabel: "Jue", jsDay: 4 },
+  { id: "friday", label: "Viernes", shortLabel: "Vie", jsDay: 5 },
+  { id: "saturday", label: "Sábado", shortLabel: "Sáb", jsDay: 6 },
+  { id: "sunday", label: "Domingo", shortLabel: "Dom", jsDay: 0 },
+];
+
+const safeScheduleTime = (value, fallback) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || "")) ? String(value) : fallback;
+
+export function normalizeDisplaySchedule(value = []) {
+  const entries = Array.isArray(value) ? value : [];
+  return DISPLAY_SCHEDULE_DAYS.map((day) => {
+    const current = entries.find((entry) => entry?.day === day.id) || {};
+    return {
+      day: day.id,
+      enabled: current.enabled === true,
+      open: safeScheduleTime(current.open, "08:00"),
+      close: safeScheduleTime(current.close, "20:00"),
+    };
+  });
+}
+
 export const DISPLAY_WIDGET_CATALOG = {
   promotions: { label: "Promociones", description: "Hasta 3 quedan fijas; desde 4 rotan automáticamente." },
   welcome: { label: "Bienvenida", description: "Mensaje principal del negocio." },
@@ -30,7 +62,7 @@ export const SOCIAL_PLATFORMS = {
   phone: { label: "Teléfono", color: "#1C4A44", foreground: "#ffffff", prefix: "" },
 };
 
-const widget = (id, type, extra = {}) => ({ id, type, enabled: true, ...extra });
+const widget = (id, type, extra = {}) => ({ id, type, enabled: true, size: "medium", ...extra });
 
 export const DEFAULT_DISPLAY_CONFIG = {
   version: 1,
@@ -55,7 +87,7 @@ export const DEFAULT_DISPLAY_CONFIG = {
     clock: widget("clock", "clock"),
     weather: widget("weather", "weather", { city: "", latitude: null, longitude: null }),
     socials: widget("socials", "socials", { items: [] }),
-    hours: widget("hours", "hours", { text: "" }),
+    hours: widget("hours", "hours", { text: "", schedule: normalizeDisplaySchedule() }),
     payments: widget("payments", "payments", { items: ["Efectivo", "Mercado Pago", "Tarjeta"] }),
     notice: widget("notice", "notice", { title: "", text: "" }),
     featured: widget("featured", "featuredProduct", { productId: "" }),
@@ -111,7 +143,9 @@ export function normalizeDisplayConfig(value = {}) {
   for (const [id, item] of Object.entries(source.widgets || {})) {
     if (!normalized.widgets[id] || !item || typeof item !== "object") continue;
     normalized.widgets[id] = { ...normalized.widgets[id], ...item, id, type: normalized.widgets[id].type };
+    normalized.widgets[id].size = DISPLAY_WIDGET_SIZES[item.size] ? item.size : "medium";
   }
+  normalized.widgets.hours.schedule = normalizeDisplaySchedule(normalized.widgets.hours.schedule);
   for (const mode of ["idle", "sale", "complete"]) {
     for (const zone of DISPLAY_ZONES) {
       const ids = source.layouts?.[mode]?.[zone];
@@ -145,12 +179,14 @@ export function sanitizePublicDisplayContent(value = {}) {
     const type = DISPLAY_WIDGET_CATALOG[raw?.type] ? raw.type : "notice";
     widgets[id] = {
       id: cleanText(id, 80), type, enabled: raw?.enabled !== false,
+      size: DISPLAY_WIDGET_SIZES[raw?.size] ? raw.size : "medium",
       style: raw?.style === "card" ? "card" : "strip",
       city: cleanText(raw?.city, 100),
       latitude: raw?.latitude !== null && raw?.latitude !== "" && Number.isFinite(Number(raw?.latitude)) ? Number(raw.latitude) : null,
       longitude: raw?.longitude !== null && raw?.longitude !== "" && Number.isFinite(Number(raw?.longitude)) ? Number(raw.longitude) : null,
       text: cleanText(raw?.text, 300), title: cleanText(raw?.title, 100),
       productId: cleanText(raw?.productId, 100), src: safeImage(raw?.src), alt: cleanText(raw?.alt, 100),
+      schedule: type === "hours" ? normalizeDisplaySchedule(raw?.schedule) : [],
       items: Array.isArray(raw?.items) ? raw.items.slice(0, 12).map((item) => typeof item === "string"
         ? cleanText(item, 80)
         : { platform: SOCIAL_PLATFORMS[item?.platform] ? item.platform : "web", value: cleanText(item?.value, 180), label: cleanText(item?.label, 80) }) : [],

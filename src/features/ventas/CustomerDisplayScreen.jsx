@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Clock3, CloudSun, Image as ImageIcon, Monitor, WifiOff } from "lucide-react";
 import QRCode from "qrcode";
 import { money } from "../../shared/domain";
-import { DISPLAY_MODES, SOCIAL_PLATFORMS, normalizeDisplayConfig, socialDestination } from "./displayConfig";
+import {
+  DISPLAY_MODES, DISPLAY_SCHEDULE_DAYS, DISPLAY_WIDGET_SIZES, SOCIAL_PLATFORMS,
+  normalizeDisplayConfig, normalizeDisplaySchedule, socialDestination,
+} from "./displayConfig";
 import { subscribeCustomerDisplay } from "./customerDisplay";
 
 export const fallbackCustomerDisplayState = {
@@ -122,12 +125,35 @@ function SocialsWidget({ widget }) {
   return <div className="grid gap-2">{items.map((item, index) => <SocialCard key={`${item.platform}-${index}`} item={item}/>)}</div>;
 }
 
+const scheduleMinutes = (value) => {
+  const [hours, minutes] = String(value || "00:00").split(":").map(Number);
+  return (hours * 60) + minutes;
+};
+
+const scheduleTimeLabel = (value) => String(value || "").replace(/^0/, "");
+
+function HoursWidget({ widget }) {
+  const now = useClock();
+  const schedule = normalizeDisplaySchedule(widget.schedule);
+  const configured = schedule.some((entry) => entry.enabled);
+  if (!configured) return <div className="flex h-full flex-col justify-center rounded-2xl bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)]"><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide text-amber-300">Horarios</p><p className="mt-2 whitespace-pre-line text-[clamp(.85rem,1.7vmin,1.4rem)]">{widget.text || "Configurá los horarios del negocio"}</p></div>;
+  const todayDefinition = DISPLAY_SCHEDULE_DAYS.find((day) => day.jsDay === now.getDay());
+  const today = schedule.find((entry) => entry.day === todayDefinition?.id);
+  const current = (now.getHours() * 60) + now.getMinutes();
+  const opens = scheduleMinutes(today?.open); const closes = scheduleMinutes(today?.close);
+  const openNow = Boolean(today?.enabled) && (closes > opens ? current >= opens && current < closes : current >= opens || current < closes);
+  return <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white/10 p-[clamp(.8rem,2vmin,1.75rem)]">
+    <div className="flex flex-none items-center justify-between gap-2"><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide text-amber-300">Horarios</p><span className={`rounded-full px-2 py-1 text-[clamp(.58rem,1.05vmin,.9rem)] font-black ${openNow ? "bg-emerald-300 text-emerald-950" : "bg-red-100 text-red-800"}`}>{openNow ? "Abierto ahora" : "Cerrado"}</span></div>
+    <div className="mt-2 min-h-0 flex-1 divide-y divide-white/10 overflow-y-auto">{DISPLAY_SCHEDULE_DAYS.map((day) => { const entry = schedule.find((item) => item.day === day.id); const isToday = day.jsDay === now.getDay(); return <div key={day.id} className={`grid grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)] gap-2 px-1 py-[clamp(.28rem,.65vmin,.55rem)] text-[clamp(.68rem,1.2vmin,1rem)] ${isToday ? "font-black text-amber-200" : "text-white/90"}`}><span>{day.label}</span><span className="text-right">{entry?.enabled ? `${scheduleTimeLabel(entry.open)}–${scheduleTimeLabel(entry.close)}` : "Cerrado"}</span></div>; })}</div>
+  </div>;
+}
+
 function BasicWidget({ widget, state }) {
   const type = widget.type;
   if (type === "clock") return <ClockWidget/>;
   if (type === "weather") return <WeatherWidget widget={widget}/>;
   if (type === "socials") return <SocialsWidget widget={widget}/>;
-  if (type === "hours") return <div className="rounded-2xl bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)]"><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide text-amber-300">Horarios</p><p className="mt-2 whitespace-pre-line text-[clamp(.85rem,1.7vmin,1.4rem)]">{widget.text || "Configurá los horarios del negocio"}</p></div>;
+  if (type === "hours") return <HoursWidget widget={widget}/>;
   if (type === "payments") return <div className="rounded-2xl bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)]"><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide text-amber-300">Medios de pago</p><div className="mt-2 flex flex-wrap gap-[clamp(.35rem,.8vmin,.7rem)]">{(widget.items || []).map((item) => <span key={item} className="rounded-full bg-white px-[clamp(.55rem,1vw,1rem)] py-[clamp(.25rem,.55vmin,.5rem)] text-[clamp(.65rem,1.2vmin,1rem)] font-bold text-[#173F3A]">{item}</span>)}</div></div>;
   if (type === "notice") return <div className="rounded-2xl bg-amber-300 p-[clamp(1rem,2.5vmin,2.25rem)] text-amber-950"><p className="text-[clamp(1rem,2vmin,1.65rem)] font-black">{widget.title || "Aviso"}</p><p className="mt-1 text-[clamp(.8rem,1.6vmin,1.35rem)]">{widget.text || "Escribí un aviso para tus clientes"}</p></div>;
   if (type === "featuredProduct") { const product = (state.featuredProducts || []).find((item) => String(item.id) === String(widget.productId)) || state.featuredProducts?.[0]; return product ? <div className="rounded-2xl bg-white p-[clamp(1rem,2.5vmin,2.25rem)] text-[#173F3A]">{product.image && <img src={product.image} alt="" className="mb-2 h-[clamp(6rem,16vmin,14rem)] w-full rounded-xl object-contain"/>}<p className="text-[clamp(1rem,2vmin,1.65rem)] font-bold">{product.name}</p><p className="mt-1 text-[clamp(1.5rem,4vmin,3.5rem)] font-black">{money(product.price)}</p></div> : null; }
@@ -141,7 +167,7 @@ function Zone({ state, config, mode, zone, horizontal = false }) {
   const ids = config.layouts?.[mode]?.[zone] || [];
   const visible = ids.map((id) => config.widgets[id]).filter((item) => item?.enabled !== false);
   if (!visible.length) return null;
-  return <div className={horizontal ? "flex-none px-[clamp(.75rem,1.5vw,1.75rem)] py-[clamp(.4rem,.9vmin,.8rem)]" : "min-h-0 overflow-hidden p-[clamp(.4rem,.9vmin,.8rem)]"}><div className={horizontal ? "flex min-w-0 gap-[clamp(.5rem,1vmin,1rem)]" : "grid max-h-full gap-[clamp(.5rem,1vmin,1rem)] overflow-y-auto"}>{visible.map((item) => <div key={item.id} className="min-w-0 flex-1"><BasicWidget widget={item} state={state}/></div>)}</div></div>;
+  return <div className={horizontal ? "flex-none px-[clamp(.75rem,1.5vw,1.75rem)] py-[clamp(.4rem,.9vmin,.8rem)]" : "h-full min-h-0 overflow-hidden p-[clamp(.4rem,.9vmin,.8rem)]"}><div className={horizontal ? "flex min-w-0 items-stretch gap-[clamp(.5rem,1vmin,1rem)]" : "flex h-full max-h-full min-h-0 flex-col gap-[clamp(.5rem,1vmin,1rem)] overflow-y-auto"}>{visible.map((item) => { const size = DISPLAY_WIDGET_SIZES[item.size] || DISPLAY_WIDGET_SIZES.medium; const inverse = 100 / size.scale; return <div key={item.id} className="min-h-0 min-w-0 overflow-hidden" style={{ flexGrow: size.weight, flexShrink: 1, flexBasis: 0, minHeight: horizontal ? `clamp(3.25rem, ${5 + size.weight * 1.5}vmin, ${4 + size.weight * 1.25}rem)` : undefined }}><div className="[&>*]:h-full" style={{ width: `${inverse}%`, height: `${inverse}%`, transform: `scale(${size.scale})`, transformOrigin: "top left" }}><BasicWidget widget={item} state={state}/></div></div>; })}</div></div>;
 }
 
 function Idle({ state, config }) {
