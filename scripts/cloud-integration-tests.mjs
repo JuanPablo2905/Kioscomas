@@ -199,6 +199,93 @@ try {
   });
   const betaOrderNotifications = await request("/v1/notifications", { headers: pendingHeaders });
   test("un pedido con entrega prevista genera un aviso persistente para el negocio", betaOrder.response.ok && betaOrderNotifications.value.notifications?.some((item) => item.sourceKey === `order-delivery:${registeredAccount.id}:order-beta:${deliveryDate}:hoy` && item.category === "orders"));
+  const betaOrderVersion = betaOrder.value.acceptedEntityVersions?.[0];
+  const receivedBetaOrder = { id: "order-beta", proveedorNombre: "Distribuidora Beta", estado: "recibido", fechaEntregaEsperada: deliveryDate, horaEntregaEsperada: "09:00", items: [] };
+  const receivedBetaOrderPush = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{ id: "beta-order-received", deviceId: "activation-pc", tenantId: registeredAccount.id, type: "entity_upsert", entity: "pedidos", entityId: "order-beta", baseVersion: betaOrderVersion?.version, baseValue: betaOrderVersion?.value, value: receivedBetaOrder }] }),
+  });
+  const notificationsAfterSupplierReceipt = await request("/v1/notifications", { headers: pendingHeaders });
+  test("recibir un pedido de proveedor retira su aviso pendiente", receivedBetaOrderPush.response.ok && !notificationsAfterSupplierReceipt.value.notifications?.some((item) => item.sourceKey?.startsWith(`order-delivery:${registeredAccount.id}:order-beta:`)));
+  const customerPickupDate = argentinaDateKey(Date.now() - 86400000);
+  const customerOrderValue = { id: "customer-order-beta", cliente: "Juampa", telefono: "1122334455", estado: "pendiente", fechaRetiro: customerPickupDate, horaRetiro: "08:30", items: [{ productId: 8, nombre: "Sprite", cantidad: 11 }] };
+  const customerOrder = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{ id: "customer-order-create", deviceId: "activation-pc", tenantId: registeredAccount.id, type: "entity_upsert", entity: "reservas", entityId: customerOrderValue.id, value: customerOrderValue }] }),
+  });
+  const customerOrderVersion = customerOrder.value.acceptedEntityVersions?.[0];
+  const customerOrderNotifications = await request("/v1/notifications", { headers: pendingHeaders });
+  const customerOrderSource = `customer-order:${registeredAccount.id}:${customerOrderValue.id}:${customerPickupDate}:08:30`;
+  const matchingCustomerOrders = customerOrderNotifications.value.notifications?.filter((item) => item.sourceKey?.startsWith(`customer-order:${registeredAccount.id}:${customerOrderValue.id}:`)) || [];
+  test("un pedido de once unidades genera un único aviso persistente", customerOrder.response.ok && matchingCustomerOrders.length === 1 && matchingCustomerOrders[0].sourceKey === customerOrderSource && matchingCustomerOrders[0].message.includes("11 × Sprite") && matchingCustomerOrders[0].category === "orders");
+  const rescheduledCustomerOrder = { ...customerOrderValue, horaRetiro: "09:15" };
+  const rescheduledPush = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{ id: "customer-order-reschedule", deviceId: "activation-pc", tenantId: registeredAccount.id, type: "entity_upsert", entity: "reservas", entityId: customerOrderValue.id, baseVersion: customerOrderVersion?.version, baseValue: customerOrderValue, value: rescheduledCustomerOrder }] }),
+  });
+  const rescheduledVersion = rescheduledPush.value.acceptedEntityVersions?.[0];
+  const notificationsAfterReschedule = await request("/v1/notifications", { headers: pendingHeaders });
+  const visibleRescheduled = notificationsAfterReschedule.value.notifications?.filter((item) => item.sourceKey?.startsWith(`customer-order:${registeredAccount.id}:${customerOrderValue.id}:`)) || [];
+  test("cambiar la hora reemplaza el aviso anterior sin duplicarlo", rescheduledPush.response.ok && visibleRescheduled.length === 1 && visibleRescheduled[0].sourceKey.endsWith(":09:15"));
+  const deliveredCustomerOrder = { ...rescheduledCustomerOrder, estado: "entregado" };
+  const deliveredPush = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{ id: "customer-order-delivered", deviceId: "activation-pc", tenantId: registeredAccount.id, type: "entity_upsert", entity: "reservas", entityId: customerOrderValue.id, baseVersion: rescheduledVersion?.version, baseValue: rescheduledCustomerOrder, value: deliveredCustomerOrder }] }),
+  });
+  const notificationsAfterDelivery = await request("/v1/notifications", { headers: pendingHeaders });
+  test("marcar el pedido entregado retira su aviso pendiente", deliveredPush.response.ok && !notificationsAfterDelivery.value.notifications?.some((item) => item.sourceKey?.startsWith(`customer-order:${registeredAccount.id}:${customerOrderValue.id}:`)));
+  const lowStockProduct = { id: "product-notification", nombre: "Sprite", deposito: 0, minimo: 2, vitrina: 5, alertaVitrina: 1, vencimiento: "" };
+  const lowStockPush = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{ id: "low-stock-product-create", deviceId: "activation-pc", tenantId: registeredAccount.id, type: "entity_upsert", entity: "products", entityId: lowStockProduct.id, value: lowStockProduct }] }),
+  });
+  const lowStockVersion = lowStockPush.value.acceptedEntityVersions?.[0];
+  const lowStockNotifications = await request("/v1/notifications", { headers: pendingHeaders });
+  const stockSource = `product-stock:${registeredAccount.id}:${lowStockProduct.id}`;
+  test("stock bajo genera un solo aviso por producto", lowStockPush.response.ok && lowStockNotifications.value.notifications?.filter((item) => item.sourceKey === stockSource).length === 1);
+  const stillLowStock = { ...lowStockProduct, deposito: 1 };
+  const stillLowStockPush = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{ id: "low-stock-product-update", deviceId: "activation-pc", tenantId: registeredAccount.id, type: "entity_upsert", entity: "products", entityId: lowStockProduct.id, baseVersion: lowStockVersion?.version, baseValue: lowStockProduct, value: stillLowStock }] }),
+  });
+  const stillLowVersion = stillLowStockPush.value.acceptedEntityVersions?.[0];
+  const notificationsWhileLow = await request("/v1/notifications", { headers: pendingHeaders });
+  test("cambiar la cantidad sin reponer no duplica el aviso de stock", stillLowStockPush.response.ok && notificationsWhileLow.value.notifications?.filter((item) => item.sourceKey === stockSource).length === 1);
+  const replenishedProduct = { ...stillLowStock, deposito: 8 };
+  const replenishedPush = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{ id: "low-stock-product-replenished", deviceId: "activation-pc", tenantId: registeredAccount.id, type: "entity_upsert", entity: "products", entityId: lowStockProduct.id, baseVersion: stillLowVersion?.version, baseValue: stillLowStock, value: replenishedProduct }] }),
+  });
+  const notificationsAfterReplenishment = await request("/v1/notifications", { headers: pendingHeaders });
+  test("reponer el producto retira automáticamente el aviso de stock", replenishedPush.response.ok && !notificationsAfterReplenishment.value.notifications?.some((item) => item.sourceKey === stockSource));
+  const replenishedVersion = replenishedPush.value.acceptedEntityVersions?.[0];
+  const productNeedingAttention = { ...replenishedProduct, vitrina: 0, vencimiento: deliveryDate };
+  const productAttentionPush = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{ id: "product-vitrine-expiration", deviceId: "activation-pc", tenantId: registeredAccount.id, type: "entity_upsert", entity: "products", entityId: lowStockProduct.id, baseVersion: replenishedVersion?.version, baseValue: replenishedProduct, value: productNeedingAttention }] }),
+  });
+  const productAttentionVersion = productAttentionPush.value.acceptedEntityVersions?.[0];
+  const productAttentionNotifications = await request("/v1/notifications", { headers: pendingHeaders });
+  const vitrineSource = `product-vitrine:${registeredAccount.id}:${lowStockProduct.id}`;
+  const expirationSourcePrefix = `product-expiration:${registeredAccount.id}:${lowStockProduct.id}:`;
+  test("vitrina baja genera un solo aviso por producto", productAttentionPush.response.ok && productAttentionNotifications.value.notifications?.filter((item) => item.sourceKey === vitrineSource).length === 1);
+  test("un vencimiento genera un aviso separado y reconocible", productAttentionNotifications.value.notifications?.filter((item) => item.sourceKey?.startsWith(expirationSourcePrefix) && item.category === "expirations").length === 1);
+  const productCorrected = { ...productNeedingAttention, vitrina: 8, vencimiento: "2099-12-31" };
+  const productCorrectedPush = await request("/v1/sync/push", {
+    method: "POST",
+    headers: pendingHeaders,
+    body: JSON.stringify({ operations: [{ id: "product-vitrine-expiration-resolved", deviceId: "activation-pc", tenantId: registeredAccount.id, type: "entity_upsert", entity: "products", entityId: lowStockProduct.id, baseVersion: productAttentionVersion?.version, baseValue: productNeedingAttention, value: productCorrected }] }),
+  });
+  const notificationsAfterProductCorrection = await request("/v1/notifications", { headers: pendingHeaders });
+  test("reponer vitrina y corregir vencimiento retira ambos avisos", productCorrectedPush.response.ok && !notificationsAfterProductCorrection.value.notifications?.some((item) => item.sourceKey === vitrineSource || item.sourceKey?.startsWith(expirationSourcePrefix)));
   const adminNotificationDirectory = await request("/v1/admin/notifications", { headers: centralHeaders });
   test("la solicitud nueva genera un aviso persistente para el administrador", adminNotificationDirectory.value.notifications?.some((item) => item.sourceKey === `registration:${registeredAccount.id}`));
   const authoritativeAccountDirectory = await request("/v1/admin/accounts", { headers: centralHeaders });

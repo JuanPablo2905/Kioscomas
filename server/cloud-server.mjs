@@ -647,6 +647,53 @@ const argentinaDayNumber = (dateKey) => {
   const [year, month, day] = String(dateKey || "").split("-").map(Number);
   return Date.UTC(year, month - 1, day) / 86400000;
 };
+const argentinaScheduleIso = (dateKey, timeValue) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || "")) || !/^\d{2}:\d{2}$/.test(String(timeValue || ""))) return null;
+  const timestamp = Date.parse(`${dateKey}T${timeValue}:00-03:00`);
+  if (!Number.isFinite(timestamp) || argentinaDateKey(timestamp) !== dateKey) return null;
+  return new Date(timestamp).toISOString();
+};
+const tenantEntityValues = (db, tenantId, entity) => Object.values(db.tenants?.[String(tenantId)]?.entities?.[entity] || {}).map((record) => record?.value || record);
+const customerOrderNotificationValues = (account, order, publishAt) => {
+  const items = Array.isArray(order?.items) ? order.items.filter(Boolean) : [];
+  const client = cleanCatalogText(order?.cliente || "Cliente sin identificar", 100);
+  const itemSummary = items.slice(0, 4).map((item) => `${Math.max(1, Number(item?.cantidad) || 1)} × ${cleanCatalogText(item?.nombre || "Producto", 80)}`).join(", ");
+  const remaining = Math.max(0, items.length - 4);
+  return {
+    title: `Pedido de ${client} para entregar`,
+    message: `${order.fechaRetiro} · ${order.horaRetiro} h${itemSummary ? ` · ${itemSummary}` : ""}${remaining ? ` y ${remaining} producto${remaining === 1 ? "" : "s"} más` : ""}.`,
+    level: "importante",
+    category: "orders",
+    audience: { type: "business", businessIds: [account.id] },
+    action: { view: "ventas" },
+    publishAt,
+  };
+};
+const reconcileAutomaticNotificationSet = (db, prefix, definitions, changed) => {
+  const activeKeys = new Set(definitions.map((entry) => entry.sourceKey));
+  for (const notification of Object.values(db.platformNotifications || {})) {
+    if (!String(notification?.sourceKey || "").startsWith(prefix) || activeKeys.has(notification.sourceKey) || notification.archivedAt) continue;
+    notification.archivedAt = new Date().toISOString();
+    changed.push(notification);
+  }
+  for (const definition of definitions) {
+    const existing = Object.values(db.platformNotifications || {}).find((notification) => notification?.sourceKey === definition.sourceKey);
+    if (existing) {
+      const { sourceKey: _sourceKey, ...values } = definition;
+      Object.assign(existing, values);
+      if (existing.archivedAt) {
+        existing.archivedAt = null;
+        existing.pushDispatchedAt = null;
+        existing.pushDeliveryCount = 0;
+        db.notificationReads = Object.fromEntries(Object.entries(db.notificationReads || {}).filter(([, read]) => String(read?.notificationId || "") !== String(existing.id)));
+        changed.push(existing);
+      }
+      continue;
+    }
+    const result = createPlatformNotification(db, definition);
+    if (result.created) changed.push(result.notification);
+  }
+};
 const ensureAutomaticNotifications = (db) => {
   const accounts = (db.system?.cuentas || []).filter((account) => account && !account.superAdmin);
   const todayKey = argentinaDateKey(Date.now());
@@ -720,16 +767,17 @@ const ensureAutomaticNotifications = (db) => {
         }
       }
     }
-    const orders = Object.values(db.tenants?.[String(account.id)]?.entities?.pedidos || {}).map((record) => record?.value || record);
-    for (const order of orders) {
-      if (!order || ["recibido", "cancelado"].includes(order.estado) || !order.fechaEntregaEsperada) continue;
+    const supplierNotificationPrefix = `order-delivery:${account.id}:`;
+    const supplierNotifications = tenantEntityValues(db, account.id, "pedidos").flatMap((order) => {
+      if (!order || ["recibido", "cancelado"].includes(order.estado) || !order.fechaEntregaEsperada) return [];
       const deliveryKey = argentinaDateKey(order.fechaEntregaEsperada);
+      if (!deliveryKey) return [];
       const days = argentinaDayNumber(deliveryKey) - argentinaDayNumber(todayKey);
-      if (![1, 0].includes(days) && days >= 0) continue;
+      if (![1, 0].includes(days) && days >= 0) return [];
       const bucket = days < 0 ? "demorado" : days === 0 ? "hoy" : "manana";
       const provider = cleanCatalogText(order.proveedorNombre || "tu proveedor", 100);
-      const result = createPlatformNotification(db, {
-        sourceKey: `order-delivery:${account.id}:${order.id}:${deliveryKey}:${bucket}`,
+      return [{
+        sourceKey: `${supplierNotificationPrefix}${order.id}:${deliveryKey}:${bucket}`,
         title: days < 0 ? "Entrega demorada" : days === 0 ? "Hoy llega un pedido" : "Mañana llega un pedido",
         message: days < 0
           ? `El pedido de ${provider} estaba previsto para el ${deliveryKey} y todavía figura pendiente.`
@@ -738,9 +786,73 @@ const ensureAutomaticNotifications = (db) => {
         category: "orders",
         audience: { type: "business", businessIds: [account.id] },
         action: { view: "compras" },
+      }];
+    });
+    reconcileAutomaticNotificationSet(db, supplierNotificationPrefix, supplierNotifications, created);
+
+    const customerOrderPrefix = `customer-order:${account.id}:`;
+    const activeCustomerOrders = tenantEntityValues(db, account.id, "reservas").flatMap((order) => {
+      if (!order || ["entregado", "cancelado"].includes(order.estado)) return [];
+      const publishAt = argentinaScheduleIso(order.fechaRetiro, order.horaRetiro);
+      if (!publishAt) return [];
+      const sourceKey = `${customerOrderPrefix}${order.id}:${order.fechaRetiro}:${order.horaRetiro}`;
+      return [{ sourceKey, ...customerOrderNotificationValues(account, order, publishAt) }];
+    });
+    reconcileAutomaticNotificationSet(db, customerOrderPrefix, activeCustomerOrders, created);
+
+    const stockPrefix = `product-stock:${account.id}:`;
+    const vitrinePrefix = `product-vitrine:${account.id}:`;
+    const expirationPrefix = `product-expiration:${account.id}:`;
+    const stockNotifications = [];
+    const vitrineNotifications = [];
+    const expirationNotifications = [];
+    for (const product of tenantEntityValues(db, account.id, "products")) {
+      if (!product || product.id == null) continue;
+      const name = cleanCatalogText(product.nombre || "Producto sin nombre", 100);
+      const deposit = Number(product.deposito);
+      const minimum = Number(product.minimo);
+      if (product.deposito != null && product.minimo != null && Number.isFinite(deposit) && Number.isFinite(minimum) && deposit <= minimum) {
+        stockNotifications.push({
+          sourceKey: `${stockPrefix}${product.id}`,
+          title: "Stock bajo",
+          message: `${name} · quedan ${deposit} y el mínimo configurado es ${minimum}.`,
+          level: deposit <= 0 ? "urgente" : "importante",
+          category: "stock",
+          audience: { type: "business", businessIds: [account.id] },
+          action: { view: "stock" },
+        });
+      }
+      const vitrine = Number(product.vitrina);
+      const vitrineMinimum = Number(product.alertaVitrina);
+      if (product.vitrina != null && product.alertaVitrina != null && Number.isFinite(vitrine) && Number.isFinite(vitrineMinimum) && vitrine <= vitrineMinimum) {
+        vitrineNotifications.push({
+          sourceKey: `${vitrinePrefix}${product.id}`,
+          title: "Reponer vitrina",
+          message: `${name} · quedan ${vitrine} en exhibición.`,
+          level: "importante",
+          category: "stock",
+          audience: { type: "business", businessIds: [account.id] },
+          action: { view: "vitrina" },
+        });
+      }
+      const expirationKey = argentinaDateKey(product.vencimiento);
+      if (!expirationKey) continue;
+      const days = argentinaDayNumber(expirationKey) - argentinaDayNumber(todayKey);
+      const bucket = days < 0 ? "vencido" : days === 0 ? "hoy" : days === 1 ? "manana" : days <= 7 ? "esta-semana" : days <= 30 ? "proximo" : null;
+      if (!bucket) continue;
+      expirationNotifications.push({
+        sourceKey: `${expirationPrefix}${product.id}:${expirationKey}:${bucket}`,
+        title: days < 0 ? "Producto vencido" : days === 0 ? "Producto que vence hoy" : "Producto próximo a vencer",
+        message: `${name} · ${days < 0 ? `venció el ${expirationKey}` : days === 0 ? "vence hoy" : `vence en ${days} día${days === 1 ? "" : "s"}`}.`,
+        level: days <= 0 ? "urgente" : "importante",
+        category: "expirations",
+        audience: { type: "business", businessIds: [account.id] },
+        action: { view: "vencimientos" },
       });
-      if (result.created) created.push(result.notification);
     }
+    reconcileAutomaticNotificationSet(db, stockPrefix, stockNotifications, created);
+    reconcileAutomaticNotificationSet(db, vitrinePrefix, vitrineNotifications, created);
+    reconcileAutomaticNotificationSet(db, expirationPrefix, expirationNotifications, created);
   }
   return created;
 };
@@ -2500,7 +2612,7 @@ const startServer = async () => {
     };
     const pending = databaseRequestMutation.then(runSweep, runSweep);
     databaseRequestMutation = pending.catch((error) => console.error("No se pudieron revisar los avisos automáticos", error));
-  }, 30 * 60 * 1000);
+  }, 60 * 1000);
   reminderTimer.unref();
 };
 

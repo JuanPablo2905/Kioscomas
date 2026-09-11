@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bell, CheckCircle2, ChevronRight, Cloud, Package, Settings, Store } from "lucide-react";
+import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronRight, Cloud, Package, PackageCheck, Settings, Store } from "lucide-react";
 import { SectionHeader } from "../../shared/layout";
 import { buildNotifications } from "./notificationRules";
 import { loadPlatformNotifications, markPlatformNotificationRead } from "./notificationService";
@@ -11,14 +11,17 @@ const levelUi = {
   media: { label: "Medias", hint: "Conviene revisar", card: "border-amber-200 border-l-amber-500 bg-amber-50/80", icon: "bg-amber-400 text-amber-950", badge: "bg-amber-400 text-amber-950", text: "text-amber-900", count: "text-amber-700" },
   baja: { label: "Bajas", hint: "Información", card: "border-slate-200 border-l-slate-400 bg-slate-50/90", icon: "bg-slate-500 text-white", badge: "bg-slate-500 text-white", text: "text-slate-800", count: "text-slate-700" },
 };
-const icons = { stock: Package, vitrina: Store };
+const icons = { stock: Package, vitrina: Store, pedidos: PackageCheck, reservas: CalendarClock };
+const platformIcons = { stock: Package, expirations: AlertTriangle, orders: PackageCheck };
+const platformCategoryLabels = { stock: "Stock", expirations: "Vencimientos", orders: "Pedidos", subscription: "Suscripción", maintenance: "Novedades" };
 
 export function NotificacionesView({ data, onNavigate, onOpenNotificationSettings, previewBusinessId = "", previewBusinessName = "" }) {
   const [filter, setFilter] = useState("todas");
   const [platform, setPlatform] = useState([]);
   const [platformError, setPlatformError] = useState("");
   const [pushConfigured, setPushConfigured] = useState(null);
-  const notifications = useMemo(() => buildNotifications(data), [data]);
+  const [notificationClock, setNotificationClock] = useState(() => Date.now());
+  const notifications = useMemo(() => buildNotifications(data, notificationClock), [data, notificationClock]);
   const counts = useMemo(() => Object.fromEntries(LEVELS.map((level) => [level, notifications.filter((item) => item.level === level).length])), [notifications]);
   const visible = filter === "todas" ? notifications : notifications.filter((item) => item.level === filter);
   const groups = LEVELS.map((level) => ({ level, items: visible.filter((item) => item.level === level) })).filter((group) => group.items.length);
@@ -41,6 +44,11 @@ export function NotificacionesView({ data, onNavigate, onOpenNotificationSetting
     return () => { clearInterval(timer); window.removeEventListener("kiosco-cloud-session-changed", reloadAfterLogin); };
   }, [previewBusinessId]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setNotificationClock(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
   const openPlatformNotification = async (item) => {
     if (!item.readAt) {
       try {
@@ -61,7 +69,8 @@ export function NotificacionesView({ data, onNavigate, onOpenNotificationSetting
       {platformError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{platformError}</p>}
       {platform.length > 0 ? <div className="mt-4 space-y-2">{platform.map((item) => {
         const colors = item.level === "urgente" ? "border-red-200 bg-red-50 text-red-900" : item.level === "mantenimiento" ? "border-blue-200 bg-blue-50 text-blue-900" : item.level === "importante" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-100 bg-white text-gray-800";
-        return <button type="button" key={item.id} onClick={() => openPlatformNotification(item)} className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition hover:shadow-sm ${colors} ${item.readAt ? "opacity-65" : "shadow-sm"}`}><Bell size={17} className="mt-0.5 shrink-0"/><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><b className="text-sm">{item.title}</b>{!item.readAt && <span className="rounded-full bg-[#D96B32] px-2 py-0.5 text-[9px] font-black uppercase text-white">Nuevo</span>}</span><span className="mt-1 block text-xs leading-5 opacity-80">{item.message}</span><span className="mt-1 block text-[10px] opacity-55">{new Date(item.publishAt || item.createdAt).toLocaleString("es-AR")}</span></span>{item.action?.view && <ChevronRight size={17} className="mt-2 shrink-0"/>}</button>;
+        const PlatformIcon = platformIcons[item.category] || Bell;
+        return <button type="button" key={item.id} onClick={() => openPlatformNotification(item)} className={`flex w-full items-start gap-3 rounded-xl border p-3 text-left transition hover:shadow-sm ${colors} ${item.readAt ? "opacity-65" : "shadow-sm"}`}><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-current/15 bg-white/70"><PlatformIcon size={17}/></span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><b className="break-words text-sm">{item.title}</b>{!item.readAt && <span className="rounded-full bg-[#D96B32] px-2 py-0.5 text-[9px] font-black uppercase text-white">Nuevo</span>}<span className="rounded-full border border-current/20 bg-white/60 px-2 py-0.5 text-[9px] font-bold uppercase">{platformCategoryLabels[item.category] || "Aviso"}</span></span><span className="mt-1 block break-words text-xs leading-5 opacity-80">{item.message}</span><span className="mt-1 block text-[10px] opacity-55">{new Date(item.publishAt || item.createdAt).toLocaleString("es-AR")}</span></span>{item.action?.view && <ChevronRight size={17} className="mt-2 shrink-0"/>}</button>;
       })}</div> : !platformError && <p className="mt-4 text-xs text-gray-500">No hay mensajes generales pendientes.</p>}
     </section>
 

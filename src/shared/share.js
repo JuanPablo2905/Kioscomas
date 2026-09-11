@@ -9,9 +9,23 @@ export function normalizeWhatsAppPhone(value, countryCode = "54") {
   return `${countryCode}${digits}`;
 }
 
+export function isValidWhatsAppPhone(value) {
+  return /^\d{10,15}$/.test(normalizeWhatsAppPhone(value));
+}
+
 export function purchaseMessage({ businessName = "Kiosco+", providerName = "proveedor", items = [] }) {
   const lines = items.map((item) => `• ${Number(item.cantidad || 0)} x ${item.nombre}${Number(item.costoCompra || 0) > 0 ? ` (costo previsto $ ${Number(item.costoCompra).toLocaleString("es-AR")})` : ""}`);
   return `Hola ${providerName}. Pedido de ${businessName}:\n\n${lines.join("\n")}\n\n¿Podés confirmarme disponibilidad y total?`;
+}
+
+export function customerOrderMessage({ businessName = "Kiosco+", order = {} }) {
+  const lines = (order.items || []).map((item) => `• ${Number(item.cantidad || 0)} x ${item.nombre}`);
+  const scheduled = order.fechaRetiro
+    ? new Date(`${order.fechaRetiro}T12:00:00`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })
+    : "fecha a coordinar";
+  const time = order.horaRetiro ? ` a las ${order.horaRetiro}` : "";
+  const note = String(order.nota || "").trim() ? `\nNota: ${String(order.nota).trim()}` : "";
+  return `Hola ${order.cliente || ""}. Te confirmamos tu pedido en ${businessName}:\n\n${lines.join("\n")}\n\nRetiro: ${scheduled}${time}.${note}\nTotal estimado: $ ${Number(order.total || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`;
 }
 
 export function ticketMessage(ticket, businessName = "Kiosco+") {
@@ -23,6 +37,7 @@ export function ticketMessage(ticket, businessName = "Kiosco+") {
 
 export function openWhatsApp({ phone = "", text = "" }) {
   const normalized = normalizeWhatsAppPhone(phone);
+  if (!/^\d{10,15}$/.test(normalized)) return "";
   const url = `https://wa.me/${normalized}?text=${encodeURIComponent(text)}`;
   window.open(url, "_blank", "noopener,noreferrer");
   return url;

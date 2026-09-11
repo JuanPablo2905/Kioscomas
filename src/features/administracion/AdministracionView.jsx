@@ -11,7 +11,7 @@ import { SectionHeader } from "../../shared/layout";
 import { AppSelect } from "../../shared/controls";
 import { defaultDataset, PERMISOS_MENU, PERMISOS_ACCION } from "../../app/data";
 import { secureSubject } from "../../security/auth";
-import { auditActor, auditDisplayDetail, auditDisplayRole, auditDisplaySection } from "../../shared/audit";
+import { auditActor, auditDisplayDetail, auditDisplayRole, auditDisplaySection, compactAuditEventsForDisplay } from "../../shared/audit";
 
 const MOCK_LOCALES = [
   {
@@ -429,6 +429,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
   const negocioAbierto = resumenes.find(
     (negocio) => negocio.id === negocioAbiertoId
   );
+  const auditoriaVisible = useMemo(() => compactAuditEventsForDisplay(negocioAbierto?.auditoria || []), [negocioAbierto?.auditoria]);
 
   const alertas = (esSuperAdmin ? cuentas : cuentas.filter((n) => n.id === cuenta?.id)).flatMap(
     (negocio) => {
@@ -948,17 +949,18 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
                 <h3 className="text-sm font-semibold text-gray-900">Registro completo de actividad</h3>
                 <p className="text-xs text-gray-500">Incluye cambios de stock, ventas, caja, compras, clientes, gastos, configuración y acciones administrativas.</p>
               </div>
-              <span className="text-xs text-gray-400">{(negocioAbierto.auditoria || []).length} evento(s)</span>
+              <span className="text-xs text-gray-400">{auditoriaVisible.length} evento(s){auditoriaVisible.length < (negocioAbierto.auditoria || []).length ? " · repeticiones agrupadas" : ""}</span>
             </div>
-            {(negocioAbierto.auditoria || []).length === 0 ? (
+            {auditoriaVisible.length === 0 ? (
               <p className="rounded-lg border border-dashed p-4 text-center text-xs text-gray-400">Todavía no hay actividad auditada.</p>
             ) : (
               <div className="max-h-96 space-y-2 overflow-y-auto rounded-xl border bg-gray-50/50 p-2">
-                {[...(negocioAbierto.auditoria || [])].reverse().map((evento) => (
+                {[...auditoriaVisible].reverse().map((evento) => (
                   <div key={evento.id} className="rounded-lg border bg-white px-3 py-2">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <p className="break-words text-sm font-medium text-gray-900">{auditDisplayDetail(evento, negocioAbierto)}</p>
+                        {Number(evento.cantidadAgrupada || 1) > 1 && <span className="mt-1 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">{evento.cantidadAgrupada} cambios rápidos agrupados</span>}
                         <p className="mt-0.5 break-words text-xs text-gray-500">
                           {evento.usuario || "Sin identificar"} · {auditDisplayRole(evento, negocioAbierto)}
                           {evento.seccion ? ` · ${auditDisplaySection(evento.seccion)}` : ""}

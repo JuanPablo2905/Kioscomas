@@ -12,7 +12,7 @@ const assert = (condition, message) => {
 };
 
 const defaultConfig = normalizeDisplayConfig(DEFAULT_DISPLAY_CONFIG);
-assert(defaultConfig.version === 2 && defaultConfig.placements.idle["promo-top"].width === 96, "el diseño nuevo usa un lienzo libre con ancho y alto independientes");
+assert(defaultConfig.version === 3 && defaultConfig.placements.idle["promo-top"].width === 96, "el diseño nuevo usa un lienzo libre con ancho y alto independientes");
 assert(["sale-items", "sale-total", "sale-payment"].every((id) => defaultConfig.placements.sale[id]), "la lista, el total y el pago son widgets editables durante la venta");
 
 const legacy = normalizeDisplayConfig({
@@ -26,6 +26,17 @@ const legacy = normalizeDisplayConfig({
 assert(Boolean(legacy.placements.idle.weather) && legacy.placements.idle.weather.height > legacy.placements.idle.hours.height, "los diseños anteriores se convierten sin perder su distribución relativa");
 assert(["sale-items", "sale-total", "sale-payment"].every((id) => legacy.placements.sale[id]), "la migración agrega los widgets de venta sin ocultar información existente");
 
+const legacySocials = normalizeDisplayConfig({
+  widgets: { socials: { type: "socials", items: [
+    { platform: "whatsapp", value: "1122334455", label: "Pedidos" },
+    { platform: "instagram", value: "@kiosco", label: "Novedades" },
+  ] } },
+  placements: { idle: { socials: { x: 74, y: 15, width: 24, height: 68, z: 3 } } },
+});
+const migratedSocials = Object.values(legacySocials.widgets).filter((item) => item.type === "social");
+assert(migratedSocials.length === 2 && migratedSocials.every((item) => legacySocials.placements.idle[item.id]), "cada red del bloque anterior se convierte en un widget independiente");
+assert(legacySocials.placements.idle[migratedSocials[0].id].y !== legacySocials.placements.idle[migratedSocials[1].id].y, "las redes migradas reciben cuadros separados sin superponerse");
+
 const clamped = normalizeDisplayPlacement({ x: 92, y: 96, width: 40, height: 30, z: 999 });
 assert(clamped.x === 60 && clamped.y === 70 && clamped.z === 100, "los widgets no pueden quedar fuera del lienzo");
 
@@ -37,5 +48,11 @@ assert(preset.placements.idle["promo-top"].width === 96 && preset.placements.idl
 
 const sanitized = sanitizePublicDisplayContent({ config: { placements: { idle: { notice: { x: -30, y: 95, width: 200, height: 40, z: -4 } } } } });
 assert(sanitized.config.placements.idle.notice.x === 0 && sanitized.config.placements.idle.notice.width === 100, "la pantalla remota recibe solamente coordenadas válidas");
+
+const sanitizedSocial = sanitizePublicDisplayContent({ config: {
+  widgets: { "social-test": { id: "social-test", type: "social", platform: "whatsapp", value: "11 2233 4455", label: "Pedinos acá" } },
+  placements: { idle: { "social-test": { x: 70, y: 10, width: 25, height: 30, z: 4 } } },
+} });
+assert(sanitizedSocial.config.widgets["social-test"].platform === "whatsapp" && sanitizedSocial.config.widgets["social-test"].value === "11 2233 4455", "cada pantalla remota conserva el dato de su red individual sin campos privados");
 
 console.log("display-config-tests: lienzo libre verificado");

@@ -37,7 +37,7 @@ import { parseTicketBarcode } from "../shared/ticketBarcode";
 import { printTicket } from "../shared/ticketPrint";
 import { anularTicket, restaurarStock } from "../features/ventas/salesRules";
 import { unidadInfo } from "../shared/domain";
-import { auditActor, createAuditEvent, describeAccountChange, enrichEntityHistory, hasMeaningfulChange } from "../shared/audit";
+import { appendCoalescedAudit, auditActor, createAuditEvent, describeAccountChange, enrichEntityHistory, hasMeaningfulChange } from "../shared/audit";
 import { captureAppScreenshot } from "../shared/captureScreenshot";
 import { lookupBarcode } from "../shared/productLookup";
 import { cleanOperationalDataset, exportCommercialArchive } from "../shared/archive";
@@ -773,7 +773,7 @@ export default function KioscoApp() {
       if (!hasMeaningfulChange(cur[key], nextVal)) return prev;
       const auditar = !["cart"].includes(key);
       const evento = createAuditEvent({ key, previousValue: cur[key], nextValue: nextVal, identity: identidad, tenantId: currentUserId, view, deviceId: loadCloudConfig().deviceId });
-      return { ...prev, [currentUserId]: { ...cur, tenantId: String(currentUserId), [key]: nextVal, auditoria: auditar ? [...(cur.auditoria || []), evento] : (cur.auditoria || []) } };
+      return { ...prev, [currentUserId]: { ...cur, tenantId: String(currentUserId), [key]: nextVal, auditoria: auditar ? appendCoalescedAudit(cur.auditoria || [], evento) : (cur.auditoria || []) } };
     });
   };
   const appendAudit = ({ key, previousValue, nextValue, detail, section = view }) => {

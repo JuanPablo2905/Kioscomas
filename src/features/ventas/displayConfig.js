@@ -64,7 +64,7 @@ export const DISPLAY_WIDGET_CATALOG = {
   welcome: { label: "Bienvenida", description: "Mensaje principal del negocio." },
   clock: { label: "Hora y fecha", description: "Reloj actualizado en pantalla." },
   weather: { label: "Clima", description: "Temperatura actual de la ciudad elegida." },
-  socials: { label: "Redes y contacto", description: "WhatsApp, Instagram, web y otros accesos listos." },
+  social: { label: "Red social o contacto", description: "Un acceso individual con su color y código QR." },
   hours: { label: "Horarios", description: "Días y horarios de atención." },
   payments: { label: "Medios de pago", description: "Formas de pago aceptadas." },
   notice: { label: "Aviso", description: "Un mensaje breve y personalizado." },
@@ -86,7 +86,7 @@ export const SOCIAL_PLATFORMS = {
 const widget = (id, type, extra = {}) => ({ id, type, enabled: true, ...extra });
 
 export const DEFAULT_DISPLAY_CONFIG = {
-  version: 2,
+  version: 3,
   operationMode: DISPLAY_MODES.saleAndAds,
   preset: "classic",
   layouts: {
@@ -94,18 +94,17 @@ export const DEFAULT_DISPLAY_CONFIG = {
       top: ["promo-top"],
       left: ["weather"],
       center: ["welcome"],
-      right: ["socials"],
+      right: [],
       bottom: ["promo-bottom"],
     },
-    sale: { top: ["clock"], left: [], center: [], right: [], bottom: ["promo-sale", "socials"] },
-    complete: { top: ["clock"], left: [], center: [], right: [], bottom: ["socials"] },
+    sale: { top: ["clock"], left: [], center: [], right: [], bottom: ["promo-sale"] },
+    complete: { top: ["clock"], left: [], center: [], right: [], bottom: [] },
   },
   placements: {
     idle: {
       "promo-top": { x: 2, y: 2, width: 96, height: 10, z: 1 },
       weather: { x: 2, y: 14, width: 21, height: 31, z: 2 },
       welcome: { x: 25, y: 14, width: 50, height: 70, z: 1 },
-      socials: { x: 77, y: 14, width: 21, height: 70, z: 2 },
       "promo-bottom": { x: 2, y: 88, width: 96, height: 10, z: 1 },
     },
     sale: {
@@ -114,11 +113,9 @@ export const DEFAULT_DISPLAY_CONFIG = {
       "sale-total": { x: 65, y: 15, width: 33, height: 30, z: 1 },
       "sale-payment": { x: 65, y: 47, width: 33, height: 35, z: 1 },
       "promo-sale": { x: 2, y: 84, width: 70, height: 14, z: 2 },
-      socials: { x: 74, y: 84, width: 24, height: 14, z: 2 },
     },
     complete: {
       clock: { x: 2, y: 2, width: 24, height: 12, z: 2 },
-      socials: { x: 74, y: 82, width: 24, height: 16, z: 2 },
     },
   },
   widgets: {
@@ -131,7 +128,6 @@ export const DEFAULT_DISPLAY_CONFIG = {
     welcome: widget("welcome", "welcome"),
     clock: widget("clock", "clock"),
     weather: widget("weather", "weather", { city: "", latitude: null, longitude: null }),
-    socials: widget("socials", "socials", { items: [] }),
     hours: widget("hours", "hours", { text: "", schedule: normalizeDisplaySchedule() }),
     payments: widget("payments", "payments", { items: ["Efectivo", "Mercado Pago", "Tarjeta"] }),
     notice: widget("notice", "notice", { title: "", text: "" }),
@@ -149,24 +145,24 @@ export const DISPLAY_PRESETS = {
     label: "Promociones protagonistas",
     layouts: {
       idle: { top: ["promo-top"], left: [], center: ["welcome"], right: [], bottom: ["promo-bottom"] },
-      sale: { top: ["promo-sale"], left: [], center: [], right: [], bottom: ["socials"] },
-      complete: { top: ["promo-top"], left: [], center: [], right: [], bottom: ["socials"] },
+      sale: { top: ["promo-sale"], left: [], center: [], right: [], bottom: [] },
+      complete: { top: ["promo-top"], left: [], center: [], right: [], bottom: [] },
     },
   },
   information: {
     label: "Información útil",
     layouts: {
-      idle: { top: ["promo-top"], left: ["weather", "hours"], center: ["welcome"], right: ["socials", "payments"], bottom: ["promo-bottom"] },
-      sale: { top: ["clock", "weather"], left: [], center: [], right: [], bottom: ["payments", "socials"] },
-      complete: { top: ["clock"], left: [], center: [], right: [], bottom: ["socials"] },
+      idle: { top: ["promo-top"], left: ["weather", "hours"], center: ["welcome"], right: ["payments"], bottom: ["promo-bottom"] },
+      sale: { top: ["clock", "weather"], left: [], center: [], right: [], bottom: ["payments"] },
+      complete: { top: ["clock"], left: [], center: [], right: [], bottom: [] },
     },
   },
   minimal: {
     label: "Minimalista",
     layouts: {
-      idle: { top: [], left: [], center: ["welcome"], right: [], bottom: ["socials"] },
+      idle: { top: [], left: [], center: ["welcome"], right: [], bottom: [] },
       sale: { top: ["clock"], left: [], center: [], right: [], bottom: [] },
-      complete: { top: [], left: [], center: [], right: [], bottom: ["socials"] },
+      complete: { top: [], left: [], center: [], right: [], bottom: [] },
     },
   },
 };
@@ -224,14 +220,58 @@ function placementsFromLayouts(layouts, widgets) {
   return placements;
 }
 
+const normalizeSocialWidget = (id, item = {}) => ({
+  id,
+  type: "social",
+  enabled: item.enabled !== false,
+  platform: SOCIAL_PLATFORMS[item.platform] ? item.platform : "whatsapp",
+  value: String(item.value || "").slice(0, 180),
+  label: String(item.label || "").slice(0, 80),
+});
+
+const availableSocialId = (widgets, item, index) => {
+  const platform = SOCIAL_PLATFORMS[item?.platform] ? item.platform : "web";
+  const base = `social-${platform}-${index + 1}`;
+  let id = base;
+  let suffix = 2;
+  while (widgets[id]) { id = `${base}-${suffix}`; suffix += 1; }
+  return id;
+};
+
+function splitLegacySocialPlacement(value, ids) {
+  const base = normalizeDisplayPlacement(value);
+  if (ids.length <= 1) return ids.length ? { [ids[0]]: base } : {};
+  const columns = base.width > base.height * 1.2 ? Math.min(3, ids.length) : ids.length > 4 ? 2 : 1;
+  const rows = Math.ceil(ids.length / columns);
+  const gap = 1;
+  const cellWidth = (base.width - gap * (columns - 1)) / columns;
+  const cellHeight = (base.height - gap * (rows - 1)) / rows;
+  return Object.fromEntries(ids.map((id, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    return [id, normalizeDisplayPlacement({
+      x: base.x + column * (cellWidth + gap),
+      y: base.y + row * (cellHeight + gap),
+      width: cellWidth,
+      height: cellHeight,
+      z: Math.min(100, base.z + index),
+    })];
+  }));
+}
+
 export function normalizeDisplayConfig(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   const normalized = clone(DEFAULT_DISPLAY_CONFIG);
-  normalized.version = 2;
+  normalized.version = 3;
   normalized.operationMode = Object.values(DISPLAY_MODES).includes(source.operationMode) ? source.operationMode : normalized.operationMode;
   normalized.preset = source.preset === "custom" || DISPLAY_PRESETS[source.preset] ? source.preset : normalized.preset;
   for (const [id, item] of Object.entries(source.widgets || {})) {
-    if (!normalized.widgets[id] || !item || typeof item !== "object") continue;
+    if (!item || typeof item !== "object") continue;
+    if (item.type === "social") {
+      normalized.widgets[id] = normalizeSocialWidget(id, item);
+      continue;
+    }
+    if (!normalized.widgets[id]) continue;
     normalized.widgets[id] = { ...normalized.widgets[id], ...item, id, type: normalized.widgets[id].type };
     if (item.sizePercent != null || item.size != null) normalized.widgets[id].legacySizePercent = Object.prototype.hasOwnProperty.call(LEGACY_WIDGET_SIZES, item.size)
       ? LEGACY_WIDGET_SIZES[item.size]
@@ -239,11 +279,19 @@ export function normalizeDisplayConfig(value = {}) {
     delete normalized.widgets[id].sizePercent;
     delete normalized.widgets[id].size;
   }
+  const legacySocialIds = [];
+  const legacySocialItems = Array.isArray(source.widgets?.socials?.items) ? source.widgets.socials.items.slice(0, 12) : [];
+  for (const [index, item] of legacySocialItems.entries()) {
+    if (!item || typeof item !== "object") continue;
+    const id = availableSocialId(normalized.widgets, item, index);
+    normalized.widgets[id] = normalizeSocialWidget(id, item);
+    legacySocialIds.push(id);
+  }
   normalized.widgets.hours.schedule = normalizeDisplaySchedule(normalized.widgets.hours.schedule);
   for (const mode of ["idle", "sale", "complete"]) {
     for (const zone of DISPLAY_ZONES) {
       const ids = source.layouts?.[mode]?.[zone];
-      if (Array.isArray(ids)) normalized.layouts[mode][zone] = [...new Set(ids.map(String).filter((id) => normalized.widgets[id]))].slice(0, 8);
+      if (Array.isArray(ids)) normalized.layouts[mode][zone] = [...new Set(ids.flatMap((id) => String(id) === "socials" ? legacySocialIds : [String(id)]).filter((id) => normalized.widgets[id]))].slice(0, 16);
     }
   }
   const hasFreeLayout = source.placements && typeof source.placements === "object";
@@ -251,6 +299,10 @@ export function normalizeDisplayConfig(value = {}) {
     normalized.placements = { idle: {}, sale: {}, complete: {} };
     for (const mode of Object.keys(normalized.placements)) {
       for (const [id, placement] of Object.entries(source.placements?.[mode] || {})) {
+        if (id === "socials") {
+          Object.assign(normalized.placements[mode], splitLegacySocialPlacement(placement, legacySocialIds));
+          continue;
+        }
         if (!normalized.widgets[id]) continue;
         normalized.placements[mode][id] = normalizeDisplayPlacement(placement);
       }
@@ -271,6 +323,15 @@ export function applyDisplayPreset(config, preset) {
     ? clone(DEFAULT_DISPLAY_CONFIG.placements)
     : placementsFromLayouts(layouts, normalized.widgets);
   for (const id of ["sale-items", "sale-total", "sale-payment"]) placements.sale[id] = clone(DEFAULT_DISPLAY_CONFIG.placements.sale[id]);
+  const socialIds = Object.values(normalized.widgets).filter((item) => item.type === "social").map((item) => item.id);
+  for (const mode of ["idle", "sale", "complete"]) {
+    for (const id of socialIds) {
+      if (!normalized.placements?.[mode]?.[id]) continue;
+      placements[mode][id] = clone(normalized.placements[mode][id]);
+      const zone = mode === "idle" ? "right" : "bottom";
+      if (!layouts[mode][zone].includes(id)) layouts[mode][zone].push(id);
+    }
+  }
   return { ...normalized, preset: DISPLAY_PRESETS[preset] ? preset : "classic", layouts, placements };
 }
 
@@ -299,6 +360,9 @@ export function sanitizePublicDisplayContent(value = {}) {
       longitude: raw?.longitude !== null && raw?.longitude !== "" && Number.isFinite(Number(raw?.longitude)) ? Number(raw.longitude) : null,
       text: cleanText(raw?.text, 300), title: cleanText(raw?.title, 100),
       productId: cleanText(raw?.productId, 100), src: safeImage(raw?.src), alt: cleanText(raw?.alt, 100),
+      platform: type === "social" && SOCIAL_PLATFORMS[raw?.platform] ? raw.platform : "",
+      value: type === "social" ? cleanText(raw?.value, 180) : "",
+      label: type === "social" ? cleanText(raw?.label, 80) : "",
       schedule: type === "hours" ? normalizeDisplaySchedule(raw?.schedule) : [],
       items: Array.isArray(raw?.items) ? raw.items.slice(0, 12).map((item) => typeof item === "string"
         ? cleanText(item, 80)
@@ -307,7 +371,7 @@ export function sanitizePublicDisplayContent(value = {}) {
   }
   config.widgets = widgets;
   return {
-    version: 2,
+    version: 3,
     config,
     businessName: cleanText(value.businessName, 100),
     businessImage: safeImage(value.businessImage),

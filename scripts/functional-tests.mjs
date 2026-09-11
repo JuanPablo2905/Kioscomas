@@ -68,6 +68,17 @@ try {
   const oldWorkModeEvent = { detalle: "Configuración del negocio modificada: modoNegocio" };
   test("auditoría antigua traduce el modo del negocio", audit.auditDisplayDetail(oldWorkModeEvent, { modoNegocio: "equipo" }) === "Forma de trabajo: Tengo empleados");
   test("cambio de modalidad explica el valor anterior y nuevo", audit.describeAccountChange({ modoNegocio: "equipo" }, { modoNegocio: "solo" }).includes("Trabajo solo → Tengo empleados"));
+  const purchaseBase = [{ id: 21, productId: 8, nombre: "Sprite", cantidad: 1, estado: "pendiente" }];
+  const purchaseTwo = [{ ...purchaseBase[0], cantidad: 2 }];
+  const purchaseEleven = [{ ...purchaseBase[0], cantidad: 11 }];
+  const firstQuantityEvent = audit.createAuditEvent({ key: "comprasItems", previousValue: purchaseBase, nextValue: purchaseTwo, identity: adminIdentity, tenantId: 2, view: "compras" });
+  const lastQuantityEvent = audit.createAuditEvent({ key: "comprasItems", previousValue: purchaseTwo, nextValue: purchaseEleven, identity: adminIdentity, tenantId: 2, view: "compras" });
+  const groupedQuantities = audit.appendCoalescedAudit(audit.appendCoalescedAudit([], firstQuantityEvent), lastQuantityEvent);
+  test("varios toques de cantidad generan un solo evento por producto", groupedQuantities.length === 1 && groupedQuantities[0].detalle.includes("cantidad 1 → 11") && groupedQuantities[0].cantidadAgrupada === 2);
+  test("recibir once unidades se describe como una sola recepción", audit.describeDataChange("comprasItems", purchaseEleven, [{ ...purchaseEleven[0], estado: "recibido" }]) === "Compra recibida: 11 × Sprite");
+  const legacyAudit = Array.from({ length: 4 }, (_, index) => ({ id: index + 1, fecha: `2026-09-11T12:00:0${index}.000Z`, usuario: "Juan", recurso: "comprasItems", seccion: "compras", detalle: "lista de compras: se modificaron Sprite" }));
+  const compactedLegacyAudit = audit.compactAuditEventsForDisplay(legacyAudit);
+  test("el historial agrupa repeticiones antiguas sin borrar el total", compactedLegacyAudit.length === 1 && compactedLegacyAudit[0].cantidadAgrupada === 4);
 
   const tickets = [
     { id: 1, fecha: "2026-07-18T23:00:00Z", medio: "Efectivo", clienteId: null, total: 200, items: [{ productId: 7, cantidad: 2, precioUnitario: 100, subtotal: 200, costoTotal: 120 }] },
@@ -147,6 +158,12 @@ try {
   const today = new Date().toISOString().slice(0, 10);
   const notifications = notificationsModule.buildNotifications({ products: [{ id: 1, nombre: "Prueba", deposito: 0, minimo: 1, vitrina: 0, alertaVitrina: 1, vencimiento: today }], tickets: [], sugerencias: [{ estado: "pendiente" }], caja: { historial: [] } });
   test("notificaciones combinan alertas", notifications.some((n) => n.type === "stock") && notifications.some((n) => n.type === "vencimiento") && notifications.some((n) => n.type === "sugerencias"));
+  const pickupAt = Date.parse("2026-09-11T18:30:00-03:00");
+  const customerOrderData = { products: [], tickets: [], sugerencias: [], caja: { historial: [] }, reservas: [{ id: "reserva-1", cliente: "Juampa", fechaRetiro: "2026-09-11", horaRetiro: "18:30", estado: "pendiente", items: [{ productId: 8, nombre: "Sprite", cantidad: 11 }] }] };
+  test("el pedido de cliente no avisa antes de la hora elegida", !notificationsModule.buildNotifications(customerOrderData, pickupAt - 1).some((item) => item.type === "reservas"));
+  const dueCustomerOrders = notificationsModule.buildNotifications(customerOrderData, pickupAt);
+  test("once unidades generan un solo aviso del pedido", dueCustomerOrders.filter((item) => item.type === "reservas").length === 1 && dueCustomerOrders.find((item) => item.type === "reservas")?.detail.includes("1 producto"));
+  test("un pedido entregado deja de aparecer como pendiente", !notificationsModule.buildNotifications({ ...customerOrderData, reservas: [{ ...customerOrderData.reservas[0], estado: "entregado" }] }, pickupAt).some((item) => item.type === "reservas"));
 
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); yesterday.setHours(12, 0, 0, 0);
   test("comparación contra período anterior", ranges.isWithinPreviousRange(yesterday.toISOString(), "Hoy") && !ranges.isWithinRange(yesterday.toISOString(), "Hoy"));
@@ -261,7 +278,9 @@ try {
   }, 12);
   test("limpieza operativa protege ventas, comprobantes y auditoría", cleanup.total === 1 && cleanup.dataset.tickets.length === 1 && cleanup.dataset.comprobantes.length === 1 && cleanup.dataset.auditoria.length === 1);
   test("WhatsApp normaliza números argentinos", share.normalizeWhatsAppPhone("011 15-5555-1234") === "541155551234");
+  test("WhatsApp rechaza números incompletos", share.isValidWhatsAppPhone("123") === false && share.isValidWhatsAppPhone("11 5555-1234") === true);
   test("mensaje de pedido incluye negocio, proveedor y cantidades", share.purchaseMessage({ businessName: "Kiosco+", providerName: "Distribuidora", items: [{ nombre: "Yerba", cantidad: 3 }] }).includes("3 x Yerba"));
+  test("mensaje al cliente incluye retiro y cantidades", share.customerOrderMessage({ businessName: "Kiosco+", order: customerOrderData.reservas[0] }).includes("11 x Sprite") && share.customerOrderMessage({ businessName: "Kiosco+", order: customerOrderData.reservas[0] }).includes("18:30"));
 
   console.log(`\n${passed} pruebas funcionales superadas.`);
 } finally {

@@ -119,12 +119,6 @@ function SocialCard({ item }) {
   return <div className="flex h-full w-full flex-col items-center justify-center rounded-[clamp(1rem,2.2vmin,2rem)] p-[clamp(.85rem,2vmin,1.75rem)] text-center shadow-lg" style={{ background: item.platform === "instagram" ? "linear-gradient(135deg,#833AB4,#FD1D1D,#FCAF45)" : platform.color, color: platform.foreground }}><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide">{item.label || platform.label}</p><p className="mt-1 break-all text-[clamp(.7rem,1.25vmin,1.05rem)] font-semibold">{item.value}</p>{qr && <img src={qr} alt={`QR de ${platform.label}`} className="mt-[clamp(.5rem,1.2vmin,1rem)] h-[clamp(4.5rem,10vmin,9rem)] w-[clamp(4.5rem,10vmin,9rem)] rounded-xl bg-white p-1.5"/>}</div>;
 }
 
-function SocialsWidget({ widget }) {
-  const items = Array.isArray(widget.items) ? widget.items.filter((item) => item?.value).slice(0, 4) : [];
-  if (!items.length) return <div className="grid h-full w-full place-items-center rounded-2xl border border-dashed border-white/25 p-[clamp(1rem,2.5vmin,2.25rem)] text-center text-[clamp(.72rem,1.35vmin,1.15rem)] text-white/60">Agregá WhatsApp, Instagram o tu web</div>;
-  return <div className="grid h-full w-full gap-2">{items.map((item, index) => <SocialCard key={`${item.platform}-${index}`} item={item}/>)}</div>;
-}
-
 const scheduleMinutes = (value) => {
   const [hours, minutes] = String(value || "00:00").split(":").map(Number);
   return (hours * 60) + minutes;
@@ -155,7 +149,7 @@ function BasicWidget({ widget, state }) {
   if (type === "salePayment") return <SalePaymentWidget state={state}/>;
   if (type === "clock") return <ClockWidget/>;
   if (type === "weather") return <WeatherWidget widget={widget}/>;
-  if (type === "socials") return <SocialsWidget widget={widget}/>;
+  if (type === "social") return <SocialCard item={widget}/>;
   if (type === "hours") return <HoursWidget widget={widget}/>;
   if (type === "payments") return <div className="flex h-full w-full flex-col items-center justify-center rounded-2xl bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)] text-center"><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide text-amber-300">Medios de pago</p><div className="mt-2 flex flex-wrap justify-center gap-[clamp(.35rem,.8vmin,.7rem)]">{(widget.items || []).map((item) => <span key={item} className="rounded-full bg-white px-[clamp(.55rem,1vw,1rem)] py-[clamp(.25rem,.55vmin,.5rem)] text-[clamp(.65rem,1.2vmin,1rem)] font-bold text-[#173F3A]">{item}</span>)}</div></div>;
   if (type === "notice") return <div className="flex h-full w-full flex-col items-center justify-center rounded-2xl bg-amber-300 p-[clamp(1rem,2.5vmin,2.25rem)] text-center text-amber-950"><p className="text-[clamp(1rem,2vmin,1.65rem)] font-black">{widget.title || "Aviso"}</p><p className="mt-1 text-[clamp(.8rem,1.6vmin,1.35rem)]">{widget.text || "Escribí un aviso para tus clientes"}</p></div>;

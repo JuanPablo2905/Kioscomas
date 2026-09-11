@@ -1289,7 +1289,7 @@ export function VentasView({
   };
 
   if (salesArea !== "venta") {
-    return <div className="ventas-view min-w-0 px-4 py-5 sm:p-8"><SectionHeader title="Ventas / Caja" />{salesNavigation}<div data-tour={`sales-content-${salesArea}`}>{salesArea === "pedidos" ? <CustomerOrders products={products} records={supportData.reservas || []} setRecords={supportSetters.setReservas}/> : salesArea === "presupuestos" ? <Budgets products={products} records={supportData.presupuestos || []} setRecords={supportSetters.setPresupuestos}/> : <SmallBusinessTools key={salesArea} data={{ ...supportData, products, tickets, caja }} setters={{ ...supportSetters, setProducts }} identidad={identidad} preferences={preferences} staffOptions={staffOptions} sectionsAllowed={[salesArea]}/>}</div></div>;
+    return <div className="ventas-view min-w-0 px-4 py-5 sm:p-8"><SectionHeader title="Ventas / Caja" />{salesNavigation}<div data-tour={`sales-content-${salesArea}`}>{salesArea === "pedidos" ? <CustomerOrders products={products} records={supportData.reservas || []} setRecords={supportSetters.setReservas} businessName={businessName}/> : salesArea === "presupuestos" ? <Budgets products={products} records={supportData.presupuestos || []} setRecords={supportSetters.setPresupuestos}/> : <SmallBusinessTools key={salesArea} data={{ ...supportData, products, tickets, caja }} setters={{ ...supportSetters, setProducts }} identidad={identidad} preferences={preferences} staffOptions={staffOptions} sectionsAllowed={[salesArea]}/>}</div></div>;
   }
 
   if (!cajaAbierta) {

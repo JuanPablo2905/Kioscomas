@@ -51,6 +51,44 @@ const DATA_LABELS = {
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 const itemName = (item) => item?.nombre || item?.producto || item?.concepto || item?.nota || item?.descripcion || (item?.id !== undefined ? `#${item.id}` : "registro");
 
+const arrayChange = (previous = [], next = []) => {
+  const oldById = new Map(previous.map((item) => [String(item?.id), item]));
+  const nextById = new Map(next.map((item) => [String(item?.id), item]));
+  const added = next.filter((item) => !oldById.has(String(item?.id)));
+  const removed = previous.filter((item) => !nextById.has(String(item?.id)));
+  const changed = next.flatMap((item) => {
+    const old = oldById.get(String(item?.id));
+    return old && !same(old, item) ? [{ old, item }] : [];
+  });
+  const received = [
+    ...added.filter((item) => item?.estado === "recibido"),
+    ...changed.filter(({ old, item }) => old?.estado !== "recibido" && item?.estado === "recibido").map(({ item }) => item),
+  ];
+  const kind = received.length ? "recibir" : added.length ? "agregar" : removed.length ? "eliminar" : "modificar";
+  const touched = received.length ? received : [...added, ...removed, ...changed.map(({ item }) => item)];
+  const identities = [...new Set(touched.map((item) => String(item?.productId ?? item?.id ?? itemName(item))))].sort();
+  return { added, removed, changed, received, kind, identities };
+};
+
+const auditChangeMetadata = (key, previousValue, nextValue) => {
+  if (key !== "comprasItems" || !Array.isArray(previousValue) || !Array.isArray(nextValue)) return {};
+  const change = arrayChange(previousValue, nextValue);
+  const metadata = { agrupacion: `${key}:${change.kind}:${change.identities.join(",") || "lista"}` };
+  if (change.changed.length !== 1 || change.added.length || change.removed.length) return metadata;
+  const [{ old, item }] = change.changed;
+  if (old?.estado === item?.estado && Number(old?.cantidad) !== Number(item?.cantidad)) {
+    return {
+      ...metadata,
+      cambioCantidad: {
+        nombre: itemName(item),
+        desde: Number(old?.cantidad) || 0,
+        hasta: Number(item?.cantidad) || 0,
+      },
+    };
+  }
+  return metadata;
+};
+
 export function auditActor(identity) {
   const isAppAdmin = !!(identity?.adminApp && identity?.operandoNegocio);
   return {
@@ -107,6 +145,23 @@ function describeArray(label, previous, next) {
   return `${label}: datos actualizados`;
 }
 
+function describePurchaseItems(previous, next) {
+  const change = arrayChange(previous || [], next || []);
+  if (change.received.length) {
+    const received = change.received.map((item) => `${Math.max(1, Number(item?.cantidad) || 1)} × ${itemName(item)}`);
+    return `Compra recibida: ${received.join(", ")}`;
+  }
+  if (change.added.length) return `Lista de compras: se ${change.added.length === 1 ? "agregó" : "agregaron"} ${change.added.map(itemName).join(", ")}`;
+  if (change.removed.length) return `Lista de compras: se ${change.removed.length === 1 ? "eliminó" : "eliminaron"} ${change.removed.map(itemName).join(", ")}`;
+  if (change.changed.length === 1) {
+    const [{ old, item }] = change.changed;
+    if (Number(old?.cantidad) !== Number(item?.cantidad)) return `Lista de compras: ${itemName(item)} · cantidad ${Number(old?.cantidad) || 0} → ${Number(item?.cantidad) || 0}`;
+    return `Lista de compras: se modificó ${itemName(item)}`;
+  }
+  if (change.changed.length > 1) return `Lista de compras: se modificaron ${change.changed.map(({ item }) => itemName(item)).join(", ")}`;
+  return "Lista de compras actualizada";
+}
+
 const goalAmount = (goal) => `$${Number(goal?.objetivo || 0).toLocaleString("es-AR")}`;
 const workModeLabel = (mode) => mode === "equipo" ? "Tengo empleados" : "Trabajo solo";
 
@@ -136,6 +191,7 @@ function describeGoals(previous, next) {
 export function describeDataChange(key, previousValue, nextValue) {
   if (key === "products") return describeProducts(previousValue, nextValue);
   if (key === "metas") return describeGoals(previousValue, nextValue);
+  if (key === "comprasItems") return describePurchaseItems(previousValue, nextValue);
   if (key === "caja") {
     const oldMovements = previousValue?.movimientos || [];
     const nextMovements = nextValue?.movimientos || [];
@@ -175,6 +231,7 @@ export function auditDisplayRole(event, account = {}) {
 
 export function createAuditEvent({ key, previousValue, nextValue, identity, tenantId, view, deviceId, detail }) {
   const actor = auditActor(identity);
+  const metadata = auditChangeMetadata(key, previousValue, nextValue);
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     fecha: new Date().toISOString(),
@@ -184,8 +241,56 @@ export function createAuditEvent({ key, previousValue, nextValue, identity, tena
     accion: `actualizar_${key}`,
     detalle: detail || describeDataChange(key, previousValue, nextValue),
     dispositivoId: deviceId || null,
+    ...metadata,
     ...actor,
   };
+}
+
+export function appendCoalescedAudit(events = [], event, windowMs = 20000) {
+  const previousEvents = Array.isArray(events) ? events : [];
+  if (!event || event.recurso !== "comprasItems" || !event.agrupacion || !previousEvents.length) return [...previousEvents, event].filter(Boolean);
+  const previous = previousEvents.at(-1);
+  const elapsed = Math.abs(Date.parse(event.fecha || "") - Date.parse(previous?.fecha || ""));
+  const sameBurst = previous?.recurso === event.recurso
+    && previous?.agrupacion === event.agrupacion
+    && previous?.usuarioId === event.usuarioId
+    && Number.isFinite(elapsed)
+    && elapsed <= windowMs;
+  if (!sameBurst) return [...previousEvents, event];
+
+  const merged = {
+    ...event,
+    id: previous.id,
+    primeraFecha: previous.primeraFecha || previous.fecha,
+    cantidadAgrupada: Number(previous.cantidadAgrupada || 1) + 1,
+  };
+  if (previous.cambioCantidad && event.cambioCantidad) {
+    merged.cambioCantidad = { ...event.cambioCantidad, desde: previous.cambioCantidad.desde };
+    merged.detalle = `Lista de compras: ${event.cambioCantidad.nombre} · cantidad ${merged.cambioCantidad.desde} → ${merged.cambioCantidad.hasta}`;
+    if (merged.cambioCantidad.desde === merged.cambioCantidad.hasta) return previousEvents.slice(0, -1);
+  }
+  return [...previousEvents.slice(0, -1), merged];
+}
+
+export function compactAuditEventsForDisplay(events = [], windowMs = 60000) {
+  return (Array.isArray(events) ? events : []).reduce((result, event) => {
+    const previous = result.at(-1);
+    const signature = event?.agrupacion || [event?.recurso, event?.detalle, event?.usuarioId || event?.usuario, event?.seccion].join("|");
+    const previousSignature = previous?._displaySignature || previous?.agrupacion || [previous?.recurso, previous?.detalle, previous?.usuarioId || previous?.usuario, previous?.seccion].join("|");
+    const elapsed = Math.abs(Date.parse(event?.fecha || "") - Date.parse(previous?.fecha || ""));
+    if (previous && signature === previousSignature && Number.isFinite(elapsed) && elapsed <= windowMs) {
+      result[result.length - 1] = {
+        ...event,
+        id: previous.id,
+        primeraFecha: previous.primeraFecha || previous.fecha,
+        cantidadAgrupada: Number(previous.cantidadAgrupada || 1) + Number(event?.cantidadAgrupada || 1),
+        _displaySignature: signature,
+      };
+      return result;
+    }
+    result.push({ ...event, _displaySignature: signature });
+    return result;
+  }, []).map(({ _displaySignature, ...event }) => event);
 }
 
 export function hasMeaningfulChange(previousValue, nextValue) {

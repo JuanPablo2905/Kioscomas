@@ -17,6 +17,7 @@ const remoteDisplayScreen = fs.readFileSync("src/features/ventas/RemoteDisplaySc
 const remoteDisplays = fs.readFileSync("src/features/ventas/remoteDisplays.js", "utf8");
 const promotionsManager = fs.readFileSync("src/features/gestion/PromotionsManager.jsx", "utf8");
 const salesView = fs.readFileSync("src/features/ventas/VentasView.jsx", "utf8");
+const salesSupport = fs.readFileSync("src/features/ventas/SalesSupportTools.jsx", "utf8");
 const adminNotifications = fs.readFileSync("src/features/administracion/AdminNotificationCenter.jsx", "utf8");
 const adminPanel = fs.readFileSync("src/features/administracion/AdminAppPanel.jsx", "utf8");
 const styles = fs.readFileSync("src/styles.css", "utf8");
@@ -53,8 +54,10 @@ const checks = [
   [customerDisplayLayout.includes("Editor libre de la pantalla") && customerDisplayLayout.includes("Traer adelante") && customerDisplayLayout.includes("Diseños rápidos"), "Los bloques deben ordenarse libremente sobre la vista previa y cambiar su superposición."],
   [customerDisplayLayout.includes("Editor libre de la pantalla") && customerDisplayLayout.includes('window.addEventListener("pointermove"') && customerDisplayLayout.includes("Posición horizontal") && customerDisplayLayout.includes("Ocupar todo el ancho") && customerDisplay.includes("CanvasWidgetLayer"), "Cada bloque debe moverse y redimensionarse libremente sobre el lienzo real."],
   [customerDisplayLayout.includes("La lista de la compra, el total y el pago/QR son widgets independientes") && customerDisplay.includes('type === "saleItems"') && customerDisplay.includes('type === "saleTotal"') && customerDisplay.includes('type === "salePayment"'), "La información de venta debe poder moverse, achicarse o quitarse como widgets independientes."],
+  [customerDisplayLayout.includes("Cada red social se crea como un cuadro independiente") && customerDisplayLayout.includes("Nueva red o contacto") && customerDisplay.includes('type === "social"') && !customerDisplay.includes("function SocialsWidget"), "Cada red o contacto debe mostrarse y editarse como un widget independiente."],
   [customerDisplayLayout.includes("Horarios del negocio") && customerDisplayLayout.includes('type="time"') && customerDisplay.includes("Abierto ahora") && customerDisplay.includes("DISPLAY_SCHEDULE_DAYS"), "Los horarios deben configurarse por día y mostrarse como una lista con estado actual."],
-  [customerDisplayLayout.includes("no hay zonas ni tamaños preestablecidos") && !customerDisplayLayout.includes("<select value={addZone}"), "El editor táctil debe agregar bloques sin abrir selectores nativos del teléfono."],
+  [customerDisplayLayout.toLowerCase().includes("no hay zonas ni tamaños preestablecidos") && !customerDisplayLayout.includes("<select value={addZone}"), "El editor táctil debe agregar bloques sin abrir selectores nativos del teléfono."],
+  [salesSupport.includes("KioscoDatePicker") && salesSupport.includes('type="time"') && salesSupport.includes("customerOrderMessage") && salesSupport.includes("WhatsApp") && salesSupport.includes("BellRing"), "Los pedidos de clientes deben guardar WhatsApp, fecha, hora y un aviso programado."],
   [main.includes('mode === "remote-display"') && remoteDisplayScreen.includes("Vinculá esta pantalla") && remoteDisplayScreen.includes("authorizationUrl") && remoteDisplays.includes("kiosco:remote-display-cache"), "La pantalla remota debe mostrar su QR, vincularse de forma aislada y conservar contenido sin conexión."],
   [promotionsManager.includes("Anunciar en la segunda pantalla") && promotionsManager.includes("Editar promoción") && promotionsManager.includes("diasSemana"), "Gestión debe permitir editar y programar la publicidad de las promociones."],
   [customerDisplaySettings.includes("Probar publicidad") && customerDisplaySettings.includes("Simular venta") && customerDisplaySettings.includes("Contacto o redes"), "La pantalla para clientes debe ofrecer contenido comercial y vistas de prueba."],

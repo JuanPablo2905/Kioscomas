@@ -52,6 +52,7 @@ function PendingSyncDetail({ operation, title, onClose }) {
 
 export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLogout, products, data, onReturnAdmin, menuOrder = [], onMenuOrderChange, onOpenSettings, onReportProblem, onGlobalScan, onHelp, syncStatus, onSyncNow, demoMode = false }) {
   const [ordenando, setOrdenando] = useState(false);
+  const [notificationClock, setNotificationClock] = useState(() => Date.now());
   const [syncReviewOpen, setSyncReviewOpen] = useState(false);
   const [syncReview, setSyncReview] = useState({ conflicts: [], pending: [] });
   const [pendingDiscardId, setPendingDiscardId] = useState(null);
@@ -79,6 +80,10 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
     setSyncReviewOpen(false);
     setSyncReview({ conflicts: [], pending: [] });
   }, [syncStatus?.conflicts, syncStatus?.pending]);
+  useEffect(() => {
+    const timer = setInterval(() => setNotificationClock(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
   const reposicionPendiente = (products || []).filter(
     (p) => p.vitrina <= p.alertaVitrina
   ).length;
@@ -97,7 +102,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
     [next[index], next[target]] = [next[target], next[index]];
     onMenuOrderChange?.(next);
   };
-  const notificationCount = data ? buildNotifications(data).length : 0;
+  const notificationCount = data ? buildNotifications(data, notificationClock).length : 0;
   const entityLabel = (entity) => ({ products: "Producto", tickets: "Venta / ticket", clientes: "Cliente", comprasItems: "Compra", proveedores: "Proveedor", perdidas: "Pérdida", sugerencias: "Sugerencia", pedidos: "Pedido", gastos: "Gasto", ventasSuspendidas: "Venta suspendida", auditoria: "Auditoría", inventarios: "Inventario", tareas: "Tarea", metas: "Meta", promociones: "Promoción", reservas: "Reserva", presupuestos: "Presupuesto", arqueos: "Arqueo", comprobantes: "Comprobante", listaCompras: "Ítem de compra", retornables: "Retornable", autoconsumos: "Autoconsumo", turnos: "Turno", recordatoriosProveedor: "Recordatorio", movimientosStock: "Movimiento de stock", historialLimpiezas: "Limpieza", labelTemplates: "Diseño de etiqueta", tutorialProgress: "Tutorial" }[entity] || "Registro");
   const sectionLabel = (section) => ({ caja: "Caja y movimientos", tickets: "Ventas y tickets", clientes: "Clientes y fiado", comprasItems: "Lista de compras", pedidos: "Pedidos a proveedores", gastos: "Gastos", ventasSuspendidas: "Ventas suspendidas", inventarios: "Conteos de stock", perdidas: "Vencimientos y pérdidas", cart: "Carrito de venta", cajaAbierta: "Estado de la caja", promociones: "Promociones", comprobantes: "Comprobantes", movimientosStock: "Movimientos de stock", labelTemplates: "Distribuciones de etiquetas" }[section] || section || null);
   const pendingTitle = (operation) => operation?.value?.nombre || (operation?.entity ? entityLabel(operation.entity) : null) || sectionLabel(operation?.section) || (operation?.key === "cuentas" ? "Cuentas y negocios" : operation?.key) || "Datos del negocio";
