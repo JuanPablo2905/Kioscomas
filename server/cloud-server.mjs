@@ -1010,6 +1010,7 @@ const token = () => crypto.randomBytes(32).toString("base64url");
 const displaySecretHash = (value) => crypto.createHash("sha256").update(String(value || "")).digest("hex");
 const displayCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const displayPairingCode = () => Array.from(crypto.randomBytes(8), (byte) => displayCodeAlphabet[byte % displayCodeAlphabet.length]).join("");
+const publicDisplayUrl = () => String(process.env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar").replace(/\/+$/, "");
 const displayTokenFromRequest = (req) => String(req.headers.authorization || "").replace(/^Display\s+/i, "").trim();
 const activeDisplayToken = (db, req) => {
   const raw = displayTokenFromRequest(req);
@@ -1032,8 +1033,27 @@ const createDisplayPairing = (db, display) => {
     displayId: display.id, businessId: display.businessId, createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), usedAt: null,
   };
-  const publicAppUrl = String(process.env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar").replace(/\/+$/, "");
-  return { code, expiresAt: db.displayPairingCodes[displaySecretHash(code)].expiresAt, pairingUrl: `${publicAppUrl}/?window=remote-display&pair=${encodeURIComponent(code)}` };
+  return { code, expiresAt: db.displayPairingCodes[displaySecretHash(code)].expiresAt, pairingUrl: `${publicDisplayUrl()}/?window=remote-display&pair=${encodeURIComponent(code)}` };
+};
+const createDisplayPairingRequest = (db, deviceId) => {
+  db.displayPairingCodes ||= {};
+  const now = Date.now();
+  for (const [key, entry] of Object.entries(db.displayPairingCodes)) {
+    if (Date.parse(entry.expiresAt || "") <= now || (entry.requestTokenHash && entry.deviceId === deviceId && !entry.approvedAt)) delete db.displayPairingCodes[key];
+  }
+  let code = displayPairingCode();
+  while (db.displayPairingCodes[displaySecretHash(code)]) code = displayPairingCode();
+  const requestToken = token();
+  const createdAt = new Date(now).toISOString();
+  const expiresAt = new Date(now + 10 * 60 * 1000).toISOString();
+  db.displayPairingCodes[displaySecretHash(code)] = {
+    requestTokenHash: displaySecretHash(requestToken), deviceId, createdAt, expiresAt,
+    displayId: null, businessId: null, approvedAt: null, usedAt: null,
+  };
+  return {
+    code, requestToken, expiresAt,
+    authorizationUrl: `${publicDisplayUrl()}/?displayPair=${encodeURIComponent(code)}`,
+  };
 };
 const bearer = (req) => String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
 const activeSession = (db, req) => {
@@ -1077,6 +1097,38 @@ const handleRequest = async (req, res) => {
         configured: pushDeliveryConfigured,
         publicKey: pushDeliveryConfigured ? vapidPublicKey : null,
       });
+    }
+    if (req.method === "POST" && req.url === "/v1/displays/pairing-request") {
+      const remoteAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
+      const attempts = (displayPairAttempts.get(`request:${remoteAddress}`) || []).filter((at) => at > Date.now() - 10 * 60 * 1000);
+      if (attempts.length >= 12) return send(res, 429, { error: "Se solicitaron demasiados códigos. Esperá unos minutos." });
+      attempts.push(Date.now()); displayPairAttempts.set(`request:${remoteAddress}`, attempts);
+      const payload = await body(req);
+      const deviceId = cleanCatalogText(payload.deviceId || crypto.randomUUID(), 120);
+      const db = await readDb();
+      const pairing = createDisplayPairingRequest(db, deviceId);
+      await writeDb(db);
+      return send(res, 201, { ok: true, pairing: { code: pairing.code, requestToken: pairing.requestToken, expiresAt: pairing.expiresAt, authorizationUrl: pairing.authorizationUrl } });
+    }
+    if (req.method === "POST" && req.url === "/v1/displays/pairing-status") {
+      const payload = await body(req);
+      const requestToken = String(payload.requestToken || "").trim();
+      if (requestToken.length < 20) return send(res, 400, { error: "Solicitud de vinculación inválida." });
+      const requestTokenHash = displaySecretHash(requestToken);
+      const db = await readDb();
+      const activeCredential = db.displayTokens?.[requestTokenHash];
+      if (activeCredential && !activeCredential.revokedAt) {
+        const display = db.businessDisplays?.[activeCredential.displayId];
+        if (display?.status === "active") return send(res, 200, { ok: true, status: "approved", displayToken: requestToken, display: displayView(display) });
+      }
+      const pairingEntry = Object.entries(db.displayPairingCodes || {}).find(([, entry]) => entry.requestTokenHash === requestTokenHash);
+      if (!pairingEntry) return send(res, 404, { error: "La solicitud ya no existe. Generá un código nuevo." });
+      const [codeHash, pairing] = pairingEntry;
+      if (Date.parse(pairing.expiresAt || "") <= Date.now()) {
+        delete db.displayPairingCodes[codeHash]; await writeDb(db);
+        return send(res, 410, { error: "El código venció. Generando uno nuevo…" });
+      }
+      return send(res, 202, { ok: true, status: "pending", expiresAt: pairing.expiresAt });
     }
     if (req.method === "POST" && req.url === "/v1/displays/pair") {
       const remoteAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
@@ -1705,6 +1757,28 @@ const handleRequest = async (req, res) => {
         for (const entry of Object.values(db.displayPairingCodes)) if (entry.displayId === id && !entry.usedAt) entry.usedAt = new Date().toISOString();
         const pairing = createDisplayPairing(db, display);
         await writeDb(db); return send(res, 201, { pairing });
+      }
+      const approvePairingMatch = req.url.match(/^\/v1\/business-displays\/([^/?]+)\/pair$/);
+      if (req.method === "POST" && approvePairingMatch) {
+        const id = decodeURIComponent(approvePairingMatch[1]); const display = db.businessDisplays[id];
+        if (!display || String(display.businessId) !== tenantId) return send(res, 404, { error: "Pantalla inexistente." });
+        const payload = await body(req);
+        const pairingCode = String(payload.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const codeHash = displaySecretHash(pairingCode);
+        const pairing = db.displayPairingCodes[codeHash];
+        if (!pairing?.requestTokenHash || pairing.approvedAt || pairing.usedAt || Date.parse(pairing.expiresAt || "") <= Date.now()) {
+          return send(res, 400, { error: "El código no existe, ya fue usado o venció." });
+        }
+        const now = new Date().toISOString();
+        db.displayTokens[pairing.requestTokenHash] = {
+          id: crypto.randomUUID(), displayId: display.id, businessId: display.businessId,
+          deviceId: cleanCatalogText(pairing.deviceId || crypto.randomUUID(), 120), createdAt: now, lastSeenAt: now, revokedAt: null,
+        };
+        display.lastSeenAt = now; display.updatedAt = now;
+        pairing.displayId = display.id; pairing.businessId = display.businessId; pairing.approvedAt = now; pairing.usedAt = now;
+        delete db.displayPairingCodes[codeHash];
+        await writeDb(db);
+        return send(res, 201, { ok: true, display: displayView(display) });
       }
       const revokeMatch = req.url.match(/^\/v1\/business-displays\/([^/?]+)\/revoke$/);
       if (req.method === "POST" && revokeMatch) {

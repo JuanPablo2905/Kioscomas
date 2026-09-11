@@ -295,6 +295,7 @@ export default function KioscoApp() {
   const scannerBufferRef = useRef("");
   const scannerLastKeyRef = useRef(0);
   const autoTutorialRef = useRef(false);
+  const displayPairingOpenedRef = useRef(false);
 
   const warmCloud = ({ force = false } = {}) => {
     if (PUBLIC_DEMO_MODE) return Promise.resolve();
@@ -462,6 +463,15 @@ export default function KioscoApp() {
     window.addEventListener("offline", updateNetworkStatus);
     return () => { window.removeEventListener("online", updateNetworkStatus); window.removeEventListener("offline", updateNetworkStatus); };
   }, []);
+  useEffect(() => {
+    const requestedCode = String(new URLSearchParams(window.location.search).get("displayPair") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (!requestedCode || displayPairingOpenedRef.current || cargando || !currentUserId || !identidad) return;
+    const canAuthorize = identidad.rol === "Dueño" || Boolean(identidad.adminApp && identidad.operandoNegocio);
+    if (!canAuthorize) return;
+    displayPairingOpenedRef.current = true;
+    setSettingsInitialSection("operacion");
+    setSettingsOpen(true);
+  }, [cargando, currentUserId, identidad]);
   useEffect(() => {
     repository.setContext({
       tenantId: currentUserId ? String(currentUserId) : null,

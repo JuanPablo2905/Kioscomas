@@ -33,6 +33,13 @@ export async function createRemotePairing(businessId, displayId) {
   return result(await cloudFetch(config.apiUrl, `/v1/business-displays/${encodeURIComponent(displayId)}/pairing-code`, { method: "POST", headers, body: "{}" }));
 }
 
+export async function approveRemotePairing(businessId, displayId, code) {
+  const { config, headers } = context(businessId);
+  return result(await cloudFetch(config.apiUrl, `/v1/business-displays/${encodeURIComponent(displayId)}/pair`, {
+    method: "POST", headers, body: JSON.stringify({ code }),
+  }));
+}
+
 export async function revokeRemoteDisplay(businessId, displayId) {
   const { config, headers } = context(businessId);
   return result(await cloudFetch(config.apiUrl, `/v1/business-displays/${encodeURIComponent(displayId)}/revoke`, { method: "POST", headers, body: "{}" }));
@@ -49,6 +56,64 @@ const remoteDeviceId = () => {
   if (!id) { id = crypto.randomUUID?.() || `screen-${Date.now()}`; localStorage.setItem(key, id); }
   return id;
 };
+
+const pairingRequestKey = "kiosco:remote-display-pairing-request";
+let pendingPairingRequest = null;
+
+const cachedPairingRequest = () => {
+  try {
+    const value = JSON.parse(localStorage.getItem(pairingRequestKey) || "null");
+    return value?.requestToken && Date.parse(value.expiresAt || "") > Date.now() + 5000 ? value : null;
+  } catch { return null; }
+};
+
+export async function requestRemoteDisplayPairing({ force = false } = {}) {
+  const config = loadCloudConfig();
+  if (!config.apiUrl) throw new Error("Esta pantalla no conoce la dirección del servidor.");
+  if (!force && pendingPairingRequest) return pendingPairingRequest;
+  if (!force) {
+    const cached = cachedPairingRequest();
+    if (cached) return cached;
+  }
+  localStorage.removeItem(pairingRequestKey);
+  const operation = (async () => {
+    const payload = await result(await fetch(`${config.apiUrl}/v1/displays/pairing-request`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ deviceId: remoteDeviceId() }),
+    }));
+    localStorage.setItem(pairingRequestKey, JSON.stringify(payload.pairing));
+    return payload.pairing;
+  })();
+  if (!force) pendingPairingRequest = operation;
+  try { return await operation; }
+  finally { if (pendingPairingRequest === operation) pendingPairingRequest = null; }
+}
+
+export async function pollRemoteDisplayPairing(requestToken) {
+  const config = loadCloudConfig();
+  if (!config.apiUrl) throw new Error("Esta pantalla no conoce la dirección del servidor.");
+  const response = await fetch(`${config.apiUrl}/v1/displays/pairing-status`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestToken }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (response.status === 202) return payload;
+  if (!response.ok) {
+    const error = new Error(payload.error || "No se pudo consultar la vinculación.");
+    error.status = response.status; throw error;
+  }
+  if (payload.status === "approved" && payload.displayToken) {
+    localStorage.setItem("kiosco:remote-display-token", payload.displayToken);
+    localStorage.setItem("kiosco:remote-display-cache", JSON.stringify({ savedAt: Date.now(), display: payload.display }));
+    localStorage.removeItem(pairingRequestKey);
+  }
+  return payload;
+}
+
+export function remoteDisplayEntryUrl() {
+  const browserUrl = window.location.protocol === "http:" || window.location.protocol === "https:" ? window.location.href : "";
+  const url = new URL(browserUrl || import.meta.env.VITE_CLOUD_APP_URL || "https://app.kioscomas.ar");
+  url.search = ""; url.hash = ""; url.searchParams.set("window", "remote-display");
+  return url.toString();
+}
 
 export async function pairRemoteDisplay(code) {
   const config = loadCloudConfig();
@@ -76,4 +141,5 @@ export function cachedRemoteDisplay() {
 export function unlinkRemoteDisplay() {
   localStorage.removeItem("kiosco:remote-display-token");
   localStorage.removeItem("kiosco:remote-display-cache");
+  localStorage.removeItem(pairingRequestKey);
 }
