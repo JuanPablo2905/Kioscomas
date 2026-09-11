@@ -920,8 +920,10 @@ export function VentasView({
     showClock: preferences.customerDisplayShowClock !== false,
     slideSeconds: Math.max(4, Number(preferences.customerDisplaySlideSeconds || 8)),
     rotation: preferences.customerDisplayRotation || "ordered",
+    displayConfig: preferences.customerDisplayConfig,
     showPromotionsDuringSale: preferences.customerDisplayShowPromotionsDuringSale !== false,
     promotions: displayPromotions,
+    featuredProducts: products.slice(0, 500).map((product) => ({ id: product.id, name: product.nombre, price: Number(product.venta || 0), image: product.imagen || product.imagenUrl || "" })),
     items: cartItems.filter((item) => item.product).map((item) => {
       const unit = unidadInfo(item.product.unidad);
       const lineSubtotal = Number(item.product.venta || 0) * Number(item.cantidad || 0);

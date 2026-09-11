@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 
 const read = (file) => fs.readFile(file, "utf8");
-const [landing, prices, privacy, responsive, navigation, adminPanel, cloudApp, cloudServer, publicEnv, cloudEnv] = await Promise.all([
+const [landing, prices, privacy, responsive, navigation, adminPanel, cloudApp, cloudServer, publicEnv, cloudEnv, releaseWorkflow, packageManifest] = await Promise.all([
   read("src/landing.jsx"),
   read("src/precios.jsx"),
   read("src/privacidad.jsx"),
@@ -12,6 +12,8 @@ const [landing, prices, privacy, responsive, navigation, adminPanel, cloudApp, c
   read("server/cloud-server.mjs"),
   read(".env.public"),
   read(".env.cloud"),
+  read(".github/workflows/release-windows.yml"),
+  read("package.json"),
 ]);
 
 let passed = 0;
@@ -35,6 +37,11 @@ test("editar y eliminar tienen etiquetas visibles", adminPanel.includes("<Pencil
 test("la app real exige activación y la demo puede omitirla", cloudApp.includes("REQUIRE_DEVICE_ACTIVATION") && cloudApp.includes("PUBLIC_DEMO_MODE"));
 test("el servidor verifica la activación al iniciar y renovar sesión", cloudServer.includes("requireDeviceActivation") && cloudServer.includes("Este dispositivo todavía no fue autorizado") && cloudServer.includes("Este dispositivo ya no está autorizado"));
 test("el sitio público conoce la URL de la aplicación real", publicEnv.includes("VITE_CLOUD_APP_URL=https://app.kioscomas.ar"));
+test("la landing ofrece instaladores Mac para Apple Silicon e Intel", landing.includes("macAppleSiliconDownloadUrl") && landing.includes("macIntelDownloadUrl") && landing.includes('id="descargas-mac"'));
+test("el entorno público apunta a los dos instaladores Mac", publicEnv.includes("KioscoPlus-Mac-arm64.dmg") && publicEnv.includes("KioscoPlus-Mac-x64.dmg"));
+test("la publicación de Mac separa Apple Silicon e Intel", releaseWorkflow.includes("arch: arm64") && releaseWorkflow.includes("arch: x64") && !releaseWorkflow.includes("--universal"));
+test("cada instalador Mac usa el equipo nativo correcto", releaseWorkflow.includes("runner: macos-15") && releaseWorkflow.includes("runner: macos-15-intel") && releaseWorkflow.includes("runs-on: ${{ matrix.runner }}"));
+test("los instaladores Mac tienen órdenes separadas", packageManifest.includes("desktop:build:mac:arm64") && packageManifest.includes("desktop:build:mac:x64"));
 test("la compilación de nube activa el control de dispositivos", cloudEnv.includes("VITE_REQUIRE_DEVICE_ACTIVATION=true"));
 
 console.log(`Sitio público y acceso: ${passed} comprobaciones superadas`);

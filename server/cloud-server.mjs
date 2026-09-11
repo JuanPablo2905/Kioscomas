@@ -9,6 +9,7 @@ import { TERMS_VERSION } from "../src/legal/terms.js";
 import { createPostgresStore } from "./postgres-record-store.mjs";
 import { createEmailService, isValidEmail, normalizeEmail } from "./email-service.mjs";
 import { argentinaDateKey, referralStats, referralStatus } from "../src/billing/referrals.js";
+import { sanitizePublicDisplayContent } from "../src/features/ventas/displayConfig.js";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 let appVersion = "0.0.0";
@@ -52,7 +53,7 @@ const pushDeliveryConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
 if (pushDeliveryConfigured) webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISOString();
 const refreshTokenExpiresAt = () => new Date(Date.now() + refreshTokenTtlMs).toISOString();
-const emptyDb = () => ({ schemaVersion: 5, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {} });
+const emptyDb = () => ({ schemaVersion: 6, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {}, businessDisplays: {}, displayPairingCodes: {}, displayTokens: {} });
 const compactChangeLog = (changes = []) => {
   let latestAccountDirectoryKept = false;
   return [...changes].reverse().filter((change) => {
@@ -433,10 +434,14 @@ const writeMirrors = async (db) => {
   await writeJson(path.join(dataDirectory, "backups", day, "database.json"), db);
 };
 const writeDb = async (db) => {
+  db.schemaVersion = 6;
   ensureReferralMetadata(db);
   db.sessions = compactSessions(db.sessions);
   db.passwordResetTokens = compactPasswordResetTokens(db.passwordResetTokens);
   db.passwordResetRateLimits = compactPasswordResetRateLimits(db.passwordResetRateLimits);
+  const displayRetentionLimit = Date.now() - 30 * 86400000;
+  db.displayPairingCodes = Object.fromEntries(Object.entries(db.displayPairingCodes || {}).filter(([, entry]) => !entry?.usedAt ? Date.parse(entry?.expiresAt || "") > Date.now() - 86400000 : Date.parse(entry.usedAt) > displayRetentionLimit));
+  db.displayTokens = Object.fromEntries(Object.entries(db.displayTokens || {}).filter(([, entry]) => !entry?.revokedAt || Date.parse(entry.revokedAt) > displayRetentionLimit));
   compactNotificationData(db);
   if (postgresStore) {
     await postgresStore.write(db);
@@ -1002,6 +1007,34 @@ const applyConfiguredSuperAdmin = (db) => {
   return db;
 };
 const token = () => crypto.randomBytes(32).toString("base64url");
+const displaySecretHash = (value) => crypto.createHash("sha256").update(String(value || "")).digest("hex");
+const displayCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const displayPairingCode = () => Array.from(crypto.randomBytes(8), (byte) => displayCodeAlphabet[byte % displayCodeAlphabet.length]).join("");
+const displayTokenFromRequest = (req) => String(req.headers.authorization || "").replace(/^Display\s+/i, "").trim();
+const activeDisplayToken = (db, req) => {
+  const raw = displayTokenFromRequest(req);
+  const entry = raw && db.displayTokens?.[displaySecretHash(raw)];
+  if (!entry || entry.revokedAt || !db.businessDisplays?.[entry.displayId] || db.businessDisplays[entry.displayId].status !== "active") return null;
+  return entry;
+};
+const displayView = (entry = {}) => ({
+  id: entry.id, name: entry.name, status: entry.status, contentVersion: Number(entry.contentVersion || 1),
+  createdAt: entry.createdAt, updatedAt: entry.updatedAt, lastSeenAt: entry.lastSeenAt || null,
+  pairedDevices: Number(entry.pairedDevices || 0), content: entry.content || null,
+});
+const createDisplayPairing = (db, display) => {
+  db.displayPairingCodes ||= {};
+  for (const [key, entry] of Object.entries(db.displayPairingCodes)) {
+    if (entry.displayId === display.id && !entry.usedAt) delete db.displayPairingCodes[key];
+  }
+  const code = displayPairingCode();
+  db.displayPairingCodes[displaySecretHash(code)] = {
+    displayId: display.id, businessId: display.businessId, createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), usedAt: null,
+  };
+  const publicAppUrl = String(process.env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar").replace(/\/+$/, "");
+  return { code, expiresAt: db.displayPairingCodes[displaySecretHash(code)].expiresAt, pairingUrl: `${publicAppUrl}/?window=remote-display&pair=${encodeURIComponent(code)}` };
+};
 const bearer = (req) => String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
 const activeSession = (db, req) => {
   const session = db.sessions[bearer(req)];
@@ -1022,6 +1055,7 @@ const isLoopback = (req) => {
   const address = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
   return address === "127.0.0.1" || address === "::1";
 };
+const displayPairAttempts = new Map();
 
 const handleRequest = async (req, res) => {
   try {
@@ -1029,7 +1063,7 @@ const handleRequest = async (req, res) => {
     if (req.url === "/v1/health") return send(res, 200, {
       ok: true,
       service: "kiosco-cloud-local",
-      schemaVersion: 5,
+      schemaVersion: 6,
       localMode,
       deviceActivationRequired: requireDeviceActivation,
       emailDeliveryConfigured: emailService.configured && !emailTestMode,
@@ -1043,6 +1077,37 @@ const handleRequest = async (req, res) => {
         configured: pushDeliveryConfigured,
         publicKey: pushDeliveryConfigured ? vapidPublicKey : null,
       });
+    }
+    if (req.method === "POST" && req.url === "/v1/displays/pair") {
+      const remoteAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
+      const attempts = (displayPairAttempts.get(remoteAddress) || []).filter((at) => at > Date.now() - 10 * 60 * 1000);
+      if (attempts.length >= 12) return send(res, 429, { error: "Hubo demasiados intentos. Esperá unos minutos." });
+      attempts.push(Date.now()); displayPairAttempts.set(remoteAddress, attempts);
+      const payload = await body(req);
+      const pairingCode = String(payload.code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const codeHash = displaySecretHash(pairingCode);
+      const db = await readDb();
+      const pairing = db.displayPairingCodes?.[codeHash];
+      const display = pairing ? db.businessDisplays?.[pairing.displayId] : null;
+      if (!pairing || pairing.usedAt || Date.parse(pairing.expiresAt || "") <= Date.now() || !display || display.status !== "active") {
+        return send(res, 400, { error: "El código no existe, ya fue usado o venció." });
+      }
+      const rawToken = token(); const hash = displaySecretHash(rawToken); const now = new Date().toISOString();
+      db.displayTokens ||= {}; db.displayTokens[hash] = {
+        id: crypto.randomUUID(), displayId: display.id, businessId: display.businessId,
+        deviceId: cleanCatalogText(payload.deviceId || crypto.randomUUID(), 120), createdAt: now, lastSeenAt: now, revokedAt: null,
+      };
+      pairing.usedAt = now; display.lastSeenAt = now;
+      await writeDb(db);
+      return send(res, 201, { ok: true, displayToken: rawToken, display: displayView(display) });
+    }
+    if (req.method === "GET" && req.url === "/v1/displays/content") {
+      const db = await readDb(); const credential = activeDisplayToken(db, req);
+      const display = credential ? db.businessDisplays?.[credential.displayId] : null;
+      if (!credential || !display || display.status !== "active") return send(res, 401, { error: "Esta pantalla ya no está autorizada." });
+      const now = new Date().toISOString(); credential.lastSeenAt = now; display.lastSeenAt = now;
+      await writeDb(db);
+      return send(res, 200, { ok: true, display: displayView(display) });
     }
     if (req.method === "GET" && req.url === "/v1/ready") {
       if (!postgresStore) return send(res, 200, { ok: true, persistence: "json" });
@@ -1615,6 +1680,63 @@ const handleRequest = async (req, res) => {
     }
     db.devices[deviceId] = { ...(db.devices[deviceId] || {}), tenantId, lastSeenAt: new Date().toISOString() };
 
+    if (req.url?.startsWith("/v1/business-displays")) {
+      if (!session || !["owner", "superAdmin"].includes(session.role)) return send(res, 403, { error: "Sólo el dueño puede administrar las pantallas remotas." });
+      db.businessDisplays ||= {}; db.displayPairingCodes ||= {}; db.displayTokens ||= {};
+      const visible = () => Object.values(db.businessDisplays).filter((entry) => String(entry.businessId) === tenantId);
+      if (req.method === "GET" && req.url === "/v1/business-displays") {
+        return send(res, 200, { displays: visible().map((entry) => ({ ...displayView(entry), pairedDevices: Object.values(db.displayTokens).filter((tokenEntry) => tokenEntry.displayId === entry.id && !tokenEntry.revokedAt).length, lastSeenAt: entry.lastSeenAt || null })) });
+      }
+      if (req.method === "POST" && req.url === "/v1/business-displays") {
+        if (visible().length >= 12) return send(res, 409, { error: "Alcanzaste el máximo de 12 pantallas para este negocio." });
+        const payload = await body(req); const id = crypto.randomUUID(); const now = new Date().toISOString();
+        const content = sanitizePublicDisplayContent(payload.content || {});
+        content.config.operationMode = "ads-only";
+        const display = { id, businessId: tenantId, name: cleanCatalogText(payload.name || `Pantalla ${visible().length + 1}`, 80), status: "active", content, contentVersion: 1, createdAt: now, updatedAt: now, lastSeenAt: null };
+        db.businessDisplays[id] = display;
+        const pairing = createDisplayPairing(db, display);
+        await writeDb(db);
+        return send(res, 201, { display: displayView(display), pairing });
+      }
+      const pairingMatch = req.url.match(/^\/v1\/business-displays\/([^/?]+)\/pairing-code$/);
+      if (req.method === "POST" && pairingMatch) {
+        const id = decodeURIComponent(pairingMatch[1]); const display = db.businessDisplays[id];
+        if (!display || String(display.businessId) !== tenantId) return send(res, 404, { error: "Pantalla inexistente." });
+        for (const entry of Object.values(db.displayPairingCodes)) if (entry.displayId === id && !entry.usedAt) entry.usedAt = new Date().toISOString();
+        const pairing = createDisplayPairing(db, display);
+        await writeDb(db); return send(res, 201, { pairing });
+      }
+      const revokeMatch = req.url.match(/^\/v1\/business-displays\/([^/?]+)\/revoke$/);
+      if (req.method === "POST" && revokeMatch) {
+        const id = decodeURIComponent(revokeMatch[1]); const display = db.businessDisplays[id];
+        if (!display || String(display.businessId) !== tenantId) return send(res, 404, { error: "Pantalla inexistente." });
+        const now = new Date().toISOString();
+        for (const entry of Object.values(db.displayTokens)) if (entry.displayId === id && !entry.revokedAt) entry.revokedAt = now;
+        display.lastSeenAt = null; display.updatedAt = now;
+        await writeDb(db); return send(res, 200, { ok: true });
+      }
+      const displayMatch = req.url.match(/^\/v1\/business-displays\/([^/?]+)$/);
+      if (displayMatch) {
+        const id = decodeURIComponent(displayMatch[1]); const display = db.businessDisplays[id];
+        if (!display || String(display.businessId) !== tenantId) return send(res, 404, { error: "Pantalla inexistente." });
+        if (req.method === "PUT") {
+          const payload = await body(req);
+          if (payload.name !== undefined) display.name = cleanCatalogText(payload.name, 80) || display.name;
+          if (payload.content) { display.content = sanitizePublicDisplayContent(payload.content); display.content.config.operationMode = "ads-only"; display.contentVersion = Number(display.contentVersion || 0) + 1; }
+          if (["active", "paused"].includes(payload.status)) display.status = payload.status;
+          display.updatedAt = new Date().toISOString(); await writeDb(db);
+          return send(res, 200, { display: displayView(display) });
+        }
+        if (req.method === "DELETE") {
+          delete db.businessDisplays[id];
+          for (const [key, entry] of Object.entries(db.displayTokens)) if (entry.displayId === id) delete db.displayTokens[key];
+          for (const [key, entry] of Object.entries(db.displayPairingCodes)) if (entry.displayId === id) delete db.displayPairingCodes[key];
+          await writeDb(db); return send(res, 200, { ok: true });
+        }
+      }
+      return send(res, 404, { error: "Ruta de pantallas inexistente." });
+    }
+
     if (!["GET", "OPTIONS"].includes(req.method) && session?.role !== "superAdmin" && !req.url.startsWith("/v1/admin/") && !req.url.startsWith("/v1/notifications") && req.url !== "/v1/issues" && !accountCanWrite(db, tenantId)) {
       return send(res, 403, { error: "El abono está vencido. La cuenta se encuentra en modo consulta." });
     }
@@ -1657,6 +1779,10 @@ const handleRequest = async (req, res) => {
         for (const [key, issue] of Object.entries(db.reportedIssues || {})) {
           if (String(issue?.businessId || issue?.negocioId) === accountId) delete db.reportedIssues[key];
         }
+        const removedDisplayIds = new Set(Object.values(db.businessDisplays || {}).filter((entry) => String(entry?.businessId) === accountId).map((entry) => String(entry.id)));
+        for (const [key, display] of Object.entries(db.businessDisplays || {})) if (removedDisplayIds.has(String(display?.id))) delete db.businessDisplays[key];
+        for (const [key, entry] of Object.entries(db.displayPairingCodes || {})) if (removedDisplayIds.has(String(entry?.displayId))) delete db.displayPairingCodes[key];
+        for (const [key, entry] of Object.entries(db.displayTokens || {})) if (removedDisplayIds.has(String(entry?.displayId))) delete db.displayTokens[key];
         delete db.tenants?.[accountId];
         const now = new Date().toISOString();
         db.system.accountTombstones ||= {};

@@ -12,6 +12,9 @@ const notificationService = fs.readFileSync("src/features/notificaciones/notific
 const settings = fs.readFileSync("src/shared/SettingsModal.jsx", "utf8");
 const customerDisplay = fs.readFileSync("src/features/ventas/CustomerDisplayScreen.jsx", "utf8");
 const customerDisplaySettings = fs.readFileSync("src/features/ventas/CustomerDisplaySettings.jsx", "utf8");
+const customerDisplayLayout = fs.readFileSync("src/features/ventas/CustomerDisplayLayoutEditor.jsx", "utf8");
+const remoteDisplayScreen = fs.readFileSync("src/features/ventas/RemoteDisplayScreen.jsx", "utf8");
+const remoteDisplays = fs.readFileSync("src/features/ventas/remoteDisplays.js", "utf8");
 const promotionsManager = fs.readFileSync("src/features/gestion/PromotionsManager.jsx", "utf8");
 const salesView = fs.readFileSync("src/features/ventas/VentasView.jsx", "utf8");
 const adminNotifications = fs.readFileSync("src/features/administracion/AdminNotificationCenter.jsx", "utf8");
@@ -43,6 +46,10 @@ const checks = [
   [main.includes('mode === "customer-display"') && customerDisplay.includes("Tu compra") && customerDisplay.includes("Total a pagar"), "La pantalla para clientes debe tener una entrada aislada y mostrar sólo la información de la venta."],
   [customerDisplaySettings.includes("QR estático") && customerDisplaySettings.includes("no confirma el pago automáticamente"), "La configuración debe explicar que el QR estático requiere confirmación del vendedor."],
   [customerDisplay.includes("Ahorraste") && customerDisplay.includes("item.promotion.badge") && salesView.includes("descuentosPorProducto"), "La segunda pantalla debe identificar la promoción y el ahorro de cada producto."],
+  [customerDisplay.includes("h-screen max-h-screen") && customerDisplay.includes("overflow-y-auto overscroll-contain") && customerDisplay.includes("scrollHeight"), "Una venta extensa debe desplazarse dentro de la lista sin agrandar la pantalla."],
+  [customerDisplayLayout.includes("Ventas + publicidad") && customerDisplayLayout.includes("Sólo publicidad") && customerDisplayLayout.includes("Sólo ventas"), "Cada monitor local debe permitir elegir si recibe ventas, publicidad o ambos."],
+  [customerDisplayLayout.includes("allowedZones") && customerDisplayLayout.includes("Mover de zona") && customerDisplayLayout.includes("Diseños rápidos"), "Los bloques deben poder ordenarse y cambiar de zona."],
+  [main.includes('mode === "remote-display"') && remoteDisplayScreen.includes("Vincular pantalla") && remoteDisplays.includes("kiosco:remote-display-cache"), "La pantalla remota debe vincularse de forma aislada y conservar contenido sin conexión."],
   [promotionsManager.includes("Anunciar en la segunda pantalla") && promotionsManager.includes("Editar promoción") && promotionsManager.includes("diasSemana"), "Gestión debe permitir editar y programar la publicidad de las promociones."],
   [customerDisplaySettings.includes("Probar publicidad") && customerDisplaySettings.includes("Simular venta") && customerDisplaySettings.includes("Contacto o redes"), "La pantalla para clientes debe ofrecer contenido comercial y vistas de prueba."],
   [adminNotifications.includes("admin-notification-tab") && styles.includes(".admin-notification-tab.is-active") && styles.includes("color: #16433d !important"), "Las pestañas de avisos deben mantener contraste legible con cualquier tema."],

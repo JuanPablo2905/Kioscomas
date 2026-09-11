@@ -98,7 +98,7 @@ Descargá `KioscoPlus-Setup.exe` desde la última versión publicada en GitHub. 
 
 ### macOS
 
-Descargá `KioscoPlus-Mac-universal.dmg`, arrastrá Kiosco+ a **Applications** y abrila desde allí. Mientras la aplicación no esté firmada por Apple, macOS puede mostrar una advertencia. En ese caso se debe usar **Control + clic → Abrir** y confirmar.
+Descargá `KioscoPlus-Mac-arm64.dmg` para una Mac con chip Apple M1 o posterior, o `KioscoPlus-Mac-x64.dmg` para una Mac Intel. Para comprobar el modelo, abrí el menú Apple  y elegí **Acerca de esta Mac**. Después arrastrá Kiosco+ a **Applications** y abrila desde allí. Mientras la aplicación no esté firmada por Apple, macOS puede mostrar una advertencia. En ese caso se debe usar **Control + clic → Abrir** y confirmar.
 
 ## 3. Conceptos que no deben confundirse
 
@@ -268,13 +268,27 @@ La venta descuenta stock y registra el movimiento de caja correspondiente. Tambi
 
 ### 9.3 Pantalla para clientes
 
-El dueño puede activarla en **Configuración > Funcionamiento > Operación**. La configuración y el QR se guardan para el negocio, de modo que sus cajas autorizadas comparten el mismo criterio. Durante una venta muestra únicamente nombre y cantidad de productos, precio original, promoción aplicada a cada producto, ahorro, precio final, descuentos generales, total, medio de pago, efectivo recibido y vuelto. Si el negocio carga un QR estático de Mercado Pago o transferencia, aparece al elegir ese medio; el vendedor debe comprobar el pago manualmente.
+El dueño puede activarla en **Configuración > Funcionamiento > Operación > Pantallas del negocio**. El menú está dividido en cuatro pasos plegables: datos y funcionamiento; diseño, bloques y redes; promociones y QR; y pantallas remotas. La configuración y el QR se guardan para el negocio, de modo que sus cajas autorizadas comparten el mismo criterio. Durante una venta muestra únicamente nombre y cantidad de productos, precio original, promoción aplicada a cada producto, ahorro, precio final, descuentos generales, total, medio de pago, efectivo recibido y vuelto. Si el negocio carga un QR estático de Mercado Pago o transferencia, aparece al elegir ese medio; el vendedor debe comprobar el pago manualmente.
 
-Cuando no hay una venta, la pantalla funciona como vidriera digital. Puede alternar las promociones activas que tengan marcada la opción **Anunciar en la segunda pantalla**, junto con su imagen, texto y productos incluidos. En Configuración se define el mensaje de bienvenida y agradecimiento, contacto o redes, reloj, duración y orden de los anuncios y si durante la venta se mantiene una franja promocional. Los botones **Probar publicidad** y **Simular venta** permiten revisar el resultado sin registrar una operación.
+Cada pantalla local puede trabajar en uno de tres modos: **Ventas + publicidad**, **Sólo publicidad** o **Sólo ventas**. En Sólo publicidad, la aplicación elimina productos, pago y totales antes de enviar el estado a la ventana; sirve para una TV alejada de la caja aun cuando esté conectada por HDMI. En Sólo ventas, mientras no haya un carrito muestra únicamente que está esperando la próxima operación.
+
+Cuando no hay una venta, la pantalla puede funcionar como vidriera digital. El diseño usa zonas controladas —arriba, izquierda, centro, derecha y abajo— para evitar que un bloque tape otro. Se pueden aplicar diseños rápidos o mover y ordenar bloques. Hay bloques de promociones, bienvenida, hora y fecha, clima, redes, horarios, medios de pago, aviso propio, producto destacado e imagen. En venta y agradecimiento sólo se personalizan las franjas superior e inferior; la información esencial de la operación no se puede ocultar ni reemplazar.
+
+Las promociones activas que tengan marcada la opción **Anunciar en la segunda pantalla** alimentan las franjas publicitarias. Con hasta tres promociones se muestran fijas; desde cuatro comienzan a rotar según el tiempo configurado. Los tiempos permiten dejar el campo vacío mientras se escribe, usar botones más/menos o elegir valores rápidos. Los botones **Probar publicidad** y **Simular venta** permiten revisar el resultado sin registrar una operación.
 
 La publicidad no constituye un descuento separado. Se alimenta de las mismas promociones comerciales que calcula la caja, por lo que lo anunciado y lo cobrado coinciden. Una promoción vencida, pausada o cuyos productos seleccionados ya no están disponibles se oculta automáticamente de la vidriera. El ticket y el historial conservan el nombre y el ahorro de la promoción aplicada.
 
-En la aplicación de escritorio Kiosco+ detecta los monitores y puede abrirla automáticamente en la pantalla secundaria. En la versión web se abre una ventana independiente que debe moverse manualmente. Esta ventana no inicia otra sesión, no consume otra activación y no recibe stock, costos, usuarios ni información administrativa.
+En la aplicación de escritorio Kiosco+ detecta los monitores y puede abrirla automáticamente en la pantalla secundaria. En la versión web se abre una ventana independiente que debe moverse manualmente. Esta ventana no inicia otra sesión, no consume otra activación y no recibe stock, costos, usuarios ni información administrativa. Si una compra contiene muchos artículos, solamente se desplaza la lista interna y se sigue el último producto agregado; el total, el QR y las franjas permanecen dentro de la altura del monitor.
+
+### 9.3.1 Pantallas remotas
+
+Una pantalla remota es una TV, tablet o computadora que abre `app.kioscomas.ar` y queda asociada al negocio sólo para publicidad. El dueño crea una pantalla con nombre —por ejemplo, “TV vidriera”— y recibe un enlace, un QR y un código de ocho caracteres. El código vence a los diez minutos y funciona una sola vez.
+
+Después de vincularse, el dispositivo recibe una credencial exclusiva de pantalla. No sirve para iniciar sesión, consultar stock, leer ventas ni modificar el negocio. En el servidor se guardan únicamente sus huellas criptográficas, nunca el código ni la credencial legible. Desde Configuración el dueño puede actualizar el contenido de una pantalla concreta, crear varias con contenidos independientes, desvincular todos sus equipos o eliminarla.
+
+La pantalla descarga una copia pública con el diseño, el nombre, el logo, las promociones, los contactos y los productos elegidos como destacados. La copia queda guardada localmente. Si se corta Internet mientras la página ya está cargada, continúa mostrando esa última versión y el último clima obtenido. Sin conexión no recibe cambios, no actualiza el clima y una pantalla nueva no puede vincularse. Al volver la conexión se actualiza automáticamente.
+
+Los accesos de WhatsApp, Instagram, Facebook, TikTok, web, Maps, correo y teléfono aplican un estilo reconocible y generan el QR dentro de Kiosco+; esos datos no se envían a un generador externo. El clima utiliza Open-Meteo y se renueva de forma periódica, conservando una copia de respaldo.
 
 ### 9.4 Venta suspendida
 
@@ -860,7 +874,8 @@ VITE_PLAN_PRICE=30000
 VITE_LAUNCH_PRICE=20000
 VITE_EXTRA_DEVICE_PRICE=5000
 VITE_WINDOWS_DOWNLOAD_URL=https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Setup.exe
-VITE_MAC_DOWNLOAD_URL=https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Mac-universal.dmg
+VITE_MAC_APPLE_SILICON_DOWNLOAD_URL=https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Mac-arm64.dmg
+VITE_MAC_INTEL_DOWNLOAD_URL=https://github.com/JuanPablo2905/Kioscomas/releases/latest/download/KioscoPlus-Mac-x64.dmg
 VITE_LEGAL_NAME=
 VITE_LEGAL_CUIT=
 VITE_LEGAL_ADDRESS=
@@ -918,7 +933,7 @@ Requisitos:
 - Node.js 22.
 - pnpm 11.9.0 mediante Corepack.
 - Windows para probar NSIS y cajón de dinero.
-- macOS o GitHub Actions para generar DMG universal.
+- macOS o GitHub Actions para generar los DMG de Apple Silicon e Intel.
 - Una base PostgreSQL de prueba para pruebas de integración reales.
 
 Preparación:
@@ -947,7 +962,9 @@ pnpm mobile:preview      # prueba accesible en la red local
 pnpm desktop             # Electron en desarrollo
 pnpm desktop:build       # instalador Windows sin publicar
 pnpm desktop:portable    # ejecutable portable Windows
-pnpm desktop:build:mac   # DMG y ZIP universal de macOS
+pnpm desktop:build:mac         # DMG y ZIP para la arquitectura del Mac actual
+pnpm desktop:build:mac:arm64   # DMG y ZIP para Apple Silicon
+pnpm desktop:build:mac:x64     # DMG y ZIP para Mac Intel
 ```
 
 No uses el ejecutable portable de desarrollo como producto final. El instalador oficial es el asset publicado por GitHub Actions.
@@ -1043,8 +1060,10 @@ git push origin v0.2.4
    - `KioscoPlus-Setup.exe`
    - `KioscoPlus-Setup.exe.blockmap`
    - `latest.yml`
-   - `KioscoPlus-Mac-universal.dmg`
-   - `KioscoPlus-Mac-universal.zip`
+   - `KioscoPlus-Mac-arm64.dmg`
+   - `KioscoPlus-Mac-arm64.zip`
+   - `KioscoPlus-Mac-x64.dmg`
+   - `KioscoPlus-Mac-x64.zip`
 7. Instalar en un equipo limpio.
 
 Windows usa `electron-updater`, descarga automáticamente y aplica al salir. macOS está configurado en modo de actualización manual mientras no haya firma.

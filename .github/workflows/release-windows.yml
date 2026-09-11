@@ -14,10 +14,10 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Descargar el proyecto
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Preparar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -53,14 +53,25 @@ jobs:
 
   release-macos:
     needs: release-windows
-    runs-on: macos-latest
-    timeout-minutes: 45
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            label: Apple Silicon
+            runner: macos-15
+          - arch: x64
+            label: Intel
+            runner: macos-15-intel
+    name: release-macos-${{ matrix.arch }}
     steps:
       - name: Descargar el proyecto
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Preparar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -81,9 +92,6 @@ jobs:
       - name: Instalar dependencias
         run: pnpm install --frozen-lockfile
 
-      - name: Probar la aplicación en Mac
-        run: pnpm run test:all
-
       - name: Preparar el ícono para Mac
         run: |
           mkdir -p desktop/icon.iconset
@@ -99,16 +107,16 @@ jobs:
           sips -z 1024 1024 desktop/icon.png --out desktop/icon.iconset/icon_512x512@2x.png
           iconutil -c icns desktop/icon.iconset -o desktop/icon.icns
 
-      - name: Crear instalador universal para Mac
-        run: pnpm run desktop:build:mac
+      - name: Crear instalador para Mac ${{ matrix.label }}
+        run: pnpm run desktop:build:mac:${{ matrix.arch }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Adjuntar instaladores a la versión publicada
+      - name: Adjuntar instaladores de Mac ${{ matrix.label }} a la versión publicada
         run: |
           gh release upload "$GITHUB_REF_NAME" \
-            release/KioscoPlus-Mac-universal.dmg \
-            release/KioscoPlus-Mac-universal.zip \
+            "release/KioscoPlus-Mac-${{ matrix.arch }}.dmg" \
+            "release/KioscoPlus-Mac-${{ matrix.arch }}.zip" \
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

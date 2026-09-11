@@ -30,5 +30,6 @@ export const secondaryWindowContext = () => {
     mode,
     businessId: mode === "admin-business" ? String(params.get("businessId") || "") : "",
     channelId: mode === "customer-display" ? String(params.get("channel") || "") : "",
+    pairingCode: mode === "remote-display" ? String(params.get("pair") || "") : "",
   };
 };

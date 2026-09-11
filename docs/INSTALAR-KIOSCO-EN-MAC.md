@@ -1,10 +1,15 @@
 # Instalar Kiosco+ en Mac
 
-La descarga `KioscoPlus-Mac-universal.dmg` funciona tanto en Mac con procesador Intel como en modelos con Apple Silicon (M1, M2, M3, M4 y posteriores).
+Hay dos instaladores para evitar demoras y fallos en la publicación:
+
+- `KioscoPlus-Mac-arm64.dmg`: Mac con chip Apple M1, M2, M3, M4 o posterior.
+- `KioscoPlus-Mac-x64.dmg`: Mac con procesador Intel.
+
+Para comprobarlo, abrí el menú Apple  y elegí **Acerca de esta Mac**. Si dice **Chip Apple**, descargá Apple Silicon. Si dice **Procesador Intel**, descargá Intel.
 
 ## Instalación
 
-1. Descargá el archivo DMG desde la página de Kiosco+ o desde la última versión publicada en GitHub.
+1. Descargá el archivo DMG correspondiente desde la página de Kiosco+ o desde la última versión publicada en GitHub.
 2. Abrí el DMG.
 3. Arrastrá **Kiosco+** a la carpeta **Aplicaciones**.
 4. Expulsá el instalador y abrí Kiosco+ desde Aplicaciones.

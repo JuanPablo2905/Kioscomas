@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { cleanV2Seed, recordsToState, stateToRecords } from "../server/postgres-record-store.mjs";
 
 const state = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   cursor: 7,
   accepted: { "operation-1": 7 },
   system: { cuentas: [{ id: "business-a", nombreNegocio: "Comercio A" }] },
@@ -23,13 +23,16 @@ const state = {
   notificationReads: {},
   pushSubscriptions: {},
   reportedIssues: {},
+  businessDisplays: { "screen-a": { id: "screen-a", businessId: "business-a", name: "Vidriera" } },
+  displayPairingCodes: { "code-hash": { displayId: "screen-a", businessId: "business-a" } },
+  displayTokens: { "token-hash": { displayId: "screen-a", businessId: "business-a" } },
 };
 
 const rows = stateToRecords(state).map(({ scope, key, payload }) => ({ scope, record_key: key, payload }));
 assert.deepEqual(recordsToState(rows), state, "el estado debe sobrevivir una ida y vuelta por registros");
 
 const scopes = new Set(rows.map((entry) => entry.scope));
-for (const expected of ["meta", "system", "account", "tenant", "tenant_section", "tenant_entity", "change", "accepted", "device", "user", "session", "catalog", "activation_code", "activation", "password_reset", "password_reset_rate"]) {
+for (const expected of ["meta", "system", "account", "tenant", "tenant_section", "tenant_entity", "change", "accepted", "device", "user", "session", "catalog", "activation_code", "activation", "password_reset", "password_reset_rate", "business_display", "display_pairing_code", "display_token"]) {
   assert.equal(scopes.has(expected), true, `falta separar el alcance ${expected}`);
 }
 

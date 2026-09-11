@@ -7,6 +7,7 @@ import { BETA_TRIAL_DAYS, DEFAULT_MONTHLY_PLAN_PRICE, INTRODUCTORY_MONTHLY_PLAN_
 import { trialAccessStatus } from "../security/trialAccess";
 import { NotificationSettingsPanel } from "../features/notificaciones/NotificationSettingsPanel";
 import { CustomerDisplaySettings } from "../features/ventas/CustomerDisplaySettings";
+import { DEFAULT_DISPLAY_CONFIG } from "../features/ventas/displayConfig";
 
 const COLORS = [
   { id: "petroleo", label: "Petróleo", value: "#1C4A44" },
@@ -110,7 +111,7 @@ export const DEFAULT_PREFERENCES = {
   customerDisplayShowUnitPrices: true, customerDisplayShowChange: true, customerDisplayWelcome: "Bienvenido", customerDisplayThanksSeconds: 6,
   customerDisplayThanksMessage: "¡Gracias por tu compra!", customerDisplayContactLine: "", customerDisplayShowClock: true,
   customerDisplaySlideSeconds: 8, customerDisplayRotation: "ordered", customerDisplayShowPromotionsDuringSale: true,
-  customerDisplayId: "", customerDisplayQrImage: null,
+  customerDisplayId: "", customerDisplayQrImage: null, customerDisplayConfig: DEFAULT_DISPLAY_CONFIG,
   tutorialsCompleted: [],
 };
 

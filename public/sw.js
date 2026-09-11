@@ -1,4 +1,4 @@
-const CACHE_NAME = "kioscoplus-shell-v7";
+const CACHE_NAME = "kioscoplus-shell-v8";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll([

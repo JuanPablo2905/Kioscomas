@@ -4,6 +4,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import { TERMS_VERSION } from "../src/legal/terms.js";
+import { argentinaDateKey } from "../src/billing/referrals.js";
 
 const port = 8799;
 const dataDir = path.join(tmpdir(), `kiosco-cloud-test-${Date.now()}`);
@@ -182,7 +183,7 @@ try {
   };
   const pendingWrite = await request("/v1/sync/push", { method: "POST", headers: pendingHeaders, body: JSON.stringify({ operations: [] }) });
   test("una cuenta en beta puede trabajar sin registrar un pago", pendingWrite.response.ok);
-  const deliveryDate = new Date().toISOString().slice(0, 10);
+  const deliveryDate = argentinaDateKey(Date.now());
   const betaOrder = await request("/v1/sync/push", {
     method: "POST",
     headers: pendingHeaders,
