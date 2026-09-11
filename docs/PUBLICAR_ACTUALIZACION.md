@@ -2,6 +2,10 @@
 
 El instalador y las actualizaciones se distribuyen mediante GitHub Releases. La página siempre descarga `KioscoPlus-Setup.exe` desde la versión más reciente.
 
+## Comprobación obligatoria antes de preparar una versión
+
+Antes de cambiar un número de versión, Codex debe revisar `package.json`, los últimos commits y las etiquetas disponibles. Si el usuario confirma que una versión ya fue creada o publicada, esa confirmación prevalece aunque la etiqueta todavía no aparezca en la copia local. Nunca se deben agregar cambios nuevos a un número que el usuario ya publicó: el paquete debe avanzar al siguiente número.
+
 ## Primera publicación
 
 1. Confirmar que el repositorio desde el que se sirven las versiones sea público. Una aplicación instalada no debe llevar un token privado de GitHub.
@@ -15,12 +19,20 @@ Para la versión `0.2.0`, primero hay que esperar que Render termine de publicar
 
 ## Versiones siguientes
 
-1. Cambiar `version` en `package.json`, por ejemplo de `0.1.7` a `0.1.8`.
+1. Pedirle a Codex que prepare la versión nueva. Junto con el número de `package.json`, Codex agregará la explicación completa en `release-notes/releases.json`; no hace falta redactarla manualmente.
 2. Hacer commit y push del cambio terminado.
 3. Crear y subir la etiqueta con la misma versión, por ejemplo `v0.1.8`.
-4. GitHub publicará el nuevo instalador. Las computadoras con Kiosco+ lo descargarán en segundo plano y lo instalarán al cerrar la aplicación.
+4. GitHub publicará el nuevo instalador y completará la descripción del release usando el archivo de notas. Las computadoras con Kiosco+ lo descargarán en segundo plano y lo instalarán al cerrar la aplicación.
 
 No se debe reutilizar una etiqueta ni publicar dos contenidos distintos con el mismo número de versión.
+
+## Notas de versión
+
+- Cada número de versión debe tener una entrada propia en `release-notes/releases.json`.
+- Codex mantiene ese archivo al cerrar cada paquete de cambios y explica las mejoras con lenguaje pensado para los negocios, sin detalles técnicos innecesarios.
+- La aplicación muestra las novedades una sola vez después de actualizar. Luego quedan disponibles en **Configuración → Ayuda y versión**.
+- Al detectar una actualización, la aplicación de escritorio también puede mostrar la descripción publicada antes de instalarla.
+- Las pruebas y el proceso de publicación se detienen si la versión de `package.json` no tiene sus notas correspondientes. Así no puede salir accidentalmente una versión sin explicación.
 
 ## Autorizar una instalación nueva
 

@@ -1,0 +1,33 @@
+[
+  {
+    "version": "0.2.18",
+    "date": "2026-09-11",
+    "title": "Pantallas más claras y novedades visibles",
+    "summary": "Mejoramos la adaptación de los contactos en la pantalla del cliente y estrenamos las notas de versión de Kiosco+.",
+    "sections": [
+      {
+        "title": "Pantalla para clientes",
+        "items": [
+          "Las tarjetas de WhatsApp, Instagram y otros contactos ahora se adaptan al ancho y al alto que les des en el editor.",
+          "Cuando una tarjeta es ancha y baja, el código QR pasa automáticamente al costado para que nada quede cortado.",
+          "El texto y el código QR ahora se equilibran automáticamente según el tamaño del widget, la pantalla y la cantidad de palabras, sin achicar la letra más de lo necesario.",
+          "La vista previa del editor muestra la misma distribución que verá el cliente en la pantalla real."
+        ]
+      },
+      {
+        "title": "Actualizaciones",
+        "items": [
+          "Kiosco+ ahora muestra qué cambió la primera vez que se abre una versión nueva.",
+          "El historial de novedades queda disponible en Configuración, dentro de Ayuda y versión.",
+          "Las notas también se publican automáticamente en el release correspondiente de GitHub."
+        ]
+      },
+      {
+        "title": "Calidad",
+        "items": [
+          "Agregamos comprobaciones automáticas para proteger el diseño adaptable de las tarjetas y la publicación de las notas de versión."
+        ]
+      }
+    ]
+  }
+]

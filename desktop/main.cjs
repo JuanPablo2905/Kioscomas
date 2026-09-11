@@ -17,6 +17,7 @@ let updateState = {
   status: "unavailable",
   currentVersion: app.getVersion(),
   availableVersion: null,
+  releaseNotes: null,
   percent: 0,
   error: null,
   channel: "stable",
@@ -34,6 +35,11 @@ function readableUpdateError(error) {
   const message = String(error?.message || error || "No se pudo comprobar la actualización.");
   if (/net::|ENOTFOUND|ECONN|timeout|timed out/i.test(message)) return "No se pudo consultar la actualización. Se volverá a intentar más tarde.";
   return message.replace(/https?:\/\/\S+/g, "servidor de actualizaciones").slice(0, 240);
+}
+
+function readableReleaseNotes(value) {
+  if (Array.isArray(value)) return value.map((item) => item?.note || item).filter(Boolean).join("\n\n");
+  return value ? String(value).slice(0, 12000) : null;
 }
 
 async function checkDesktopUpdates({ manual = false } = {}) {
@@ -98,11 +104,13 @@ function configureDesktopUpdater() {
     status: "available",
     availableVersion: info?.version || null,
     releaseDate: info?.releaseDate || null,
+    releaseNotes: readableReleaseNotes(info?.releaseNotes),
     error: null,
   }));
   desktopUpdater.on("update-not-available", () => publishUpdateState({
     status: "up-to-date",
     availableVersion: null,
+    releaseNotes: null,
     percent: 0,
     error: null,
   }));
@@ -113,7 +121,7 @@ function configureDesktopUpdater() {
   }));
   desktopUpdater.on("update-downloaded", (info) => {
     const version = info?.version || updateState.availableVersion || "nueva";
-    publishUpdateState({ status: "downloaded", availableVersion: version, percent: 100, error: null });
+    publishUpdateState({ status: "downloaded", availableVersion: version, releaseNotes: readableReleaseNotes(info?.releaseNotes) || updateState.releaseNotes, percent: 100, error: null });
     if (updateNoticeShownFor === version || !Notification.isSupported()) return;
     updateNoticeShownFor = version;
     new Notification({

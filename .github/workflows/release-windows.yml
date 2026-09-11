@@ -51,6 +51,16 @@ jobs:
           WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
 
+      - name: Publicar las notas de esta versión
+        shell: pwsh
+        run: |
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $notesFile = Join-Path $env:RUNNER_TEMP "kiosco-plus-$packageVersion.md"
+          node scripts/generate-release-notes.mjs --version $packageVersion --output $notesFile
+          gh release edit "${{ github.ref_name }}" --notes-file $notesFile
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   release-macos:
     needs: release-windows
     runs-on: ${{ matrix.runner }}

@@ -1127,9 +1127,9 @@ body[data-tutorial-active="true"] .app-date-menu {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(.12rem, 1.2cqh, .7rem);
+  gap: var(--social-gap, .5rem);
   overflow: hidden;
-  padding: clamp(.25rem, min(4.5cqh, 4cqw), 1.75rem);
+  padding: var(--social-padding, .75rem);
   text-align: center;
 }
 
@@ -1137,8 +1137,9 @@ body[data-tutorial-active="true"] .app-date-menu {
   display: flex;
   min-width: 0;
   min-height: 0;
+  width: 100%;
   max-width: 100%;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -1147,87 +1148,50 @@ body[data-tutorial-active="true"] .app-date-menu {
 
 .customer-social-card__title,
 .customer-social-card__value {
-  display: -webkit-box;
+  display: block;
   max-width: 100%;
+  flex: 0 0 auto;
   overflow: hidden;
   overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
 }
 
 .customer-social-card__title {
-  font-size: clamp(.42rem, min(7cqh, 4.4cqw), 1.15rem);
+  font-size: var(--social-title-size, .9rem);
   font-weight: 900;
   letter-spacing: .015em;
-  line-height: 1.06;
+  line-height: 1.08;
   text-transform: uppercase;
-  -webkit-line-clamp: 3;
 }
 
 .customer-social-card__value {
-  margin-top: clamp(.08rem, .7cqh, .35rem);
-  font-size: clamp(.4rem, min(6cqh, 4cqw), 1.05rem);
+  margin-top: var(--social-copy-gap, .2rem);
+  font-size: var(--social-value-size, .72rem);
   font-weight: 600;
-  line-height: 1.08;
-  -webkit-line-clamp: 2;
-}
-
-.customer-social-card[data-text-density="medium"] .customer-social-card__title {
-  font-size: clamp(.4rem, min(6cqh, 3.8cqw), 1rem);
-}
-
-.customer-social-card[data-text-density="medium"] .customer-social-card__value {
-  font-size: clamp(.38rem, min(5.2cqh, 3.4cqw), .9rem);
-}
-
-.customer-social-card[data-text-density="long"] .customer-social-card__title {
-  font-size: clamp(.36rem, min(5.2cqh, 3.2cqw), .85rem);
-  -webkit-line-clamp: 4;
-}
-
-.customer-social-card[data-text-density="long"] .customer-social-card__value {
-  font-size: clamp(.34rem, min(4.6cqh, 2.9cqw), .78rem);
+  line-height: 1.1;
 }
 
 .customer-social-card__qr {
   display: block;
-  width: min(58cqw, 43cqh, 9rem);
-  height: min(58cqw, 43cqh, 9rem);
+  width: var(--social-qr-size, 5rem);
+  height: var(--social-qr-size, 5rem);
   min-width: 0;
   min-height: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   aspect-ratio: 1;
   object-fit: contain;
-  border-radius: clamp(.25rem, 1.4cqh, .75rem);
+  border-radius: clamp(.25rem, 8%, .75rem);
   background: white;
-  padding: clamp(.1rem, .8cqh, .4rem);
-  font-size: clamp(.28rem, min(4cqh, 2.5cqw), .75rem);
+  padding: clamp(.1rem, 3%, .4rem);
+  font-size: max(5px, calc(var(--social-title-size, .9rem) * .65));
 }
 
-/* En una tarjeta ancha y baja, el QR pasa a la derecha y deja el alto para el texto. */
-@container (min-aspect-ratio: 7 / 4) {
-  .customer-social-card {
-    flex-direction: row;
-    gap: clamp(.2rem, 2cqw, 1rem);
-    padding: clamp(.22rem, min(5cqh, 2.5cqw), 1rem);
-    text-align: left;
-  }
+.customer-social-card[data-orientation="horizontal"] {
+  flex-direction: row;
+  text-align: left;
+}
 
-  .customer-social-card__text {
-    flex: 1 1 auto;
-    align-items: flex-start;
-  }
-
-  .customer-social-card__title {
-    font-size: clamp(.42rem, min(12cqh, 3.2cqw), 1.1rem);
-  }
-
-  .customer-social-card__value {
-    font-size: clamp(.4rem, min(10cqh, 2.8cqw), 1rem);
-  }
-
-  .customer-social-card__qr {
-    width: min(31cqw, 78cqh, 8.5rem);
-    height: min(31cqw, 78cqh, 8.5rem);
-    flex: 0 0 auto;
-  }
+.customer-social-card[data-orientation="horizontal"] .customer-social-card__text {
+  height: 100%;
+  align-self: stretch;
+  align-items: flex-start;
 }

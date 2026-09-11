@@ -3,10 +3,11 @@ import { CheckCircle2, Clock3, CloudSun, Image as ImageIcon, Monitor, WifiOff } 
 import QRCode from "qrcode";
 import { money } from "../../shared/domain";
 import {
-  DISPLAY_MODES, DISPLAY_SCHEDULE_DAYS, SOCIAL_PLATFORMS, normalizeDisplayConfig,
+  DISPLAY_MODES, DISPLAY_SCHEDULE_DAYS, normalizeDisplayConfig,
   normalizeDisplayPlacement, normalizeDisplaySchedule, socialDestination,
 } from "./displayConfig";
 import { subscribeCustomerDisplay } from "./customerDisplay";
+import { AdaptiveSocialCard } from "./AdaptiveSocialCard";
 
 export const fallbackCustomerDisplayState = {
   mode: "idle", businessName: "Kiosco+", welcomeMessage: "Bienvenido", thanksMessage: "¡Gracias por tu compra!",
@@ -114,17 +115,8 @@ function WeatherWidget({ widget }) {
 }
 
 function SocialCard({ item }) {
-  const platform = SOCIAL_PLATFORMS[item.platform] || SOCIAL_PLATFORMS.web;
   const qr = useQr(socialDestination(item));
-  const textLength = `${item.label || platform.label} ${item.value || ""}`.trim().length;
-  const textDensity = textLength > 54 ? "long" : textLength > 32 ? "medium" : "short";
-  return <div className="customer-social-card rounded-[clamp(1rem,2.2vmin,2rem)] shadow-lg" data-text-density={textDensity} style={{ background: item.platform === "instagram" ? "linear-gradient(135deg,#833AB4,#FD1D1D,#FCAF45)" : platform.color, color: platform.foreground }}>
-    <div className="customer-social-card__text">
-      <p className="customer-social-card__title">{item.label || platform.label}</p>
-      <p className="customer-social-card__value">{item.value}</p>
-    </div>
-    {qr && <img src={qr} alt={`QR de ${platform.label}`} className="customer-social-card__qr"/>}
-  </div>;
+  return <AdaptiveSocialCard item={item} qrSrc={qr}/>;
 }
 
 const scheduleMinutes = (value) => {
