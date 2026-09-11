@@ -6,16 +6,29 @@ export const DISPLAY_MODES = {
 
 export const DISPLAY_ZONES = ["top", "left", "center", "right", "bottom"];
 
-export const DISPLAY_WIDGET_SIZE_MIN = 60;
-export const DISPLAY_WIDGET_SIZE_MAX = 180;
 const LEGACY_WIDGET_SIZES = { small: 75, medium: 100, large: 130, hero: 160 };
+export const DISPLAY_PLACEMENT_MIN_WIDTH = 4;
+export const DISPLAY_PLACEMENT_MIN_HEIGHT = 5;
 
-export function normalizeDisplayWidgetSize(value) {
-  const migrated = Object.prototype.hasOwnProperty.call(LEGACY_WIDGET_SIZES, value)
-    ? LEGACY_WIDGET_SIZES[value]
-    : Number(value);
-  if (!Number.isFinite(migrated)) return 100;
-  return Math.max(DISPLAY_WIDGET_SIZE_MIN, Math.min(DISPLAY_WIDGET_SIZE_MAX, Math.round(migrated)));
+const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+const rounded = (value) => Math.round(value * 10) / 10;
+
+export function normalizeDisplayPlacement(value = {}, fallback = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const base = fallback && typeof fallback === "object" ? fallback : {};
+  const number = (key, legacyKey, defaultValue) => {
+    const parsed = Number(source[key] ?? source[legacyKey] ?? base[key] ?? base[legacyKey] ?? defaultValue);
+    return Number.isFinite(parsed) ? parsed : defaultValue;
+  };
+  const width = rounded(clamp(number("width", "w", 30), DISPLAY_PLACEMENT_MIN_WIDTH, 100));
+  const height = rounded(clamp(number("height", "h", 20), DISPLAY_PLACEMENT_MIN_HEIGHT, 100));
+  return {
+    x: rounded(clamp(number("x", "left", 0), 0, Math.max(0, 100 - width))),
+    y: rounded(clamp(number("y", "top", 0), 0, Math.max(0, 100 - height))),
+    width,
+    height,
+    z: Math.round(clamp(number("z", "order", 1), 1, 100)),
+  };
 }
 
 export const DISPLAY_SCHEDULE_DAYS = [
@@ -44,6 +57,9 @@ export function normalizeDisplaySchedule(value = []) {
 }
 
 export const DISPLAY_WIDGET_CATALOG = {
+  saleItems: { label: "Lista de la compra", description: "Productos, cantidades y promoción aplicada.", modes: ["sale"] },
+  saleTotal: { label: "Total y descuentos", description: "Subtotal, descuentos, ahorro y total a pagar.", modes: ["sale"] },
+  salePayment: { label: "Pago y QR", description: "Medio de pago, efectivo, vuelto y código QR.", modes: ["sale"] },
   promotions: { label: "Promociones", description: "Hasta 3 quedan fijas; desde 4 rotan automáticamente." },
   welcome: { label: "Bienvenida", description: "Mensaje principal del negocio." },
   clock: { label: "Hora y fecha", description: "Reloj actualizado en pantalla." },
@@ -67,10 +83,10 @@ export const SOCIAL_PLATFORMS = {
   phone: { label: "Teléfono", color: "#1C4A44", foreground: "#ffffff", prefix: "" },
 };
 
-const widget = (id, type, extra = {}) => ({ id, type, enabled: true, sizePercent: 100, ...extra });
+const widget = (id, type, extra = {}) => ({ id, type, enabled: true, ...extra });
 
 export const DEFAULT_DISPLAY_CONFIG = {
-  version: 1,
+  version: 2,
   operationMode: DISPLAY_MODES.saleAndAds,
   preset: "classic",
   layouts: {
@@ -84,10 +100,34 @@ export const DEFAULT_DISPLAY_CONFIG = {
     sale: { top: ["clock"], left: [], center: [], right: [], bottom: ["promo-sale", "socials"] },
     complete: { top: ["clock"], left: [], center: [], right: [], bottom: ["socials"] },
   },
+  placements: {
+    idle: {
+      "promo-top": { x: 2, y: 2, width: 96, height: 10, z: 1 },
+      weather: { x: 2, y: 14, width: 21, height: 31, z: 2 },
+      welcome: { x: 25, y: 14, width: 50, height: 70, z: 1 },
+      socials: { x: 77, y: 14, width: 21, height: 70, z: 2 },
+      "promo-bottom": { x: 2, y: 88, width: 96, height: 10, z: 1 },
+    },
+    sale: {
+      clock: { x: 2, y: 2, width: 22, height: 11, z: 2 },
+      "sale-items": { x: 2, y: 15, width: 61, height: 67, z: 1 },
+      "sale-total": { x: 65, y: 15, width: 33, height: 30, z: 1 },
+      "sale-payment": { x: 65, y: 47, width: 33, height: 35, z: 1 },
+      "promo-sale": { x: 2, y: 84, width: 70, height: 14, z: 2 },
+      socials: { x: 74, y: 84, width: 24, height: 14, z: 2 },
+    },
+    complete: {
+      clock: { x: 2, y: 2, width: 24, height: 12, z: 2 },
+      socials: { x: 74, y: 82, width: 24, height: 16, z: 2 },
+    },
+  },
   widgets: {
     "promo-top": widget("promo-top", "promotions", { style: "strip" }),
     "promo-bottom": widget("promo-bottom", "promotions", { style: "strip" }),
     "promo-sale": widget("promo-sale", "promotions", { style: "strip" }),
+    "sale-items": widget("sale-items", "saleItems"),
+    "sale-total": widget("sale-total", "saleTotal"),
+    "sale-payment": widget("sale-payment", "salePayment"),
     welcome: widget("welcome", "welcome"),
     clock: widget("clock", "clock"),
     weather: widget("weather", "weather", { city: "", latitude: null, longitude: null }),
@@ -140,15 +180,63 @@ const safeImage = (value) => {
   return "";
 };
 
+const zoneBounds = (mode, zone) => {
+  if (mode !== "idle") {
+    if (zone === "top") return { x: 2, y: 2, width: 96, height: 12 };
+    if (zone === "bottom") return { x: 2, y: 82, width: 96, height: 16 };
+  }
+  return {
+    top: { x: 2, y: 2, width: 96, height: 10 },
+    left: { x: 2, y: 14, width: 21, height: 70 },
+    center: { x: 25, y: 14, width: 50, height: 70 },
+    right: { x: 77, y: 14, width: 21, height: 70 },
+    bottom: { x: 2, y: 88, width: 96, height: 10 },
+  }[zone] || { x: 25, y: 25, width: 50, height: 40 };
+};
+
+function placementsFromLayouts(layouts, widgets) {
+  const placements = { idle: {}, sale: {}, complete: {} };
+  for (const mode of Object.keys(placements)) {
+    let z = 1;
+    for (const zone of DISPLAY_ZONES) {
+      const ids = Array.isArray(layouts?.[mode]?.[zone]) ? layouts[mode][zone].filter((id) => widgets[id]) : [];
+      if (!ids.length) continue;
+      const bounds = zoneBounds(mode, zone);
+      const horizontal = zone === "top" || zone === "bottom";
+      const gap = ids.length > 1 ? 1.5 : 0;
+      const weights = ids.map((id) => {
+        const legacy = widgets[id]?.legacySizePercent ?? widgets[id]?.sizePercent ?? LEGACY_WIDGET_SIZES[widgets[id]?.size] ?? 100;
+        return Math.max(1, Number(legacy) || 100);
+      });
+      const weightTotal = weights.reduce((total, weight) => total + weight, 0);
+      const available = (horizontal ? bounds.width : bounds.height) - gap * (ids.length - 1);
+      let cursor = horizontal ? bounds.x : bounds.y;
+      ids.forEach((id, index) => {
+        const extent = available * (weights[index] / weightTotal);
+        placements[mode][id] = normalizeDisplayPlacement(horizontal
+          ? { x: cursor, y: bounds.y, width: extent, height: bounds.height, z }
+          : { x: bounds.x, y: cursor, width: bounds.width, height: extent, z });
+        cursor += extent + gap;
+        z += 1;
+      });
+    }
+  }
+  return placements;
+}
+
 export function normalizeDisplayConfig(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   const normalized = clone(DEFAULT_DISPLAY_CONFIG);
+  normalized.version = 2;
   normalized.operationMode = Object.values(DISPLAY_MODES).includes(source.operationMode) ? source.operationMode : normalized.operationMode;
-  normalized.preset = DISPLAY_PRESETS[source.preset] ? source.preset : normalized.preset;
+  normalized.preset = source.preset === "custom" || DISPLAY_PRESETS[source.preset] ? source.preset : normalized.preset;
   for (const [id, item] of Object.entries(source.widgets || {})) {
     if (!normalized.widgets[id] || !item || typeof item !== "object") continue;
     normalized.widgets[id] = { ...normalized.widgets[id], ...item, id, type: normalized.widgets[id].type };
-    normalized.widgets[id].sizePercent = normalizeDisplayWidgetSize(item.sizePercent ?? item.size);
+    if (item.sizePercent != null || item.size != null) normalized.widgets[id].legacySizePercent = Object.prototype.hasOwnProperty.call(LEGACY_WIDGET_SIZES, item.size)
+      ? LEGACY_WIDGET_SIZES[item.size]
+      : Math.max(1, Number(item.sizePercent) || 100);
+    delete normalized.widgets[id].sizePercent;
     delete normalized.widgets[id].size;
   }
   normalized.widgets.hours.schedule = normalizeDisplaySchedule(normalized.widgets.hours.schedule);
@@ -158,13 +246,32 @@ export function normalizeDisplayConfig(value = {}) {
       if (Array.isArray(ids)) normalized.layouts[mode][zone] = [...new Set(ids.map(String).filter((id) => normalized.widgets[id]))].slice(0, 8);
     }
   }
+  const hasFreeLayout = source.placements && typeof source.placements === "object";
+  if (hasFreeLayout) {
+    normalized.placements = { idle: {}, sale: {}, complete: {} };
+    for (const mode of Object.keys(normalized.placements)) {
+      for (const [id, placement] of Object.entries(source.placements?.[mode] || {})) {
+        if (!normalized.widgets[id]) continue;
+        normalized.placements[mode][id] = normalizeDisplayPlacement(placement);
+      }
+    }
+  } else if (source.layouts && typeof source.layouts === "object") {
+    normalized.placements = placementsFromLayouts(normalized.layouts, normalized.widgets);
+    for (const id of ["sale-items", "sale-total", "sale-payment"]) normalized.placements.sale[id] = clone(DEFAULT_DISPLAY_CONFIG.placements.sale[id]);
+  }
+  for (const item of Object.values(normalized.widgets)) delete item.legacySizePercent;
   return normalized;
 }
 
 export function applyDisplayPreset(config, preset) {
   const normalized = normalizeDisplayConfig(config);
   const selected = DISPLAY_PRESETS[preset] || DISPLAY_PRESETS.classic;
-  return { ...normalized, preset: DISPLAY_PRESETS[preset] ? preset : "classic", layouts: clone(selected.layouts) };
+  const layouts = clone(selected.layouts);
+  const placements = preset === "classic" || !DISPLAY_PRESETS[preset]
+    ? clone(DEFAULT_DISPLAY_CONFIG.placements)
+    : placementsFromLayouts(layouts, normalized.widgets);
+  for (const id of ["sale-items", "sale-total", "sale-payment"]) placements.sale[id] = clone(DEFAULT_DISPLAY_CONFIG.placements.sale[id]);
+  return { ...normalized, preset: DISPLAY_PRESETS[preset] ? preset : "classic", layouts, placements };
 }
 
 export function moveDisplayWidget(config, mode, widgetId, destination, position = null) {
@@ -175,6 +282,7 @@ export function moveDisplayWidget(config, mode, widgetId, destination, position 
   const index = position == null ? items.length : Math.max(0, Math.min(items.length, Number(position) || 0));
   items.splice(index, 0, widgetId);
   next.preset = "custom";
+  next.placements = placementsFromLayouts(next.layouts, next.widgets);
   return next;
 }
 
@@ -185,7 +293,6 @@ export function sanitizePublicDisplayContent(value = {}) {
     const type = DISPLAY_WIDGET_CATALOG[raw?.type] ? raw.type : "notice";
     widgets[id] = {
       id: cleanText(id, 80), type, enabled: raw?.enabled !== false,
-      sizePercent: normalizeDisplayWidgetSize(raw?.sizePercent ?? raw?.size),
       style: raw?.style === "card" ? "card" : "strip",
       city: cleanText(raw?.city, 100),
       latitude: raw?.latitude !== null && raw?.latitude !== "" && Number.isFinite(Number(raw?.latitude)) ? Number(raw.latitude) : null,
@@ -200,7 +307,7 @@ export function sanitizePublicDisplayContent(value = {}) {
   }
   config.widgets = widgets;
   return {
-    version: 1,
+    version: 2,
     config,
     businessName: cleanText(value.businessName, 100),
     businessImage: safeImage(value.businessImage),

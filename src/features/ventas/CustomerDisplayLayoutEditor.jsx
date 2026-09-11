@@ -1,13 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, GripVertical, ImagePlus, Monitor, Plus, Trash2, X } from "lucide-react";
 import {
   DISPLAY_MODES, DISPLAY_PRESETS, DISPLAY_SCHEDULE_DAYS, DISPLAY_WIDGET_CATALOG,
-  DISPLAY_WIDGET_SIZE_MAX, DISPLAY_WIDGET_SIZE_MIN, DISPLAY_ZONES, SOCIAL_PLATFORMS,
-  applyDisplayPreset, moveDisplayWidget, normalizeDisplayConfig, normalizeDisplaySchedule,
-  normalizeDisplayWidgetSize,
+  DISPLAY_PLACEMENT_MIN_HEIGHT, DISPLAY_PLACEMENT_MIN_WIDTH, SOCIAL_PLATFORMS,
+  applyDisplayPreset, normalizeDisplayConfig, normalizeDisplayPlacement, normalizeDisplaySchedule,
 } from "./displayConfig";
 
-const zoneNames = { top: "Arriba", left: "Izquierda", center: "Centro", right: "Derecha", bottom: "Abajo" };
 const modeNames = { idle: "Sin venta / publicidad", sale: "Durante la venta", complete: "Después de cobrar" };
 
 function DurationField({ label, value, min, max, presets, onCommit }) {
@@ -20,17 +18,6 @@ function DurationField({ label, value, min, max, presets, onCommit }) {
     onCommit(safe);
   };
   return <div className="rounded-xl border bg-white p-3"><label className="text-xs font-bold text-gray-700">{label}</label><div className="mt-2 flex items-center gap-2"><button type="button" onClick={() => commit(Number(value) - 1)} className="h-10 w-10 rounded-lg border font-bold">−</button><input inputMode="numeric" value={draft} onChange={(event) => setDraft(event.target.value.replace(/[^\d]/g, ""))} onBlur={() => commit()} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(); event.currentTarget.blur(); } }} className="h-10 min-w-0 flex-1 rounded-lg border px-3 text-center text-sm font-bold"/><button type="button" onClick={() => commit(Number(value) + 1)} className="h-10 w-10 rounded-lg border font-bold">+</button></div><div className="mt-2 flex flex-wrap gap-1">{presets.map((item) => <button type="button" key={item} onClick={() => commit(item)} className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-bold text-gray-700">{item} s</button>)}</div></div>;
-}
-
-function WidgetSizeField({ value, onChange }) {
-  const normalized = normalizeDisplayWidgetSize(value);
-  const [draft, setDraft] = useState(String(normalized));
-  useEffect(() => setDraft(String(normalized)), [normalized]);
-  const commit = (next = draft) => {
-    const safe = normalizeDisplayWidgetSize(next);
-    setDraft(String(safe)); onChange(safe);
-  };
-  return <div className="rounded-xl border bg-white p-3"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold text-gray-700">Tamaño manual</p><p className="text-[9px] text-gray-500">Arrastrá la barra o escribí un porcentaje.</p></div><b className="rounded-full bg-violet-100 px-2.5 py-1 text-xs text-violet-800">{normalized}%</b></div><input type="range" min={DISPLAY_WIDGET_SIZE_MIN} max={DISPLAY_WIDGET_SIZE_MAX} step="1" value={normalized} onChange={(event) => onChange(normalizeDisplayWidgetSize(event.target.value))} className="mt-3 w-full accent-violet-700" aria-label="Tamaño del bloque"/><div className="mt-2 grid grid-cols-[40px_minmax(0,1fr)_40px_auto] gap-2"><button type="button" onClick={() => commit(normalized - 5)} className="min-h-10 rounded-lg border font-black">−</button><label className="relative"><input inputMode="numeric" value={draft} onChange={(event) => setDraft(event.target.value.replace(/[^\d]/g, ""))} onBlur={() => commit()} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(); event.currentTarget.blur(); } }} className="min-h-10 w-full rounded-lg border px-3 pr-8 text-center text-xs font-black"/><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">%</span></label><button type="button" onClick={() => commit(normalized + 5)} className="min-h-10 rounded-lg border font-black">+</button><button type="button" onClick={() => commit(100)} className="min-h-10 rounded-lg border px-3 text-[9px] font-bold text-gray-600">Restablecer</button></div></div>;
 }
 
 const uploadImage = (file) => new Promise((resolve, reject) => {
@@ -54,86 +41,150 @@ const uploadImage = (file) => new Promise((resolve, reject) => {
 function WidgetVisual({ widget, state }) {
   const promotion = state.promotions?.[0];
   const type = widget?.type;
-  if (type === "promotions") return <div className="flex h-full min-h-7 items-center gap-1.5 rounded-md bg-orange-500 px-2 text-[6px] font-bold text-white sm:text-[8px]"><span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-orange-950">{promotion?.badge || "PROMO"}</span><span className="truncate">{promotion?.title || "Promoción destacada"}</span></div>;
+  if (type === "saleItems") return <div className="flex h-full w-full flex-col overflow-hidden rounded-md bg-white text-emerald-950"><div className="border-b px-2 py-1"><b className="text-[6px] sm:text-[9px]">Tu compra</b><p className="text-[4px] text-gray-500 sm:text-[6px]">2 productos</p></div><div className="grid min-h-0 flex-1 content-center gap-1 px-2 text-[5px] sm:text-[7px]"><p className="flex justify-between gap-2"><span className="truncate">2 × Producto con promoción</span><b>$4.000</b></p><p className="flex justify-between gap-2"><span className="truncate">1 × Producto</span><b>$2.500</b></p></div></div>;
+  if (type === "saleTotal") return <div className="flex h-full w-full flex-col items-center justify-center rounded-md bg-[#F6F1E7] p-1.5 text-center text-emerald-950"><p className="text-[5px] font-black uppercase text-orange-700 sm:text-[7px]">Total a pagar</p><b className="font-serif text-[11px] sm:text-xl">$6.500</b><p className="rounded bg-emerald-100 px-1 text-[4px] text-emerald-800 sm:text-[6px]">Ahorraste $2.000</p></div>;
+  if (type === "salePayment") return <div className="flex h-full w-full flex-col items-center justify-center rounded-md bg-white p-1.5 text-center text-emerald-950"><p className="text-[4px] text-gray-500 sm:text-[6px]">Medio elegido</p><b className="text-[7px] sm:text-[10px]">Mercado Pago</b><span className="mt-1 grid aspect-square h-[45%] place-items-center rounded bg-gray-100 text-[5px] font-black sm:text-[7px]">QR</span></div>;
+  if (type === "promotions") return <div className="flex h-full w-full min-h-7 items-center gap-1.5 rounded-md bg-orange-500 px-2 text-[6px] font-bold text-white sm:text-[8px]"><span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-orange-950">{promotion?.badge || "PROMO"}</span><span className="truncate">{promotion?.title || "Promoción destacada"}</span></div>;
   if (type === "welcome") return <div className="grid h-full min-h-12 place-items-center rounded-md bg-white/10 px-2 text-center"><div><p className="font-serif text-[11px] font-black sm:text-xl">{state.welcomeMessage || "Bienvenido"}</p><p className="truncate text-[6px] text-emerald-100 sm:text-[8px]">{state.contactLine || "Gracias por elegirnos"}</p></div></div>;
-  if (type === "clock") return <div className="rounded-md bg-white/10 px-2 py-1 text-center"><b className="text-[9px] sm:text-xs">14:35</b><p className="text-[5px] text-emerald-100 sm:text-[7px]">jueves 10 de septiembre</p></div>;
-  if (type === "weather") return <div className="rounded-md bg-sky-500/25 p-1.5 text-center"><p className="text-[6px] font-bold sm:text-[8px]">CLIMA</p><b className="text-[10px] sm:text-base">24°</b><p className="truncate text-[5px] sm:text-[7px]">{widget.city || "Tu ciudad"}</p></div>;
-  if (type === "socials") return <div className="grid gap-1">{(widget.items?.length ? widget.items : [{ platform: "whatsapp", value: "WhatsApp" }, { platform: "instagram", value: "Instagram" }]).slice(0, 2).map((item, index) => <span key={index} className={`truncate rounded-md px-1.5 py-1 text-center text-[5px] font-bold text-white sm:text-[7px] ${item.platform === "whatsapp" ? "bg-green-500" : item.platform === "instagram" ? "bg-violet-600" : "bg-blue-600"}`}>{item.label || item.value || SOCIAL_PLATFORMS[item.platform]?.label}</span>)}</div>;
+  if (type === "clock") return <div className="flex h-full w-full flex-col items-center justify-center rounded-md bg-white/10 px-2 py-1 text-center"><b className="text-[9px] sm:text-xs">14:35</b><p className="text-[5px] text-emerald-100 sm:text-[7px]">jueves 10 de septiembre</p></div>;
+  if (type === "weather") return <div className="flex h-full w-full flex-col items-center justify-center rounded-md bg-sky-500/25 p-1.5 text-center"><p className="text-[6px] font-bold sm:text-[8px]">CLIMA</p><b className="text-[10px] sm:text-base">24°</b><p className="truncate text-[5px] sm:text-[7px]">{widget.city || "Tu ciudad"}</p></div>;
+  if (type === "socials") return <div className="grid h-full w-full content-center gap-1">{(widget.items?.length ? widget.items : [{ platform: "whatsapp", value: "WhatsApp" }, { platform: "instagram", value: "Instagram" }]).slice(0, 2).map((item, index) => <span key={index} className={`truncate rounded-md px-1.5 py-1 text-center text-[5px] font-bold text-white sm:text-[7px] ${item.platform === "whatsapp" ? "bg-green-500" : item.platform === "instagram" ? "bg-violet-600" : "bg-blue-600"}`}>{item.label || item.value || SOCIAL_PLATFORMS[item.platform]?.label}</span>)}</div>;
   if (type === "hours") { const schedule = normalizeDisplaySchedule(widget.schedule); const active = schedule.filter((entry) => entry.enabled).slice(0, 3); return <div className="h-full rounded-md bg-white/10 p-1.5"><b className="text-[6px] text-amber-300 sm:text-[8px]">HORARIOS</b>{active.length ? <div className="mt-0.5 grid gap-px">{active.map((entry) => <p key={entry.day} className="flex justify-between gap-1 text-[5px] sm:text-[7px]"><span>{DISPLAY_SCHEDULE_DAYS.find((day) => day.id === entry.day)?.shortLabel}</span><span>{entry.open.replace(/^0/, "")}–{entry.close.replace(/^0/, "")}</span></p>)}</div> : <p className="line-clamp-2 text-[5px] sm:text-[7px]">{widget.text || "Configurá cada día"}</p>}</div>; }
-  if (type === "payments") return <div className="rounded-md bg-white/10 p-1.5"><b className="text-[6px] text-amber-300 sm:text-[8px]">MEDIOS DE PAGO</b><p className="truncate text-[5px] sm:text-[7px]">{(widget.items || ["Efectivo", "Mercado Pago"]).join(" · ")}</p></div>;
-  if (type === "notice") return <div className="rounded-md bg-amber-300 p-1.5 text-amber-950"><b className="block truncate text-[6px] sm:text-[8px]">{widget.title || "Aviso"}</b><p className="line-clamp-2 text-[5px] sm:text-[7px]">{widget.text || "Mensaje para tus clientes"}</p></div>;
-  if (type === "featuredProduct") return <div className="rounded-md bg-white p-1.5 text-emerald-950"><b className="block truncate text-[6px] sm:text-[8px]">Producto destacado</b><p className="text-[5px] sm:text-[7px]">$2.500</p></div>;
-  if (type === "image") return widget.src ? <img src={widget.src} alt="" className="h-full max-h-16 w-full rounded-md object-cover"/> : <div className="grid min-h-8 place-items-center rounded-md border border-dashed border-white/40 text-[6px] text-white/70">Tu imagen</div>;
-  return <div className="rounded-md bg-white/10 p-1.5 text-[6px]">{DISPLAY_WIDGET_CATALOG[type]?.label || "Bloque"}</div>;
+  if (type === "payments") return <div className="flex h-full w-full flex-col items-center justify-center rounded-md bg-white/10 p-1.5 text-center"><b className="text-[6px] text-amber-300 sm:text-[8px]">MEDIOS DE PAGO</b><p className="truncate text-[5px] sm:text-[7px]">{(widget.items || ["Efectivo", "Mercado Pago"]).join(" · ")}</p></div>;
+  if (type === "notice") return <div className="flex h-full w-full flex-col items-center justify-center rounded-md bg-amber-300 p-1.5 text-center text-amber-950"><b className="block truncate text-[6px] sm:text-[8px]">{widget.title || "Aviso"}</b><p className="line-clamp-2 text-[5px] sm:text-[7px]">{widget.text || "Mensaje para tus clientes"}</p></div>;
+  if (type === "featuredProduct") return <div className="flex h-full w-full flex-col items-center justify-center rounded-md bg-white p-1.5 text-center text-emerald-950"><b className="block truncate text-[6px] sm:text-[8px]">Producto destacado</b><p className="text-[5px] sm:text-[7px]">$2.500</p></div>;
+  if (type === "image") return widget.src ? <img src={widget.src} alt="" className="h-full w-full rounded-md object-cover"/> : <div className="grid h-full w-full min-h-8 place-items-center rounded-md border border-dashed border-white/40 text-[6px] text-white/70">Tu imagen</div>;
+  return <div className="grid h-full w-full place-items-center rounded-md bg-white/10 p-1.5 text-[6px]">{DISPLAY_WIDGET_CATALOG[type]?.label || "Bloque"}</div>;
 }
 
-function PreviewBlock({ id, widget, state, selected, onSelect, onDragStart, onDragEnd }) {
-  return <button type="button" draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", id); onDragStart(id); }} onDragEnd={onDragEnd} onClick={(event) => { event.stopPropagation(); onSelect(id); }} className={`group relative h-full min-w-0 rounded-lg border p-0.5 text-left transition ${selected ? "border-amber-300 ring-2 ring-amber-300/70" : "border-white/15 hover:border-white/60"}`}>
-    <WidgetVisual widget={widget} state={state}/><span className="absolute right-0.5 top-0.5 hidden rounded bg-black/60 p-0.5 text-white group-hover:block"><GripVertical size={8}/></span>
-  </button>;
+function CanvasNumberField({ label, value, min, max, onCommit }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const parsed = Number(draft);
+    const safe = Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : value;
+    setDraft(String(Math.round(safe * 10) / 10));
+    onCommit(safe);
+  };
+  return <label className="min-w-0 text-[10px] font-bold text-gray-600">{label}<span className="relative mt-1 block"><input inputMode="decimal" value={draft} onChange={(event) => setDraft(event.target.value.replace(/[^\d.,]/g, "").replace(",", "."))} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(); event.currentTarget.blur(); } }} className="min-h-10 w-full min-w-0 rounded-lg border bg-white px-2 pr-6 text-center text-xs font-black text-gray-900"/><span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-gray-400">%</span></span></label>;
 }
 
-function VisualZone({ zone, ids, config, state, selectedId, onSelect, draggingId, onDragStart, onDrop, horizontal = false }) {
-  return <div onClick={() => onSelect("")} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (draggingId) onDrop(draggingId, zone); }} className={`relative min-h-0 min-w-0 rounded-md border border-dashed border-white/15 bg-black/5 p-1 ${horizontal ? "flex-none" : "h-full"}`}>
-    <span className="pointer-events-none absolute left-1 top-0 z-10 rounded-b bg-black/35 px-1 text-[4px] font-black uppercase tracking-wide text-white/70 sm:text-[6px]">{zoneNames[zone]}</span>
-    <div className={`${horizontal ? "flex min-w-0 items-stretch gap-1 pt-1" : "flex h-full max-h-full min-h-0 flex-col gap-1 overflow-hidden pt-1"}`}>{ids.map((id, index) => { const widget = config.widgets[id]; const sizePercent = normalizeDisplayWidgetSize(widget?.sizePercent ?? widget?.size); const previewScale = Math.max(0.9, Math.min(1.18, 0.8 + (sizePercent / 500))); return <div key={id} onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); if (draggingId) onDrop(draggingId, zone, index); }} className="grid min-h-0 min-w-0 place-items-center overflow-hidden" style={{ flexGrow: sizePercent, flexShrink: 1, flexBasis: 0, minHeight: horizontal ? `${14 + sizePercent * 0.1}px` : undefined }}><div className="h-full" style={{ width: `${100 / previewScale}%`, height: `${100 / previewScale}%`, transform: `scale(${previewScale})`, transformOrigin: "center" }}><PreviewBlock id={id} widget={widget} state={state} selected={selectedId === id} onSelect={onSelect} onDragStart={onDragStart} onDragEnd={() => onDragStart("")}/></div></div>; })}</div>
-    {!ids.length && <div className="grid h-full min-h-6 place-items-center text-[5px] text-white/35 sm:text-[7px]">Soltá un bloque acá</div>}
+const defaultPlacementFor = (type, index = 0) => {
+  const sizes = {
+    promotions: [72, 13], welcome: [52, 48], clock: [30, 18], weather: [24, 32], socials: [25, 44],
+    hours: [27, 43], payments: [30, 22], notice: [34, 24], featuredProduct: [30, 38], image: [38, 34],
+  };
+  const [width, height] = sizes[type] || [30, 24];
+  return normalizeDisplayPlacement({ x: (100 - width) / 2, y: Math.min(100 - height, 8 + index * 4), width, height, z: index + 1 });
+};
+
+const resizeHandles = [
+  ["nw", "-left-2 -top-2 cursor-nwse-resize"], ["ne", "-right-2 -top-2 cursor-nesw-resize"],
+  ["sw", "-bottom-2 -left-2 cursor-nesw-resize"], ["se", "-bottom-2 -right-2 cursor-nwse-resize"],
+];
+
+function CanvasWidget({ id, widget, placement, state, selected, onSelect, onPointerStart, onNudge }) {
+  return <div role="button" tabIndex={0} aria-label={`${DISPLAY_WIDGET_CATALOG[widget.type]?.label || widget.type}. Arrastrar para mover.`} onPointerDown={(event) => onPointerStart(event, id, "move")} onKeyDown={(event) => { const movement = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]; if (movement) { event.preventDefault(); onNudge(id, ...movement); } }} onFocus={() => onSelect(id)} className={`group absolute touch-none select-none overflow-visible rounded-lg border text-left outline-none ${selected ? "border-amber-300 ring-2 ring-amber-300" : "border-white/20 hover:border-white/70 focus-visible:border-white"}`} style={{ left: `${placement.x}%`, top: `${placement.y}%`, width: `${placement.width}%`, height: `${placement.height}%`, zIndex: placement.z }}>
+    <div className="pointer-events-none h-full w-full overflow-hidden rounded-[inherit] p-0.5"><WidgetVisual widget={widget} state={state}/></div>
+    <span className={`pointer-events-none absolute left-1 top-1 items-center gap-1 rounded bg-black/65 px-1.5 py-0.5 text-[5px] font-black text-white sm:text-[7px] ${selected ? "flex" : "hidden group-hover:flex"}`}><GripVertical size={8}/>{DISPLAY_WIDGET_CATALOG[widget.type]?.label || widget.type}</span>
+    {selected && resizeHandles.map(([handle, className]) => <span key={handle} role="presentation" onPointerDown={(event) => onPointerStart(event, id, handle)} className={`absolute z-20 h-4 w-4 touch-none rounded-full border-2 border-white bg-amber-400 shadow ${className}`}/>)}
   </div>;
 }
 
 function VisualLayoutEditor({ config, mode, previewState, onChange }) {
-  const allowedZones = mode === "idle" ? DISPLAY_ZONES : ["top", "bottom"];
+  const canvasRef = useRef(null);
   const [selectedId, setSelectedId] = useState("");
-  const [draggingId, setDraggingId] = useState("");
-  const [addZone, setAddZone] = useState("top");
-  useEffect(() => { setSelectedId(""); if (!allowedZones.includes(addZone)) setAddZone("top"); }, [mode]);
-  const assigned = new Set(DISPLAY_ZONES.flatMap((zone) => config.layouts[mode][zone] || []));
-  const available = Object.values(config.widgets).filter((item) => !assigned.has(item.id));
-  const location = DISPLAY_ZONES.find((zone) => config.layouts[mode][zone]?.includes(selectedId));
-  const selectedIndex = location ? config.layouts[mode][location].indexOf(selectedId) : -1;
+  const [draftPlacement, setDraftPlacement] = useState(null);
+  useEffect(() => { setSelectedId(""); setDraftPlacement(null); }, [mode]);
+  const placements = config.placements?.[mode] || {};
+  const effectivePlacements = draftPlacement ? { ...placements, [draftPlacement.id]: draftPlacement.value } : placements;
+  const available = Object.values(config.widgets).filter((item) => {
+    const modes = DISPLAY_WIDGET_CATALOG[item.type]?.modes;
+    return !placements[item.id] && (!modes || modes.includes(mode));
+  });
   const selected = config.widgets[selectedId];
-  const move = (widgetId, destination, position = null) => { onChange(moveDisplayWidget(config, mode, widgetId, destination, position)); setSelectedId(widgetId); setDraggingId(""); };
-  const resize = (sizePercent) => {
-    const next = normalizeDisplayConfig(config);
-    next.widgets[selectedId] = { ...next.widgets[selectedId], sizePercent: normalizeDisplayWidgetSize(sizePercent) };
-    next.preset = "custom"; onChange(next);
-  };
-  const remove = (widgetId) => {
-    const next = normalizeDisplayConfig(config);
-    DISPLAY_ZONES.forEach((zone) => { next.layouts[mode][zone] = next.layouts[mode][zone].filter((id) => id !== widgetId); });
-    next.preset = "custom"; onChange(next); setSelectedId("");
-  };
-  const shift = (offset) => {
-    if (!location || selectedIndex < 0) return;
-    const next = normalizeDisplayConfig(config); const items = [...next.layouts[mode][location]]; const target = selectedIndex + offset;
-    if (target < 0 || target >= items.length) return;
-    [items[selectedIndex], items[target]] = [items[target], items[selectedIndex]]; next.layouts[mode][location] = items; next.preset = "custom"; onChange(next);
-  };
+  const selectedPlacement = selectedId ? normalizeDisplayPlacement(effectivePlacements[selectedId]) : null;
   const state = { ...previewState, displayConfig: config, mode };
-  const zone = (id, horizontal = false) => <VisualZone zone={id} ids={config.layouts[mode][id] || []} config={config} state={state} selectedId={selectedId} onSelect={setSelectedId} draggingId={draggingId} onDragStart={setDraggingId} onDrop={move} horizontal={horizontal}/>;
+
+  const commitConfig = (mutate) => {
+    const next = normalizeDisplayConfig(config);
+    mutate(next);
+    next.preset = "custom";
+    onChange(next);
+  };
+  const updatePlacement = (id, value) => commitConfig((next) => { next.placements[mode][id] = normalizeDisplayPlacement(value); });
+  const startPointer = (event, id, action) => {
+    if (event.button != null && event.button !== 0) return;
+    const canvas = canvasRef.current;
+    const origin = normalizeDisplayPlacement(effectivePlacements[id]);
+    if (!canvas || !origin) return;
+    event.preventDefault(); event.stopPropagation(); setSelectedId(id);
+    const rect = canvas.getBoundingClientRect();
+    const startX = event.clientX; const startY = event.clientY;
+    let latest = origin;
+    const move = (pointer) => {
+      const dx = ((pointer.clientX - startX) / rect.width) * 100;
+      const dy = ((pointer.clientY - startY) / rect.height) * 100;
+      if (action === "move") latest = normalizeDisplayPlacement({ ...origin, x: origin.x + dx, y: origin.y + dy });
+      else {
+        let left = origin.x; let right = origin.x + origin.width; let top = origin.y; let bottom = origin.y + origin.height;
+        if (action.includes("w")) left = Math.max(0, Math.min(right - DISPLAY_PLACEMENT_MIN_WIDTH, origin.x + dx));
+        if (action.includes("e")) right = Math.min(100, Math.max(left + DISPLAY_PLACEMENT_MIN_WIDTH, origin.x + origin.width + dx));
+        if (action.includes("n")) top = Math.max(0, Math.min(bottom - DISPLAY_PLACEMENT_MIN_HEIGHT, origin.y + dy));
+        if (action.includes("s")) bottom = Math.min(100, Math.max(top + DISPLAY_PLACEMENT_MIN_HEIGHT, origin.y + origin.height + dy));
+        latest = normalizeDisplayPlacement({ x: left, y: top, width: right - left, height: bottom - top, z: origin.z });
+      }
+      setDraftPlacement({ id, value: latest });
+    };
+    const finish = () => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", finish); window.removeEventListener("pointercancel", finish);
+      setDraftPlacement(null); updatePlacement(id, latest);
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", finish); window.addEventListener("pointercancel", finish);
+  };
+  const nudge = (id, dx, dy) => { const current = normalizeDisplayPlacement(placements[id]); updatePlacement(id, { ...current, x: current.x + dx, y: current.y + dy }); };
+  const add = (item) => {
+    const placement = defaultPlacementFor(item.type, Object.keys(placements).length);
+    commitConfig((next) => {
+      next.placements[mode][item.id] = placement;
+      const legacyZone = mode === "idle" ? "center" : "top";
+      if (!next.layouts[mode][legacyZone].includes(item.id)) next.layouts[mode][legacyZone].push(item.id);
+    });
+    setSelectedId(item.id);
+  };
+  const remove = (id) => {
+    commitConfig((next) => {
+      delete next.placements[mode][id];
+      Object.keys(next.layouts[mode]).forEach((zone) => { next.layouts[mode][zone] = next.layouts[mode][zone].filter((widgetId) => widgetId !== id); });
+    });
+    setSelectedId("");
+  };
+  const reorder = (id, direction) => commitConfig((next) => {
+    const ids = Object.keys(next.placements[mode]).sort((a, b) => next.placements[mode][a].z - next.placements[mode][b].z);
+    const filtered = ids.filter((widgetId) => widgetId !== id);
+    direction === "front" ? filtered.push(id) : filtered.unshift(id);
+    filtered.forEach((widgetId, index) => { next.placements[mode][widgetId] = { ...next.placements[mode][widgetId], z: index + 1 }; });
+  });
+  const patchSelected = (patch) => selectedPlacement && updatePlacement(selectedId, { ...selectedPlacement, ...patch });
+
   return <div className="grid gap-3">
     <div className="rounded-2xl border bg-gray-950 p-2 shadow-xl sm:p-3">
-      <div className="mb-2 flex items-center justify-between gap-2 px-1 text-white"><span className="flex items-center gap-1.5 text-[9px] font-bold sm:text-xs"><Monitor size={13}/>Vista previa en vivo</span><span className="text-[7px] text-white/55 sm:text-[9px]">Arrastrá un bloque o tocalo para moverlo</span></div>
+      <div className="mb-2 flex flex-col gap-1 px-1 text-white sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-1.5 text-[9px] font-bold sm:text-xs"><Monitor size={13}/>Editor libre de la pantalla</span><span className="text-[7px] text-white/60 sm:text-[9px]">Arrastrá para mover · usá las cuatro esquinas para cambiar ancho y alto</span></div>
       <div className="mx-auto flex aspect-video w-full max-w-4xl min-w-0 flex-col overflow-hidden rounded-xl border-2 border-gray-700 bg-[#16433D] text-white">
         <div className="flex h-[12%] min-h-5 flex-none items-center justify-between border-b border-white/15 px-2"><b className="truncate font-serif text-[7px] sm:text-xs">{state.businessName || "Kiosco+"}</b><span className="text-[4px] uppercase tracking-widest text-emerald-100 sm:text-[6px]">Pantalla del cliente</span></div>
-        {zone("top", true)}
-        {mode === "idle" ? <div className="grid min-h-0 flex-1 grid-cols-[22%_minmax(0,1fr)_22%] gap-1 p-1">{zone("left")}{zone("center")}{zone("right")}</div> : <div className="grid min-h-0 flex-1 place-items-center p-1.5"><div className="grid h-full w-full grid-cols-[minmax(0,1fr)_36%] gap-1.5"><div className="rounded-lg bg-white p-2 text-emerald-950"><b className="text-[7px] sm:text-xs">{mode === "complete" ? "¡Gracias por tu compra!" : "Tu compra"}</b><div className="mt-1 h-px bg-gray-200"/><p className="mt-1 text-[5px] text-gray-500 sm:text-[7px]">{mode === "complete" ? "La venta fue registrada" : "2 × Producto con promoción"}</p></div><div className="rounded-lg bg-[#F6F1E7] p-2 text-emerald-950"><p className="text-[5px] uppercase text-orange-700 sm:text-[7px]">{mode === "complete" ? "Total abonado" : "Total a pagar"}</p><b className="font-serif text-[10px] sm:text-xl">$4.000</b></div></div></div>}
-        {zone("bottom", true)}
+        <div ref={canvasRef} onPointerDown={() => setSelectedId("")} className="relative min-h-0 flex-1 overflow-hidden bg-[linear-gradient(rgba(255,255,255,.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.035)_1px,transparent_1px)] bg-[size:5%_10%]">
+          {mode === "complete" && <div className="pointer-events-none absolute inset-x-[8%] bottom-[20%] top-[17%] grid place-items-center rounded-lg border border-dashed border-white/25 text-center opacity-75"><div><b className="font-serif text-[10px] sm:text-xl">¡Gracias por tu compra!</b><p className="text-[6px] text-emerald-100 sm:text-[8px]">Total abonado: $4.000</p></div></div>}
+          {Object.entries(effectivePlacements).sort(([, a], [, b]) => a.z - b.z).map(([id, placement]) => config.widgets[id] ? <CanvasWidget key={id} id={id} widget={config.widgets[id]} placement={normalizeDisplayPlacement(placement)} state={state} selected={selectedId === id} onSelect={setSelectedId} onPointerStart={startPointer} onNudge={nudge}/> : null)}
+          {!Object.keys(effectivePlacements).length && <div className="pointer-events-none absolute inset-0 grid place-items-center text-[8px] font-semibold text-white/45 sm:text-xs">Agregá un bloque debajo y arrastralo donde quieras</div>}
+        </div>
       </div>
     </div>
 
-    {selected ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-[10px] font-black uppercase tracking-wide text-amber-800">Bloque seleccionado</p><p className="text-sm font-black">{DISPLAY_WIDGET_CATALOG[selected.type]?.label || selected.type}</p></div><div className="flex flex-wrap gap-1.5"><button type="button" onClick={() => shift(-1)} disabled={selectedIndex <= 0} className="inline-flex min-h-9 items-center gap-1 rounded-lg border bg-white px-2.5 text-[10px] font-bold disabled:opacity-30"><ChevronUp size={13}/>Antes</button><button type="button" onClick={() => shift(1)} disabled={!location || selectedIndex >= config.layouts[mode][location].length - 1} className="inline-flex min-h-9 items-center gap-1 rounded-lg border bg-white px-2.5 text-[10px] font-bold disabled:opacity-30"><ChevronDown size={13}/>Después</button><button type="button" onClick={() => remove(selectedId)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 text-[10px] font-bold text-red-700"><X size={13}/>Quitar</button></div></div><div className="mt-3 grid gap-3 lg:grid-cols-2"><div><p className="mb-1.5 text-[10px] font-bold text-gray-600">Mover a:</p><div className="flex flex-wrap gap-1.5">{allowedZones.map((target) => <button type="button" key={target} onClick={() => move(selectedId, target)} className={`min-h-9 rounded-lg border px-2.5 text-[10px] font-bold ${location === target ? "border-emerald-700 bg-emerald-700 text-white" : "bg-white"}`}>{zoneNames[target]}</button>)}</div></div><WidgetSizeField value={selected.sizePercent ?? selected.size} onChange={resize}/></div></div> : <p className="rounded-xl border border-dashed bg-gray-50 px-3 py-2 text-center text-[10px] text-gray-500">Tocá cualquier bloque de la vista previa para moverlo, cambiar su tamaño o quitarlo.</p>}
+    {selected && selectedPlacement ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-[10px] font-black uppercase tracking-wide text-amber-800">Bloque seleccionado</p><p className="text-sm font-black">{DISPLAY_WIDGET_CATALOG[selected.type]?.label || selected.type}</p></div><div className="flex flex-wrap gap-1.5"><button type="button" onClick={() => reorder(selectedId, "back")} className="inline-flex min-h-9 items-center gap-1 rounded-lg border bg-white px-2.5 text-[10px] font-bold"><ChevronDown size={13}/>Enviar atrás</button><button type="button" onClick={() => reorder(selectedId, "front")} className="inline-flex min-h-9 items-center gap-1 rounded-lg border bg-white px-2.5 text-[10px] font-bold"><ChevronUp size={13}/>Traer adelante</button><button type="button" onClick={() => remove(selectedId)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 text-[10px] font-bold text-red-700"><X size={13}/>Quitar</button></div></div><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"><CanvasNumberField label="Posición horizontal" value={selectedPlacement.x} min={0} max={100 - selectedPlacement.width} onCommit={(x) => patchSelected({ x })}/><CanvasNumberField label="Posición vertical" value={selectedPlacement.y} min={0} max={100 - selectedPlacement.height} onCommit={(y) => patchSelected({ y })}/><CanvasNumberField label="Ancho" value={selectedPlacement.width} min={DISPLAY_PLACEMENT_MIN_WIDTH} max={100 - selectedPlacement.x} onCommit={(width) => patchSelected({ width })}/><CanvasNumberField label="Alto" value={selectedPlacement.height} min={DISPLAY_PLACEMENT_MIN_HEIGHT} max={100 - selectedPlacement.y} onCommit={(height) => patchSelected({ height })}/></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => patchSelected({ x: (100 - selectedPlacement.width) / 2 })} className="min-h-9 rounded-lg border bg-white px-3 text-[10px] font-bold">Centrar horizontal</button><button type="button" onClick={() => patchSelected({ y: (100 - selectedPlacement.height) / 2 })} className="min-h-9 rounded-lg border bg-white px-3 text-[10px] font-bold">Centrar vertical</button><button type="button" onClick={() => patchSelected({ x: 0, width: 100 })} className="min-h-9 rounded-lg border bg-white px-3 text-[10px] font-bold">Ocupar todo el ancho</button></div></div> : <p className="rounded-xl border border-dashed bg-gray-50 px-3 py-2 text-center text-[10px] text-gray-500">Tocá un bloque para editarlo. También podés moverlo con las flechas del teclado.</p>}
 
-    <div className="rounded-xl border bg-white p-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="text-xs font-black">Agregar un bloque</p><p className="mt-0.5 text-[10px] text-gray-500">Primero elegí la zona y después tocá el bloque. No abre el teclado ni menús del teléfono.</p></div>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Zona donde agregar el bloque">{allowedZones.map((target) => <button type="button" key={target} onClick={() => setAddZone(target)} className={`min-h-10 rounded-lg border px-3 text-[10px] font-bold ${addZone === target ? "border-emerald-700 bg-emerald-700 text-white" : "bg-white text-gray-700"}`}>{zoneNames[target]}</button>)}</div>
-      </div>
-      {available.length
-        ? <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">{available.map((item) => <button type="button" key={item.id} onClick={() => move(item.id, addZone)} className="flex min-h-12 items-center justify-center rounded-xl border bg-gray-50 px-2 text-center text-[10px] font-bold text-gray-800 transition hover:border-emerald-600 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">{DISPLAY_WIDGET_CATALOG[item.type]?.label || item.type}</button>)}</div>
-        : <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-center text-[10px] font-semibold text-emerald-800">Todos los bloques disponibles ya están en esta pantalla.</p>}
-    </div>
-    {mode === "sale" && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">La lista de productos, el total, el medio de pago y el QR son obligatorios y permanecen fijos. Sólo se personalizan las franjas de arriba y abajo.</p>}
+    <div className="rounded-xl border bg-white p-3"><p className="text-xs font-black">Agregar un bloque</p><p className="mt-0.5 text-[10px] text-gray-500">Tocá uno y aparecerá en el lienzo. Después movelo y estiralo libremente; no hay zonas ni tamaños preestablecidos.</p>{available.length ? <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">{available.map((item) => <button type="button" key={item.id} onClick={() => add(item)} className="flex min-h-12 items-center justify-center rounded-xl border bg-gray-50 px-2 text-center text-[10px] font-bold text-gray-800 transition hover:border-emerald-600 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">{DISPLAY_WIDGET_CATALOG[item.type]?.label || item.type}</button>)}</div> : <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-center text-[10px] font-semibold text-emerald-800">Todos los bloques disponibles ya están en esta pantalla.</p>}</div>
+    {mode === "sale" && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">La lista de la compra, el total y el pago/QR son widgets independientes. Podés moverlos, achicarlos, agrandarlos o quitarlos igual que cualquier publicidad.</p>}
+    {mode === "complete" && <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900">El agradecimiento central permanece como base. Los demás widgets se pueden mover, redimensionar o superponer libremente.</p>}
   </div>;
 }
 
