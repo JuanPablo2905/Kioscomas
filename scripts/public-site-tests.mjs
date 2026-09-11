@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 
 const read = (file) => fs.readFile(file, "utf8");
-const [landing, prices, privacy, responsive, navigation, adminPanel, cloudApp, cloudServer, publicEnv, cloudEnv, releaseWorkflow, packageManifest] = await Promise.all([
+const [landing, landingStyles, prices, privacy, responsive, navigation, adminPanel, cloudApp, cloudServer, publicEnv, cloudEnv, releaseWorkflow, packageManifest] = await Promise.all([
   read("src/landing.jsx"),
+  read("src/landing.css"),
   read("src/precios.jsx"),
   read("src/privacidad.jsx"),
   read("src/landing-responsive.css"),
@@ -24,6 +25,8 @@ const test = (name, condition) => {
 };
 
 test("la landing diferencia la demo de la aplicación real", landing.includes("demoUrl") && landing.includes("cloudAppUrl"));
+test("la portada conserva su diseño base completo", landingStyles.length > 10000 && [".nav{", ".hero{", ".button{", ".demo-window{", ".feature-grid{"].every((selector) => landingStyles.includes(selector)));
+test("la portada conserva también las descargas separadas para Mac", landingStyles.includes(".mac-downloads{") && landingStyles.includes(".mac-download-card{"));
 test("la página de precios enlaza la aplicación real", prices.includes("cloudAppUrl") && prices.includes("Ingresar a Kiosco+"));
 test("la beta publica precio, duración y ausencia de tarjeta", prices.includes("betaTrialDays") && prices.includes("launchPaidMonths") && prices.includes("sin tarjeta"));
 test("el sitio publica una política de privacidad completa", privacy.includes("Datos que pueden tratarse") && privacy.includes("Proveedores tecnológicos") && privacy.includes("Derechos del titular"));

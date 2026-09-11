@@ -11,13 +11,15 @@
           "El bloque Bienvenida ahora puede moverse, agrandarse, achicarse, superponerse o quitarse libremente.",
           "El título, el subtítulo y el ícono se adaptan al ancho y al alto disponibles para evitar que el mensaje quede cortado.",
           "Si el bloque queda muy ancho y bajo, la bienvenida se reorganiza horizontalmente para aprovechar mejor el espacio.",
-          "La vista previa del editor reproduce el mismo comportamiento adaptable que verá el cliente."
+          "La vista previa del editor reproduce el mismo comportamiento adaptable que verá el cliente.",
+          "Restauramos el diseño completo de la página pública, incluidos el menú, los botones, las secciones y la demostración, sin perder las descargas separadas para Mac."
         ]
       },
       {
         "title": "Calidad",
         "items": [
-          "Agregamos comprobaciones automáticas para conservar la posición libre y la adaptación de la bienvenida incluso con tamaños extremos."
+          "Agregamos comprobaciones automáticas para conservar la posición libre y la adaptación de la bienvenida incluso con tamaños extremos.",
+          "La publicación ahora comprueba que la portada conserve sus estilos fundamentales antes de aceptar una nueva versión."
         ]
       }
     ]
