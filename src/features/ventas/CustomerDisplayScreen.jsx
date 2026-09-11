@@ -3,8 +3,8 @@ import { CheckCircle2, Clock3, CloudSun, Image as ImageIcon, Monitor, WifiOff } 
 import QRCode from "qrcode";
 import { money } from "../../shared/domain";
 import {
-  DISPLAY_MODES, DISPLAY_SCHEDULE_DAYS, DISPLAY_WIDGET_SIZES, SOCIAL_PLATFORMS,
-  normalizeDisplayConfig, normalizeDisplaySchedule, socialDestination,
+  DISPLAY_MODES, DISPLAY_SCHEDULE_DAYS, SOCIAL_PLATFORMS, normalizeDisplayConfig,
+  normalizeDisplaySchedule, normalizeDisplayWidgetSize, socialDestination,
 } from "./displayConfig";
 import { subscribeCustomerDisplay } from "./customerDisplay";
 
@@ -93,7 +93,7 @@ function Brand({ state }) {
 
 function ClockWidget() {
   const now = useClock();
-  return <div className="px-[clamp(.75rem,1.8vmin,1.5rem)] py-[clamp(.6rem,1.4vmin,1.25rem)] text-center"><p className="flex items-center justify-center gap-2 text-[clamp(1.5rem,4vmin,3.75rem)] font-black"><Clock3 className="h-[clamp(1.25rem,3vmin,2.75rem)] w-[clamp(1.25rem,3vmin,2.75rem)]"/>{now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</p><p className="text-[clamp(.7rem,1.35vmin,1.15rem)] capitalize text-emerald-100">{now.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}</p></div>;
+  return <div className="flex h-full w-full flex-col items-center justify-center px-[clamp(.75rem,1.8vmin,1.5rem)] py-[clamp(.6rem,1.4vmin,1.25rem)] text-center"><p className="flex items-center justify-center gap-2 text-[clamp(1.5rem,4vmin,3.75rem)] font-black"><Clock3 className="h-[clamp(1.25rem,3vmin,2.75rem)] w-[clamp(1.25rem,3vmin,2.75rem)]"/>{now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</p><p className="text-[clamp(.7rem,1.35vmin,1.15rem)] capitalize text-emerald-100">{now.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}</p></div>;
 }
 
 function PromotionMini({ promotion }) {
@@ -110,19 +110,19 @@ function PromotionsWidget({ state }) {
 
 function WeatherWidget({ widget }) {
   const weather = useWeather(widget);
-  return <div className="rounded-[clamp(1rem,2.2vmin,2rem)] bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)] text-center"><CloudSun className="mx-auto h-[clamp(2.25rem,5vmin,4.5rem)] w-[clamp(2.25rem,5vmin,4.5rem)] text-amber-300"/><p className="mt-[clamp(.5rem,1.2vmin,1rem)] text-[clamp(.7rem,1.35vmin,1.15rem)] font-bold uppercase tracking-wide text-emerald-100">{weather?.city || widget.city || "Elegí una ciudad"}</p>{weather && <><p className="mt-1 text-[clamp(2.25rem,6vmin,5.25rem)] font-black leading-none">{Math.round(weather.temperature)}°</p><p className="mt-1 text-[clamp(.68rem,1.25vmin,1.05rem)] text-emerald-100">Máx. {Math.round(weather.max)}° · Mín. {Math.round(weather.min)}°</p></>}</div>;
+  return <div className="flex h-full w-full flex-col items-center justify-center rounded-[clamp(1rem,2.2vmin,2rem)] bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)] text-center"><CloudSun className="h-[clamp(2.25rem,5vmin,4.5rem)] w-[clamp(2.25rem,5vmin,4.5rem)] text-amber-300"/><p className="mt-[clamp(.5rem,1.2vmin,1rem)] text-[clamp(.7rem,1.35vmin,1.15rem)] font-bold uppercase tracking-wide text-emerald-100">{weather?.city || widget.city || "Elegí una ciudad"}</p>{weather && <><p className="mt-1 text-[clamp(2.25rem,6vmin,5.25rem)] font-black leading-none">{Math.round(weather.temperature)}°</p><p className="mt-1 text-[clamp(.68rem,1.25vmin,1.05rem)] text-emerald-100">Máx. {Math.round(weather.max)}° · Mín. {Math.round(weather.min)}°</p></>}</div>;
 }
 
 function SocialCard({ item }) {
   const platform = SOCIAL_PLATFORMS[item.platform] || SOCIAL_PLATFORMS.web;
   const qr = useQr(socialDestination(item));
-  return <div className="rounded-[clamp(1rem,2.2vmin,2rem)] p-[clamp(.85rem,2vmin,1.75rem)] text-center shadow-lg" style={{ background: item.platform === "instagram" ? "linear-gradient(135deg,#833AB4,#FD1D1D,#FCAF45)" : platform.color, color: platform.foreground }}><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide">{item.label || platform.label}</p><p className="mt-1 break-all text-[clamp(.7rem,1.25vmin,1.05rem)] font-semibold">{item.value}</p>{qr && <img src={qr} alt={`QR de ${platform.label}`} className="mx-auto mt-[clamp(.5rem,1.2vmin,1rem)] h-[clamp(4.5rem,10vmin,9rem)] w-[clamp(4.5rem,10vmin,9rem)] rounded-xl bg-white p-1.5"/>}</div>;
+  return <div className="flex h-full w-full flex-col items-center justify-center rounded-[clamp(1rem,2.2vmin,2rem)] p-[clamp(.85rem,2vmin,1.75rem)] text-center shadow-lg" style={{ background: item.platform === "instagram" ? "linear-gradient(135deg,#833AB4,#FD1D1D,#FCAF45)" : platform.color, color: platform.foreground }}><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide">{item.label || platform.label}</p><p className="mt-1 break-all text-[clamp(.7rem,1.25vmin,1.05rem)] font-semibold">{item.value}</p>{qr && <img src={qr} alt={`QR de ${platform.label}`} className="mt-[clamp(.5rem,1.2vmin,1rem)] h-[clamp(4.5rem,10vmin,9rem)] w-[clamp(4.5rem,10vmin,9rem)] rounded-xl bg-white p-1.5"/>}</div>;
 }
 
 function SocialsWidget({ widget }) {
   const items = Array.isArray(widget.items) ? widget.items.filter((item) => item?.value).slice(0, 4) : [];
-  if (!items.length) return <div className="rounded-2xl border border-dashed border-white/25 p-[clamp(1rem,2.5vmin,2.25rem)] text-center text-[clamp(.72rem,1.35vmin,1.15rem)] text-white/60">Agregá WhatsApp, Instagram o tu web</div>;
-  return <div className="grid gap-2">{items.map((item, index) => <SocialCard key={`${item.platform}-${index}`} item={item}/>)}</div>;
+  if (!items.length) return <div className="grid h-full w-full place-items-center rounded-2xl border border-dashed border-white/25 p-[clamp(1rem,2.5vmin,2.25rem)] text-center text-[clamp(.72rem,1.35vmin,1.15rem)] text-white/60">Agregá WhatsApp, Instagram o tu web</div>;
+  return <div className="grid h-full w-full gap-2">{items.map((item, index) => <SocialCard key={`${item.platform}-${index}`} item={item}/>)}</div>;
 }
 
 const scheduleMinutes = (value) => {
@@ -154,9 +154,9 @@ function BasicWidget({ widget, state }) {
   if (type === "weather") return <WeatherWidget widget={widget}/>;
   if (type === "socials") return <SocialsWidget widget={widget}/>;
   if (type === "hours") return <HoursWidget widget={widget}/>;
-  if (type === "payments") return <div className="rounded-2xl bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)]"><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide text-amber-300">Medios de pago</p><div className="mt-2 flex flex-wrap gap-[clamp(.35rem,.8vmin,.7rem)]">{(widget.items || []).map((item) => <span key={item} className="rounded-full bg-white px-[clamp(.55rem,1vw,1rem)] py-[clamp(.25rem,.55vmin,.5rem)] text-[clamp(.65rem,1.2vmin,1rem)] font-bold text-[#173F3A]">{item}</span>)}</div></div>;
-  if (type === "notice") return <div className="rounded-2xl bg-amber-300 p-[clamp(1rem,2.5vmin,2.25rem)] text-amber-950"><p className="text-[clamp(1rem,2vmin,1.65rem)] font-black">{widget.title || "Aviso"}</p><p className="mt-1 text-[clamp(.8rem,1.6vmin,1.35rem)]">{widget.text || "Escribí un aviso para tus clientes"}</p></div>;
-  if (type === "featuredProduct") { const product = (state.featuredProducts || []).find((item) => String(item.id) === String(widget.productId)) || state.featuredProducts?.[0]; return product ? <div className="rounded-2xl bg-white p-[clamp(1rem,2.5vmin,2.25rem)] text-[#173F3A]">{product.image && <img src={product.image} alt="" className="mb-2 h-[clamp(6rem,16vmin,14rem)] w-full rounded-xl object-contain"/>}<p className="text-[clamp(1rem,2vmin,1.65rem)] font-bold">{product.name}</p><p className="mt-1 text-[clamp(1.5rem,4vmin,3.5rem)] font-black">{money(product.price)}</p></div> : null; }
+  if (type === "payments") return <div className="flex h-full w-full flex-col justify-center rounded-2xl bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)]"><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide text-amber-300">Medios de pago</p><div className="mt-2 flex flex-wrap gap-[clamp(.35rem,.8vmin,.7rem)]">{(widget.items || []).map((item) => <span key={item} className="rounded-full bg-white px-[clamp(.55rem,1vw,1rem)] py-[clamp(.25rem,.55vmin,.5rem)] text-[clamp(.65rem,1.2vmin,1rem)] font-bold text-[#173F3A]">{item}</span>)}</div></div>;
+  if (type === "notice") return <div className="flex h-full w-full flex-col justify-center rounded-2xl bg-amber-300 p-[clamp(1rem,2.5vmin,2.25rem)] text-amber-950"><p className="text-[clamp(1rem,2vmin,1.65rem)] font-black">{widget.title || "Aviso"}</p><p className="mt-1 text-[clamp(.8rem,1.6vmin,1.35rem)]">{widget.text || "Escribí un aviso para tus clientes"}</p></div>;
+  if (type === "featuredProduct") { const product = (state.featuredProducts || []).find((item) => String(item.id) === String(widget.productId)) || state.featuredProducts?.[0]; return product ? <div className="flex h-full w-full flex-col justify-center rounded-2xl bg-white p-[clamp(1rem,2.5vmin,2.25rem)] text-[#173F3A]">{product.image && <img src={product.image} alt="" className="mb-2 h-[clamp(6rem,16vmin,14rem)] w-full rounded-xl object-contain"/>}<p className="text-[clamp(1rem,2vmin,1.65rem)] font-bold">{product.name}</p><p className="mt-1 text-[clamp(1.5rem,4vmin,3.5rem)] font-black">{money(product.price)}</p></div> : null; }
   if (type === "image") return widget.src ? <img src={widget.src} alt={widget.alt || "Publicidad"} className="max-h-full w-full rounded-2xl object-contain"/> : <div className="grid min-h-24 place-items-center rounded-2xl border border-dashed border-white/25"><ImageIcon size={26}/></div>;
   if (type === "welcome") return <div className="grid h-full place-items-center px-[clamp(1rem,3vw,3rem)] text-center"><div><span className="mx-auto grid h-[clamp(4.5rem,10vmin,9rem)] w-[clamp(4.5rem,10vmin,9rem)] place-items-center rounded-full bg-white/10"><Monitor className="h-[clamp(2.25rem,5vmin,4.5rem)] w-[clamp(2.25rem,5vmin,4.5rem)]"/></span><h1 className="mt-[clamp(1rem,2.5vmin,2.25rem)] font-serif text-[clamp(3.5rem,10vmin,9rem)] font-bold leading-[.95]">{state.welcomeMessage || "Bienvenido"}</h1><p className="mx-auto mt-[clamp(.8rem,2vmin,1.75rem)] max-w-4xl text-[clamp(1rem,2.4vmin,2rem)] text-emerald-100">{state.contactLine || "Gracias por elegirnos"}</p></div></div>;
   if (type === "promotions") return <PromotionsWidget state={state}/>;
@@ -167,7 +167,7 @@ function Zone({ state, config, mode, zone, horizontal = false }) {
   const ids = config.layouts?.[mode]?.[zone] || [];
   const visible = ids.map((id) => config.widgets[id]).filter((item) => item?.enabled !== false);
   if (!visible.length) return null;
-  return <div className={horizontal ? "flex-none px-[clamp(.75rem,1.5vw,1.75rem)] py-[clamp(.4rem,.9vmin,.8rem)]" : "h-full min-h-0 overflow-hidden p-[clamp(.4rem,.9vmin,.8rem)]"}><div className={horizontal ? "flex min-w-0 items-stretch gap-[clamp(.5rem,1vmin,1rem)]" : "flex h-full max-h-full min-h-0 flex-col gap-[clamp(.5rem,1vmin,1rem)] overflow-y-auto"}>{visible.map((item) => { const size = DISPLAY_WIDGET_SIZES[item.size] || DISPLAY_WIDGET_SIZES.medium; const inverse = 100 / size.scale; return <div key={item.id} className="min-h-0 min-w-0 overflow-hidden" style={{ flexGrow: size.weight, flexShrink: 1, flexBasis: 0, minHeight: horizontal ? `clamp(3.25rem, ${5 + size.weight * 1.5}vmin, ${4 + size.weight * 1.25}rem)` : undefined }}><div className="[&>*]:h-full" style={{ width: `${inverse}%`, height: `${inverse}%`, transform: `scale(${size.scale})`, transformOrigin: "top left" }}><BasicWidget widget={item} state={state}/></div></div>; })}</div></div>;
+  return <div className={horizontal ? "flex-none px-[clamp(.75rem,1.5vw,1.75rem)] py-[clamp(.4rem,.9vmin,.8rem)]" : "h-full min-h-0 overflow-hidden p-[clamp(.4rem,.9vmin,.8rem)]"}><div className={horizontal ? "flex min-w-0 items-stretch gap-[clamp(.5rem,1vmin,1rem)]" : "flex h-full max-h-full min-h-0 flex-col gap-[clamp(.5rem,1vmin,1rem)] overflow-y-auto"}>{visible.map((item) => { const sizePercent = normalizeDisplayWidgetSize(item.sizePercent ?? item.size); const contentScale = Math.max(0.9, Math.min(1.4, 0.75 + (sizePercent / 400))); const inverse = 100 / contentScale; return <div key={item.id} className="grid min-h-0 min-w-0 place-items-center overflow-hidden" style={{ flexGrow: sizePercent, flexShrink: 1, flexBasis: 0, minHeight: horizontal ? `clamp(3.25rem, ${4 + sizePercent * 0.045}vmin, ${3 + sizePercent * 0.04}rem)` : undefined }}><div className="[&>*]:h-full [&>*]:w-full" style={{ width: `${inverse}%`, height: `${inverse}%`, transform: `scale(${contentScale})`, transformOrigin: "center" }}><BasicWidget widget={item} state={state}/></div></div>; })}</div></div>;
 }
 
 function Idle({ state, config }) {

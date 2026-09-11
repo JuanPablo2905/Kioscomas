@@ -6,12 +6,17 @@ export const DISPLAY_MODES = {
 
 export const DISPLAY_ZONES = ["top", "left", "center", "right", "bottom"];
 
-export const DISPLAY_WIDGET_SIZES = {
-  small: { label: "Chico", weight: 1, scale: 0.84 },
-  medium: { label: "Mediano", weight: 2, scale: 1 },
-  large: { label: "Grande", weight: 3, scale: 1.16 },
-  hero: { label: "Protagonista", weight: 4, scale: 1.32 },
-};
+export const DISPLAY_WIDGET_SIZE_MIN = 60;
+export const DISPLAY_WIDGET_SIZE_MAX = 180;
+const LEGACY_WIDGET_SIZES = { small: 75, medium: 100, large: 130, hero: 160 };
+
+export function normalizeDisplayWidgetSize(value) {
+  const migrated = Object.prototype.hasOwnProperty.call(LEGACY_WIDGET_SIZES, value)
+    ? LEGACY_WIDGET_SIZES[value]
+    : Number(value);
+  if (!Number.isFinite(migrated)) return 100;
+  return Math.max(DISPLAY_WIDGET_SIZE_MIN, Math.min(DISPLAY_WIDGET_SIZE_MAX, Math.round(migrated)));
+}
 
 export const DISPLAY_SCHEDULE_DAYS = [
   { id: "monday", label: "Lunes", shortLabel: "Lun", jsDay: 1 },
@@ -62,7 +67,7 @@ export const SOCIAL_PLATFORMS = {
   phone: { label: "Teléfono", color: "#1C4A44", foreground: "#ffffff", prefix: "" },
 };
 
-const widget = (id, type, extra = {}) => ({ id, type, enabled: true, size: "medium", ...extra });
+const widget = (id, type, extra = {}) => ({ id, type, enabled: true, sizePercent: 100, ...extra });
 
 export const DEFAULT_DISPLAY_CONFIG = {
   version: 1,
@@ -143,7 +148,8 @@ export function normalizeDisplayConfig(value = {}) {
   for (const [id, item] of Object.entries(source.widgets || {})) {
     if (!normalized.widgets[id] || !item || typeof item !== "object") continue;
     normalized.widgets[id] = { ...normalized.widgets[id], ...item, id, type: normalized.widgets[id].type };
-    normalized.widgets[id].size = DISPLAY_WIDGET_SIZES[item.size] ? item.size : "medium";
+    normalized.widgets[id].sizePercent = normalizeDisplayWidgetSize(item.sizePercent ?? item.size);
+    delete normalized.widgets[id].size;
   }
   normalized.widgets.hours.schedule = normalizeDisplaySchedule(normalized.widgets.hours.schedule);
   for (const mode of ["idle", "sale", "complete"]) {
@@ -179,7 +185,7 @@ export function sanitizePublicDisplayContent(value = {}) {
     const type = DISPLAY_WIDGET_CATALOG[raw?.type] ? raw.type : "notice";
     widgets[id] = {
       id: cleanText(id, 80), type, enabled: raw?.enabled !== false,
-      size: DISPLAY_WIDGET_SIZES[raw?.size] ? raw.size : "medium",
+      sizePercent: normalizeDisplayWidgetSize(raw?.sizePercent ?? raw?.size),
       style: raw?.style === "card" ? "card" : "strip",
       city: cleanText(raw?.city, 100),
       latitude: raw?.latitude !== null && raw?.latitude !== "" && Number.isFinite(Number(raw?.latitude)) ? Number(raw.latitude) : null,

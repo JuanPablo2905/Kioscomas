@@ -20,6 +20,7 @@ const salesView = fs.readFileSync("src/features/ventas/VentasView.jsx", "utf8");
 const adminNotifications = fs.readFileSync("src/features/administracion/AdminNotificationCenter.jsx", "utf8");
 const adminPanel = fs.readFileSync("src/features/administracion/AdminAppPanel.jsx", "utf8");
 const styles = fs.readFileSync("src/styles.css", "utf8");
+const desktopMain = fs.readFileSync("desktop/main.cjs", "utf8");
 
 const checks = [
   [manifest.display === "standalone", "La app móvil debe abrir sin interfaz del navegador."],
@@ -41,6 +42,7 @@ const checks = [
   [serviceWorker.includes('addEventListener("notificationclick"') && serviceWorker.includes("openWindow"), "Los avisos deben abrir Kiosco+ al tocarlos."],
   [notificationService.includes("Notification.requestPermission") && notificationService.includes("pushManager.subscribe"), "La app debe pedir permiso antes de registrar el dispositivo para avisos."],
   [settings.includes("VITE_APP_VERSION") && settings.includes("Versión actual:") && settings.includes("Aplicación web instalada"), "Configuración debe mostrar claramente la versión y el tipo de aplicación."],
+  [settings.includes("Buscar actualizaciones") && settings.includes("Reiniciar e instalar actualización") && desktopMain.includes("quitAndInstall(true, true)"), "Ayuda debe permitir buscar una versión y reiniciar la aplicación para instalarla."],
   [settings.includes("settings-mobile-safe-header") && styles.includes("(display-mode: standalone)") && styles.includes("env(safe-area-inset-top) + .75rem") && styles.includes("backdrop-filter: none"), "Las pestañas de Configuración deben quedar debajo del área segura de iPhone sin arrastrar el degradado."],
   [settings.includes('id: "notificaciones"') && settings.includes("NotificationSettingsPanel") && settings.includes("Ayuda y versión"), "Configuración debe agrupar los avisos y la ayuda sin volver a mostrar una lista extensa de menús."],
   [main.includes('mode === "customer-display"') && customerDisplay.includes("Tu compra") && customerDisplay.includes("Total a pagar"), "La pantalla para clientes debe tener una entrada aislada y mostrar sólo la información de la venta."],
@@ -49,7 +51,7 @@ const checks = [
   [customerDisplay.includes("h-screen max-h-screen") && customerDisplay.includes("overflow-y-auto overscroll-contain") && customerDisplay.includes("scrollHeight"), "Una venta extensa debe desplazarse dentro de la lista sin agrandar la pantalla."],
   [customerDisplayLayout.includes("Ventas + publicidad") && customerDisplayLayout.includes("Sólo publicidad") && customerDisplayLayout.includes("Sólo ventas"), "Cada monitor local debe permitir elegir si recibe ventas, publicidad o ambos."],
   [customerDisplayLayout.includes("Vista previa en vivo") && customerDisplayLayout.includes("Mover a:") && customerDisplayLayout.includes("Diseños rápidos"), "Los bloques deben ordenarse sobre una vista previa y cambiar de zona."],
-  [customerDisplayLayout.includes("DISPLAY_WIDGET_SIZES") && customerDisplayLayout.includes("onDrop(draggingId, zone, index)") && customerDisplay.includes("DISPLAY_WIDGET_SIZES"), "Cada bloque debe poder reordenarse y ocupar un tamaño distinto en la pantalla real."],
+  [customerDisplayLayout.includes("Tamaño manual") && customerDisplayLayout.includes('type="range"') && customerDisplayLayout.includes("normalizeDisplayWidgetSize") && customerDisplay.includes("normalizeDisplayWidgetSize"), "Cada bloque debe poder reordenarse y usar un tamaño porcentual manual en la pantalla real."],
   [customerDisplayLayout.includes("Horarios del negocio") && customerDisplayLayout.includes('type="time"') && customerDisplay.includes("Abierto ahora") && customerDisplay.includes("DISPLAY_SCHEDULE_DAYS"), "Los horarios deben configurarse por día y mostrarse como una lista con estado actual."],
   [customerDisplayLayout.includes("Zona donde agregar el bloque") && customerDisplayLayout.includes("No abre el teclado ni menús del teléfono") && !customerDisplayLayout.includes("<select value={addZone}"), "El editor táctil debe agregar bloques sin abrir selectores nativos del teléfono."],
   [main.includes('mode === "remote-display"') && remoteDisplayScreen.includes("Vinculá esta pantalla") && remoteDisplayScreen.includes("authorizationUrl") && remoteDisplays.includes("kiosco:remote-display-cache"), "La pantalla remota debe mostrar su QR, vincularse de forma aislada y conservar contenido sin conexión."],

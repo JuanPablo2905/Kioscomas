@@ -118,7 +118,7 @@ function configureDesktopUpdater() {
     updateNoticeShownFor = version;
     new Notification({
       title: "Actualización de Kiosco+ lista",
-      body: `La versión ${version} se instalará cuando cierres la aplicación.`,
+      body: `La versión ${version} ya se descargó. Abrí Ayuda y versión para reiniciar e instalarla.`,
       icon: path.join(__dirname, "icon.png"),
     }).show();
   });
@@ -422,6 +422,7 @@ ipcMain.handle("kiosco:updates:install", () => {
   // Las actualizaciones automáticas deben usar el modo silencioso. Con el
   // instalador asistido Windows podía dejar el diálogo detrás de la app y
   // volver a abrir la versión anterior sin completar el reemplazo.
+  publishUpdateState({ status: "installing", error: null });
   setImmediate(() => desktopUpdater.quitAndInstall(true, true));
   return { ok: true };
 });
