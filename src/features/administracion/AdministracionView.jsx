@@ -4,13 +4,14 @@ import {
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
   MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
-  ChevronRight,
+  ChevronRight, Eye, EyeOff,
 } from "lucide-react";
 import { money, NAV_ITEMS, historialEntry } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
 import { AppSelect } from "../../shared/controls";
 import { defaultDataset, PERMISOS_MENU, PERMISOS_ACCION } from "../../app/data";
 import { secureSubject } from "../../security/auth";
+import { passwordPolicyError, passwordPolicyHint } from "../../security/passwordPolicy";
 import { auditActor, auditDisplayDetail, auditDisplayRole, auditDisplaySection, compactAuditEventsForDisplay } from "../../shared/audit";
 import { crearIdOperacion, impactoMovimientoCaja, ticketActivo } from "../ventas/salesRules";
 
@@ -293,13 +294,16 @@ function EmpleadoModal({ rolesDisponibles, onClose, onConfirm }) {
   const [usuario, setUsuario] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState("");
   const [rol, setRol] = useState(rolesDisponibles[0]?.nombre || "");
   const [rolNuevo, setRolNuevo] = useState("");
   const creandoRol = rol === "__nuevo__";
 
   const rolFinal = creandoRol ? rolNuevo.trim() : rol;
   const puedeGuardar =
-    nombre.trim() && usuario.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email.trim()) && password.trim() && rolFinal;
+    nombre.trim() && usuario.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email.trim()) && !passwordPolicyError(password) && password === passwordConfirmation && rolFinal;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4">
@@ -333,12 +337,11 @@ function EmpleadoModal({ rolesDisponibles, onClose, onConfirm }) {
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
         />
         <label className="text-sm text-gray-700 block mb-1">Contraseña</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
-        />
+        <div className="relative"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => { setPassword(e.target.value); setFormError(""); }} autoComplete="new-password" className="mb-1 w-full rounded-lg border border-gray-300 px-3 py-2 pr-12 text-sm"/><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute inset-y-0 right-0 grid w-11 place-items-center text-gray-500">{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div>
+        <p className="mb-3 text-xs leading-5 text-gray-500">{passwordPolicyHint}</p>
+        <label className="text-sm text-gray-700 block mb-1">Repetir contraseña</label>
+        <input type={showPassword ? "text" : "password"} value={passwordConfirmation} onChange={(event) => { setPasswordConfirmation(event.target.value); setFormError(""); }} autoComplete="new-password" className="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"/>
+        {formError && <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{formError}</p>}
         <label className="text-sm text-gray-700 block mb-1">Rol</label>
         <AppSelect
           value={rol}
@@ -373,16 +376,18 @@ function EmpleadoModal({ rolesDisponibles, onClose, onConfirm }) {
             Cancelar
           </button>
           <button
-            onClick={() =>
-              puedeGuardar &&
-              onConfirm({
+            onClick={() => {
+              const policyError = passwordPolicyError(password);
+              if (policyError) return setFormError(policyError);
+              if (password !== passwordConfirmation) return setFormError("Las dos contraseñas no coinciden.");
+              puedeGuardar && onConfirm({
                 nombre: nombre.trim(),
                 usuario: usuario.trim(),
                 email: email.trim().toLowerCase(),
                 password,
                 rol: rolFinal,
-              })
-            }
+              });
+            }}
             disabled={!puedeGuardar}
             className="flex-1 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-40"
           >
@@ -585,7 +590,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
     if (!nuevoEmpleadoOpen) return;
     const normalizedUser = String(usuario || "").trim();
     const normalizedEmail = String(email || "").trim().toLowerCase();
-    const normalizedPassword = String(password || "").trim();
+    const normalizedPassword = String(password || "");
     const yaExiste = cuentas.some(
       (c) =>
         String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase() ||

@@ -1,7 +1,9 @@
+import crypto from "node:crypto";
+
 const RECORD_TABLE = "cloud_records_v2";
 
 const emptyState = () => ({
-  schemaVersion: 6,
+  schemaVersion: 8,
   cursor: 0,
   accepted: {},
   system: {},
@@ -22,6 +24,10 @@ const emptyState = () => ({
   businessDisplays: {},
   displayPairingCodes: {},
   displayTokens: {},
+  paymentIntegrations: {},
+  paymentOauthStates: {},
+  paymentAttempts: {},
+  securityEvents: {},
 });
 
 const normalizePayload = (value) => {
@@ -55,7 +61,7 @@ export function stateToRecords(value) {
   const { cuentas: accounts = [], ...systemWithoutAccounts } = system;
   const records = [
     record("meta", "state", {
-      schemaVersion: Number(state.schemaVersion || 6),
+      schemaVersion: Number(state.schemaVersion || 8),
       cursor: Number(state.cursor || 0),
     }),
     record("system", "state", systemWithoutAccounts),
@@ -105,6 +111,10 @@ export function stateToRecords(value) {
   addObjectRecords("business_display", state.businessDisplays);
   addObjectRecords("display_pairing_code", state.displayPairingCodes);
   addObjectRecords("display_token", state.displayTokens);
+  addObjectRecords("payment_integration", state.paymentIntegrations);
+  addObjectRecords("payment_oauth_state", state.paymentOauthStates);
+  addObjectRecords("payment_attempt", state.paymentAttempts);
+  addObjectRecords("security_event", state.securityEvents);
   for (const [key, cursor] of Object.entries(stateValue(state.accepted))) {
     records.push(record("accepted", key, { cursor: Number(cursor || 0) }));
   }
@@ -124,7 +134,7 @@ export function recordsToState(rows = []) {
     const key = String(row?.record_key ?? row?.key ?? "");
     const payload = normalizePayload(row?.payload);
     if (scope === "meta" && key === "state") {
-      state.schemaVersion = Number(payload?.schemaVersion || 6);
+      state.schemaVersion = Number(payload?.schemaVersion || 8);
       state.cursor = Number(payload?.cursor || 0);
     } else if (scope === "system" && key === "state") state.system = stateValue(payload);
     else if (scope === "account") accounts.push({ position: Number(payload?.position || 0), value: stateValue(payload?.value) });
@@ -171,6 +181,10 @@ export function recordsToState(rows = []) {
     else if (scope === "business_display") state.businessDisplays[key] = stateValue(payload);
     else if (scope === "display_pairing_code") state.displayPairingCodes[key] = stateValue(payload);
     else if (scope === "display_token") state.displayTokens[key] = stateValue(payload);
+    else if (scope === "payment_integration") state.paymentIntegrations[key] = stateValue(payload);
+    else if (scope === "payment_oauth_state") state.paymentOauthStates[key] = stateValue(payload);
+    else if (scope === "payment_attempt") state.paymentAttempts[key] = stateValue(payload);
+    else if (scope === "security_event") state.securityEvents[key] = stateValue(payload);
     else if (scope === "accepted") state.accepted[key] = Number(payload?.cursor || 0);
     else if (scope === "change") changes.push({ key, payload: stateValue(payload) });
   }
@@ -278,6 +292,16 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 1
           PRIMARY KEY (backup_day, scope, record_key)
         )
       `;
+      await tx`
+        CREATE TABLE IF NOT EXISTS kiosco_private.manual_recovery_points_v2 (
+          id uuid PRIMARY KEY,
+          tenant_id text NOT NULL,
+          reason text NOT NULL,
+          payload jsonb NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+      `;
+      await tx`CREATE INDEX IF NOT EXISTS manual_recovery_points_v2_tenant_idx ON kiosco_private.manual_recovery_points_v2 (tenant_id, created_at DESC)`;
     });
   };
 
@@ -328,7 +352,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 1
   };
 
   const persist = async (value) => {
-    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 6 };
+    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 8 };
     const before = recordsMap(cachedState || emptyState());
     const after = recordsMap(nextState);
     const changed = [...after.entries()]
@@ -378,7 +402,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 1
   };
 
   const replace = async (value) => {
-    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 6 };
+    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 8 };
     const run = async () => {
       await sql.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtext('kiosco-plus-cloud-records-v2'))`;
@@ -425,8 +449,54 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 1
     }));
   };
 
+  const listBackups = async () => {
+    const rows = await sql`
+      SELECT backup_day,
+             count(*)::integer AS changed_records,
+             min(created_at) AS created_at
+      FROM kiosco_private.daily_record_backups_v2
+      GROUP BY backup_day
+      ORDER BY backup_day DESC
+    `;
+    return rows.map((row) => ({
+      day: new Date(row.backup_day).toISOString().slice(0, 10),
+      changedRecords: Number(row.changed_records || 0),
+      createdAt: row.created_at || null,
+      moment: "start_of_day",
+    }));
+  };
+
+  const readBackup = async (day) => {
+    const normalizedDay = String(day || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDay)) throw new Error("La fecha del respaldo no es válida");
+    const backups = await sql`
+      SELECT backup_day, scope, record_key, existed, payload
+      FROM kiosco_private.daily_record_backups_v2
+      WHERE backup_day >= ${normalizedDay}::date
+      ORDER BY backup_day DESC, scope, record_key
+    `;
+    if (!backups.some((row) => new Date(row.backup_day).toISOString().slice(0, 10) === normalizedDay)) return null;
+    const reconstructed = new Map((await loadRows()).map((row) => [recordId(row.scope, row.record_key), { scope: row.scope, record_key: row.record_key, payload: row.payload }]));
+    for (const entry of backups) {
+      const id = recordId(entry.scope, entry.record_key);
+      if (entry.existed) reconstructed.set(id, { scope: entry.scope, record_key: entry.record_key, payload: entry.payload });
+      else reconstructed.delete(id);
+    }
+    return recordsToState([...reconstructed.values()]);
+  };
+
+  const createRecoveryPoint = async (tenantId, reason = "before_restore") => {
+    const id = crypto.randomUUID();
+    const payload = stateToRecords(cachedState || emptyState());
+    await sql`
+      INSERT INTO kiosco_private.manual_recovery_points_v2 (id, tenant_id, reason, payload)
+      VALUES (${id}, ${String(tenantId)}, ${String(reason).slice(0, 80)}, ${payload})
+    `;
+    return { id, tenantId: String(tenantId), reason };
+  };
+
   const close = async () => sql.end({ timeout: 5 });
-  return { initialize, read, write, replace, probe, inspectSections, close };
+  return { initialize, read, write, replace, probe, inspectSections, listBackups, readBackup, createRecoveryPoint, close };
 }
 
 export const POSTGRES_RECORD_STORE_TABLE = RECORD_TABLE;

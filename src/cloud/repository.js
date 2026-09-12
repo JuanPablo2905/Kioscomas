@@ -11,6 +11,9 @@ let syncTimer = null;
 let bootstrapScope = "";
 let bootstrapPromise = null;
 let bootstrapResult = null;
+let teamSyncTimer = null;
+let teamSyncMutation = Promise.resolve();
+let teamSyncDirty = false;
 const scheduleSync = () => {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
@@ -20,6 +23,101 @@ const scheduleSync = () => {
   }, 120);
 };
 const canSyncSystemData = () => cloudSession()?.user?.role === "superAdmin";
+const teamValue = (account = {}) => ({
+  roles: account.roles || [],
+  empleados: account.empleados || [],
+  modoNegocio: account.modoNegocio === "solo" ? "solo" : "equipo",
+});
+const readStoredAccounts = async () => {
+  const result = await storage.get("cuentas");
+  try { return result?.value ? JSON.parse(result.value) : []; } catch { return []; }
+};
+const writeAccountsAndNotify = async (accounts, detail = {}) => {
+  await storage.set("cuentas", JSON.stringify(accounts));
+  globalThis.window?.dispatchEvent?.(new CustomEvent("kiosco-cloud-update", {
+    detail: { tenantId: String(context.tenantId || ""), accounts: true, authoritative: true, ...detail },
+  }));
+};
+const flushBusinessTeam = async () => {
+  clearTimeout(teamSyncTimer);
+  teamSyncTimer = null;
+  if (!teamSyncDirty) return { skipped: true };
+  const run = async () => {
+    const config = loadCloudConfig();
+    const session = cloudSession(config.apiUrl);
+    if (!config.enabled || !config.apiUrl || !context.tenantId || !["owner", "employee"].includes(session?.user?.role)) return { skipped: true };
+    const accounts = await readStoredAccounts();
+    const account = accounts.find((item) => String(item?.id) === String(context.tenantId));
+    if (!account) return { skipped: true };
+    teamSyncDirty = false;
+    const sentTeam = teamValue(account);
+    const response = await cloudFetch(config.apiUrl, "/v1/account", {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-device-id": config.deviceId, "x-tenant-id": String(context.tenantId) },
+      body: JSON.stringify({ teamRevision: Number(account.teamRevision || 0), businessMode: sentTeam.modoNegocio, roles: sentTeam.roles, employees: sentTeam.empleados }),
+    });
+    const detail = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (response.status === 409 && detail.account) {
+        // La nube ganó la carrera. Reemplazar la foto local evita reintentar
+        // eternamente con la misma revisión atrasada; el usuario puede volver
+        // a aplicar su cambio sobre el equipo que acaba de descargarse.
+        const latest = await readStoredAccounts();
+        const authoritative = latest.map((item) => String(item?.id) === String(context.tenantId) ? detail.account : item);
+        if (!authoritative.some((item) => String(item?.id) === String(context.tenantId))) authoritative.push(detail.account);
+        teamSyncDirty = false;
+        await writeAccountsAndNotify(authoritative, { team: true, conflict: true });
+      } else {
+        teamSyncDirty = true;
+      }
+      throw new Error(detail.error || `No se pudo guardar el equipo en la nube (${response.status}).`);
+    }
+    const latest = await readStoredAccounts();
+    const latestAccount = latest.find((item) => String(item?.id) === String(context.tenantId));
+    const teamChangedWhileSaving = JSON.stringify(teamValue(latestAccount)) !== JSON.stringify(sentTeam);
+    const merged = latest.map((item) => String(item?.id) !== String(context.tenantId)
+      ? item
+      : teamChangedWhileSaving
+        ? { ...item, teamRevision: Number(detail.teamRevision || 0) }
+        : detail.account);
+    await writeAccountsAndNotify(merged, { team: true });
+    if (teamChangedWhileSaving) scheduleBusinessTeamSync();
+    return detail;
+  };
+  teamSyncMutation = teamSyncMutation.then(run, run);
+  return teamSyncMutation;
+};
+const scheduleBusinessTeamSync = () => {
+  teamSyncDirty = true;
+  clearTimeout(teamSyncTimer);
+  teamSyncTimer = setTimeout(() => flushBusinessTeam().catch((error) => syncEngine.reportError(error)), 350);
+};
+const refreshCurrentCloudAccount = async () => {
+  const config = loadCloudConfig();
+  const session = cloudSession(config.apiUrl);
+  if (!config.enabled || !config.apiUrl || !context.tenantId || !["owner", "employee"].includes(session?.user?.role)) return { skipped: true };
+  const response = await cloudFetch(config.apiUrl, "/v1/account", {
+    headers: { "x-device-id": config.deviceId, "x-tenant-id": String(context.tenantId) },
+  });
+  const detail = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(detail.error || `No se pudo actualizar el equipo (${response.status}).`);
+  const accounts = await readStoredAccounts();
+  const next = accounts.map((item) => {
+    if (String(item?.id) !== String(context.tenantId)) return item;
+    if (session.user.role === "owner") return detail.account;
+    const remoteEmployees = detail.account?.empleados || [];
+    return {
+      ...item,
+      ...detail.account,
+      empleados: remoteEmployees.length
+        ? remoteEmployees.map((employee) => ({ ...(item.empleados || []).find((candidate) => String(candidate?.id) === String(employee.id)), ...employee }))
+        : item.empleados || [],
+    };
+  });
+  if (!next.some((item) => String(item?.id) === String(context.tenantId)) && detail.account) next.push(detail.account);
+  if (JSON.stringify(next) !== JSON.stringify(accounts)) await writeAccountsAndNotify(next, { team: true });
+  return detail;
+};
 const refreshSystemAccountDirectory = async () => {
   if (!context.isSystemAdmin) return { skipped: true };
   const config = loadCloudConfig();
@@ -74,6 +172,22 @@ const ensureCloudBootstrap = async () => {
   }
   return bootstrapPromise;
 };
+const recoveryRequest = async (route, options = {}) => {
+  const config = loadCloudConfig();
+  if (!config.enabled || !config.apiUrl || !context.tenantId) throw new Error("Conectá este negocio a la nube para usar la recuperación");
+  const response = await cloudFetch(config.apiUrl, route, {
+    ...options,
+    headers: {
+      ...(options.body ? { "content-type": "application/json" } : {}),
+      "x-device-id": config.deviceId,
+      "x-tenant-id": String(context.tenantId),
+      ...(options.headers || {}),
+    },
+  });
+  const detail = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(detail.error || `La nube rechazó la solicitud (${response.status}).`);
+  return detail;
+};
 
 // Único acceso a persistencia. En la migración se reemplaza esta implementación
 // por una API HTTPS sin cambiar las pantallas ni las reglas de negocio.
@@ -126,11 +240,23 @@ export const repository = {
   subscribe: (fn) => syncEngine.subscribe(fn),
   getSyncStatus: () => syncEngine.getStatus(),
   reportSyncError: (error) => syncEngine.reportError(error),
+  listRecoveryBackups: () => recoveryRequest("/v1/recovery/backups"),
+  previewRecovery: (backupDay) => recoveryRequest("/v1/recovery/preview", { method: "POST", body: JSON.stringify({ backupDay }) }),
+  exportBusinessData: () => recoveryRequest("/v1/recovery/export"),
+  async restoreRecovery(backupDay, confirmation) {
+    const result = await recoveryRequest("/v1/recovery/restore", { method: "POST", body: JSON.stringify({ backupDay, confirmation }) });
+    bootstrapResult = null;
+    bootstrapPromise = null;
+    await syncEngine.replaceTenantFromCloud();
+    return result;
+  },
   async syncNow() {
     try {
       await ensureCloudBootstrap();
+      await flushBusinessTeam();
       const result = await syncEngine.flush();
       await refreshSystemAccountDirectory();
+      await refreshCurrentCloudAccount();
       return result;
     } catch (error) {
       syncEngine.reportError(error);
@@ -198,6 +324,11 @@ export const repository = {
           removedAccountIds: [],
         });
         scheduleSync();
+      } else if (context.tenantId && key === "cuentas" && ["owner", "employee"].includes(cloudSession(loadCloudConfig().apiUrl)?.user?.role)) {
+        const tenantId = String(context.tenantId);
+        const previousAccount = (Array.isArray(previous) ? previous : []).find((account) => String(account?.id) === tenantId);
+        const nextAccount = (Array.isArray(value) ? value : []).find((account) => String(account?.id) === tenantId);
+        if (nextAccount && JSON.stringify(teamValue(previousAccount)) !== JSON.stringify(teamValue(nextAccount))) scheduleBusinessTeamSync();
       } else if (context.tenantId && SYNCABLE_KEYS.has(key)) {
         await syncEngine.enqueue({ type: "set", key, tenantId: String(context.tenantId), value: extractTenantValue(key, value, String(context.tenantId)) });
         scheduleSync();

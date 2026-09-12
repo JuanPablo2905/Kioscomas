@@ -10,6 +10,7 @@ import { createPostgresStore } from "./postgres-record-store.mjs";
 import { createEmailService, isValidEmail, normalizeEmail } from "./email-service.mjs";
 import { argentinaDateKey, referralStats, referralStatus } from "../src/billing/referrals.js";
 import { sanitizePublicDisplayContent } from "../src/features/ventas/displayConfig.js";
+import { passwordPolicyError } from "../src/security/passwordPolicy.js";
 import {
   buildMercadoPagoAuthorizationUrl,
   buildPointOrderPayload,
@@ -68,7 +69,7 @@ const pushDeliveryConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
 if (pushDeliveryConfigured) webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISOString();
 const refreshTokenExpiresAt = () => new Date(Date.now() + refreshTokenTtlMs).toISOString();
-const emptyDb = () => ({ schemaVersion: 7, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {}, businessDisplays: {}, displayPairingCodes: {}, displayTokens: {}, paymentIntegrations: {}, paymentOauthStates: {}, paymentAttempts: {} });
+const emptyDb = () => ({ schemaVersion: 8, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {}, businessDisplays: {}, displayPairingCodes: {}, displayTokens: {}, paymentIntegrations: {}, paymentOauthStates: {}, paymentAttempts: {}, securityEvents: {} });
 const compactChangeLog = (changes = []) => {
   let latestAccountDirectoryKept = false;
   return [...changes].reverse().filter((change) => {
@@ -456,7 +457,7 @@ const writeMirrors = async (db) => {
   await writeJson(path.join(dataDirectory, "backups", day, "database.json"), db);
 };
 const writeDb = async (db) => {
-  db.schemaVersion = 7;
+  db.schemaVersion = 8;
   ensureReferralMetadata(db);
   db.sessions = compactSessions(db.sessions);
   db.passwordResetTokens = compactPasswordResetTokens(db.passwordResetTokens);
@@ -471,6 +472,65 @@ const writeDb = async (db) => {
   }
   await writeJson(databasePath, db);
   await writeMirrors(db);
+};
+const listRecoveryBackups = async () => {
+  if (postgresStore?.listBackups) return postgresStore.listBackups();
+  try {
+    const entries = await fs.readdir(path.join(dataDirectory, "backups"), { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
+      .map((entry) => ({ day: entry.name, changedRecords: null, createdAt: null, moment: "latest_local_copy" }))
+      .sort((left, right) => right.day.localeCompare(left.day));
+  } catch { return []; }
+};
+const readRecoveryBackup = async (day) => {
+  if (postgresStore?.readBackup) return postgresStore.readBackup(day);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ""))) return null;
+  try {
+    const saved = JSON.parse(await fs.readFile(path.join(dataDirectory, "backups", String(day), "database.json"), "utf8"));
+    return { ...emptyDb(), ...saved };
+  } catch { return null; }
+};
+const createManualRecoveryPoint = async (db, tenantId) => {
+  if (postgresStore?.createRecoveryPoint) return postgresStore.createRecoveryPoint(tenantId, "before_restore");
+  const id = crypto.randomUUID();
+  await writeJson(path.join(dataDirectory, "recovery-points", safeName(tenantId), `${new Date().toISOString().replace(/[:.]/g, "-")}-${id}.json`), db);
+  return { id, tenantId: String(tenantId), reason: "before_restore" };
+};
+const tenantRecoveryCounts = (tenant = {}) => {
+  const entities = Object.fromEntries(Object.entries(tenant?.entities || {}).map(([name, records]) => [name, Object.values(records || {}).filter((record) => !record?.deletedAt).length]));
+  return {
+    entities,
+    totalRecords: Object.values(entities).reduce((total, count) => total + Number(count || 0), 0),
+    sections: Object.keys(tenant?.sections || {}).length,
+  };
+};
+const recoveryComparison = (currentTenant = {}, backupTenant = {}) => {
+  const current = tenantRecoveryCounts(currentTenant);
+  const backup = tenantRecoveryCounts(backupTenant);
+  const entityNames = new Set([...Object.keys(current.entities), ...Object.keys(backup.entities)]);
+  return {
+    current,
+    backup,
+    differences: [...entityNames].map((entity) => ({ entity, current: Number(current.entities[entity] || 0), backup: Number(backup.entities[entity] || 0) }))
+      .filter((entry) => entry.current !== entry.backup),
+  };
+};
+const withoutCredentialFields = (subject = {}) => {
+  const { password: _password, passwordHash: _passwordHash, passwordSalt: _passwordSalt, salt: _salt, adminSecretSalt: _adminSecretSalt, ...safe } = subject || {};
+  return safe;
+};
+const recoveryExport = (db, tenantId) => {
+  const account = tenantAccount(db, tenantId);
+  const snapshot = materializeTenantSnapshot(db.tenants?.[tenantId] || {});
+  return {
+    format: "kiosco-plus-business-export",
+    formatVersion: 1,
+    exportedAt: new Date().toISOString(),
+    appVersion,
+    business: account ? { ...withoutCredentialFields(account), empleados: (account.empleados || []).map(withoutCredentialFields) } : null,
+    data: snapshot.dataset,
+    additionalValues: snapshot.values,
+  };
 };
 const send = (res, status, value) => {
   res.writeHead(status, {
@@ -1069,7 +1129,110 @@ const accountForLogin = (db, user) => {
     (entry) => String(entry?.usuario || "").trim().toLowerCase() === normalizedUsername,
   );
   const { passwordHash: _ownerHash, passwordSalt: _ownerSalt, password: _ownerPassword, ...safeAccount } = account;
-  return { ...safeAccount, empleados: employee ? [employee] : [] };
+  const role = (account.roles || []).find((entry) => entry?.nombre === employee?.rol);
+  const canManageTeam = (role?.permisos || []).includes("gestionar_personal");
+  if (!canManageTeam) return { ...safeAccount, empleados: employee ? [employee] : [] };
+  return {
+    ...safeAccount,
+    empleados: (account.empleados || []).map((entry) => {
+      if (String(entry?.id) === String(employee?.id)) return entry;
+      const { passwordHash: _hash, passwordSalt: _salt, password: _password, ...safeEmployee } = entry || {};
+      return safeEmployee;
+    }),
+  };
+};
+const TEAM_PERMISSIONS = new Set([
+  "notificaciones", "stock", "vitrina", "ventas", "compras", "proveedores", "vencimientos", "gastos", "clientes", "reportes", "gestion",
+  "administracion", "editar_precios", "eliminar_productos", "eliminar_tickets", "aplicar_descuentos", "corregir_caja", "gestionar_personal",
+]);
+const credentialFingerprint = (subject = {}) => `${String(subject.passwordVersion || "")}:${String(subject.passwordSalt || "")}:${String(subject.passwordHash || "")}`;
+const cloudUsersForBusiness = (db, businessId) => Object.entries(db.users || {}).filter(([, user]) => String(user?.businessId) === String(businessId));
+const revokeUserSessions = (db, userId, reason) => {
+  const now = new Date().toISOString();
+  for (const candidate of Object.values(db.sessions || {})) {
+    if (String(candidate?.userId) === String(userId) && !candidate.revokedAt) {
+      candidate.revokedAt = now;
+      candidate.revokedReason = reason;
+      candidate.refreshGraceUntil = null;
+    }
+  }
+};
+const removeCloudCredential = (db, businessId, username, reason) => {
+  const normalized = String(username || "").trim().toLowerCase();
+  for (const [key, user] of cloudUsersForBusiness(db, businessId)) {
+    if (String(user?.username || "").trim().toLowerCase() !== normalized) continue;
+    revokeUserSessions(db, user.id, reason);
+    delete db.users[key];
+  }
+};
+const revokeChangedAccountSubjects = (db, previousAccount, nextAccount, reasonPrefix = "account_updated") => {
+  if (!previousAccount) return;
+  const businessId = String(previousAccount.id);
+  if (String(previousAccount.usuario || "").trim().toLowerCase() !== String(nextAccount?.usuario || "").trim().toLowerCase()
+    || credentialFingerprint(previousAccount) !== credentialFingerprint(nextAccount || {})) {
+    removeCloudCredential(db, businessId, previousAccount.usuario, `${reasonPrefix}_owner_credentials`);
+  }
+  const nextEmployees = new Map((nextAccount?.empleados || []).map((employee) => [String(employee.id), employee]));
+  for (const employee of previousAccount.empleados || []) {
+    const next = nextEmployees.get(String(employee.id));
+    const accessChanged = !next
+      || String(employee.usuario || "").trim().toLowerCase() !== String(next.usuario || "").trim().toLowerCase()
+      || credentialFingerprint(employee) !== credentialFingerprint(next)
+      || String(employee.rol || "") !== String(next.rol || "")
+      || String(employee.estado || "") !== String(next.estado || "");
+    if (accessChanged) removeCloudCredential(db, businessId, employee.usuario, `${reasonPrefix}_employee_access`);
+  }
+};
+const sanitizeBusinessTeam = (db, account, payload = {}) => {
+  const incomingRoles = Array.isArray(payload.roles) ? payload.roles : [];
+  const incomingEmployees = Array.isArray(payload.employees) ? payload.employees : [];
+  if (incomingRoles.length > 30 || incomingEmployees.length > 100) throw Object.assign(new Error("El equipo supera el máximo permitido"), { status: 400 });
+  const roleNames = new Set();
+  const roles = incomingRoles.map((role) => {
+    const nombre = cleanCatalogText(role?.nombre, 60);
+    if (!nombre || roleNames.has(nombre.toLowerCase())) throw Object.assign(new Error("Cada rol necesita un nombre único"), { status: 400 });
+    roleNames.add(nombre.toLowerCase());
+    return { nombre, permisos: [...new Set((Array.isArray(role?.permisos) ? role.permisos : []).filter((permission) => TEAM_PERMISSIONS.has(permission)))] };
+  });
+  const previousById = new Map((account.empleados || []).map((employee) => [String(employee.id), employee]));
+  const usedUsers = new Set();
+  const usedEmails = new Set();
+  const employees = incomingEmployees.map((incoming) => {
+    const id = cleanCatalogText(incoming?.id, 100);
+    const previous = previousById.get(String(id));
+    const nombre = cleanCatalogText(incoming?.nombre, 100);
+    const usuario = cleanCatalogText(incoming?.usuario, 80);
+    const email = normalizeEmail(incoming?.email);
+    const rol = cleanCatalogText(incoming?.rol, 60);
+    const userKey = usuario.toLowerCase();
+    if (!id || !nombre || !usuario || (!previous && !isValidEmail(email)) || (email && !isValidEmail(email)) || !roleNames.has(rol.toLowerCase())) throw Object.assign(new Error("Revisá nombre, usuario, correo y rol de cada empleado"), { status: 400 });
+    if (usedUsers.has(userKey) || (email && usedEmails.has(email))) throw Object.assign(new Error("No puede haber empleados con el mismo usuario o correo"), { status: 409 });
+    usedUsers.add(userKey); if (email) usedEmails.add(email);
+    const passwordHash = String(incoming?.passwordHash || previous?.passwordHash || "");
+    const passwordSalt = String(incoming?.passwordSalt || previous?.passwordSalt || "");
+    const passwordVersion = Number(incoming?.passwordVersion || previous?.passwordVersion || 1);
+    if (!passwordHash || !passwordSalt) throw Object.assign(new Error(`Falta preparar la contraseña de @${usuario}`), { status: 400 });
+    return { ...previous, id, nombre, usuario, email, rol, estado: incoming?.estado === "bloqueado" ? "bloqueado" : "activo", passwordHash, passwordSalt, passwordVersion };
+  });
+  const reservedUsers = new Set();
+  const reservedEmails = new Set();
+  for (const candidate of db.system?.cuentas || []) {
+    if (String(candidate?.id) === String(account.id)) {
+      reservedUsers.add(String(candidate.usuario || "").trim().toLowerCase());
+      if (normalizeEmail(candidate.email)) reservedEmails.add(normalizeEmail(candidate.email));
+      continue;
+    }
+    reservedUsers.add(String(candidate?.usuario || "").trim().toLowerCase());
+    if (normalizeEmail(candidate?.email)) reservedEmails.add(normalizeEmail(candidate?.email));
+    for (const employee of candidate?.empleados || []) {
+      reservedUsers.add(String(employee?.usuario || "").trim().toLowerCase());
+      if (normalizeEmail(employee?.email)) reservedEmails.add(normalizeEmail(employee?.email));
+    }
+  }
+  if (employees.some((employee) => reservedUsers.has(employee.usuario.toLowerCase()) || (employee.email && reservedEmails.has(employee.email)))) {
+    throw Object.assign(new Error("Un usuario o correo ya pertenece a otra cuenta"), { status: 409 });
+  }
+  return { roles, employees, businessMode: payload.businessMode === "solo" ? "solo" : "equipo" };
 };
 const accountCredential = (db, username) => {
   const normalized = String(username || "").trim().toLowerCase();
@@ -1241,6 +1404,113 @@ const sessionCanTakePayments = (db, session, tenantId) => {
   const role = (account?.roles || []).find((item) => item?.nombre === employee?.rol);
   return employee?.estado !== "bloqueado" && (role?.permisos || []).includes("ventas");
 };
+const SYNC_ENTITY_PERMISSIONS = {
+  products: ["stock", "vitrina"], tickets: ["ventas"], clientes: ["clientes"],
+  comprasItems: ["compras"], proveedores: ["proveedores"], perdidas: ["vencimientos", "stock"],
+  sugerencias: ["stock"], pedidos: ["compras"], gastos: ["gastos"], ventasSuspendidas: ["ventas"],
+  inventarios: ["stock"], tareas: ["gestion"], metas: ["gestion"], promociones: ["gestion"],
+  reservas: ["clientes"], presupuestos: ["gestion"], arqueos: ["ventas"], comprobantes: ["gestion", "ventas"],
+  listaCompras: ["compras"], retornables: ["clientes"], autoconsumos: ["gestion"], turnos: ["gestion"],
+  recordatoriosProveedor: ["proveedores"], movimientosStock: ["stock", "ventas"], historialLimpiezas: ["stock"],
+  labelTemplates: ["stock"], tutorialProgress: [], cajaMovimientos: ["ventas"], cajaHistorial: ["ventas"], cajaEstado: ["ventas"],
+};
+const SYNC_SECTION_PERMISSIONS = {
+  caja: ["ventas"], cajaAbierta: ["ventas"], cart: ["ventas"], cambioCaja: ["ventas"],
+  configuracionFiscal: ["administracion"],
+};
+const employeeSecurityContext = (db, session, tenantId) => {
+  if (!session || session.role !== "employee") return null;
+  const account = tenantAccount(db, tenantId);
+  const user = cloudUserForSession(db, session);
+  const employee = (account?.empleados || []).find((item) => (
+    String(item?.id) === String(user?.id)
+    || String(item?.usuario || "").trim().toLowerCase() === String(user?.username || "").trim().toLowerCase()
+  ));
+  const role = (account?.roles || []).find((item) => item?.nombre === employee?.rol);
+  return { account, user, employee, role, permissions: new Set(role?.permisos || []) };
+};
+const includesAnyPermission = (permissions, required = []) => !required.length || required.some((permission) => permissions.has(permission));
+const syncOperationAuthorization = (db, session, tenantId, operation) => {
+  if (!session || session.role !== "employee") return { allowed: true };
+  const context = employeeSecurityContext(db, session, tenantId);
+  if (!context?.employee || context.employee.estado === "bloqueado" || !context.role) {
+    return { allowed: false, reason: "employee_role_inactive", requiredPermissions: [] };
+  }
+  if (operation.type === "system_set") return { allowed: false, reason: "system_admin_required", requiredPermissions: ["superAdmin"] };
+  if (["set", "delete"].includes(operation.type)) {
+    if (operation.key === "datos") return { allowed: false, reason: "legacy_snapshot_not_allowed", requiredPermissions: [] };
+    if (["menuPreferences", "userPreferences", "reportesProblemas"].includes(operation.key)) return { allowed: true };
+    return { allowed: false, reason: "unsupported_snapshot", requiredPermissions: [] };
+  }
+  if (["section_set", "section_delete"].includes(operation.type)) {
+    const required = SYNC_SECTION_PERMISSIONS[operation.section];
+    if (!required) return { allowed: false, reason: "section_not_allowed", requiredPermissions: [] };
+    return includesAnyPermission(context.permissions, required)
+      ? { allowed: true }
+      : { allowed: false, reason: "permission_required", requiredPermissions: required };
+  }
+  if (!["entity_upsert", "entity_delete"].includes(operation.type)) {
+    return { allowed: false, reason: "operation_not_allowed", requiredPermissions: [] };
+  }
+  const entity = String(operation.entity || "");
+  const current = db.tenants?.[tenantId]?.entities?.[entity]?.[String(operation.entityId)]?.value;
+  if (entity === "auditoria") {
+    return operation.type === "entity_upsert" && !current
+      ? { allowed: true }
+      : { allowed: false, reason: "audit_append_only", requiredPermissions: [] };
+  }
+  if (entity === "products") {
+    if (operation.type === "entity_delete" && !context.permissions.has("eliminar_productos")) {
+      return { allowed: false, reason: "permission_required", requiredPermissions: ["eliminar_productos"] };
+    }
+    const priceFields = ["precio", "costo", "margen", "precioMayorista"];
+    const changesPrice = operation.type === "entity_upsert" && current
+      && priceFields.some((field) => Number(current?.[field] || 0) !== Number(operation.value?.[field] || 0));
+    if (changesPrice && !context.permissions.has("editar_precios")) {
+      return { allowed: false, reason: "permission_required", requiredPermissions: ["editar_precios"] };
+    }
+    if (current && operation.type === "entity_upsert" && includesAnyPermission(context.permissions, ["ventas", "compras", "vencimientos"]) && !includesAnyPermission(context.permissions, ["stock", "vitrina"])) {
+      const stockFields = new Set(["deposito", "vitrina", "historial"]);
+      const keys = new Set([...Object.keys(current || {}), ...Object.keys(operation.value || {})]);
+      const changedFields = [...keys].filter((field) => JSON.stringify(current?.[field]) !== JSON.stringify(operation.value?.[field]));
+      return changedFields.every((field) => stockFields.has(field))
+        ? { allowed: true }
+        : { allowed: false, reason: "permission_required", requiredPermissions: ["stock", "vitrina"] };
+    }
+  }
+  if (entity === "tickets" && operation.type === "entity_delete" && !context.permissions.has("eliminar_tickets")) {
+    return { allowed: false, reason: "permission_required", requiredPermissions: ["eliminar_tickets"] };
+  }
+  if (entity === "tickets" && current && operation.type === "entity_upsert") {
+    if (!context.permissions.has("eliminar_tickets")) {
+      return { allowed: false, reason: "permission_required", requiredPermissions: ["eliminar_tickets"] };
+    }
+  }
+  if (["cajaMovimientos", "cajaHistorial"].includes(entity) && current && operation.type !== "entity_delete" && !context.permissions.has("corregir_caja")) {
+    return { allowed: false, reason: "permission_required", requiredPermissions: ["corregir_caja"] };
+  }
+  if (["cajaMovimientos", "cajaHistorial"].includes(entity) && operation.type === "entity_delete" && !context.permissions.has("corregir_caja")) {
+    return { allowed: false, reason: "permission_required", requiredPermissions: ["corregir_caja"] };
+  }
+  const required = SYNC_ENTITY_PERMISSIONS[entity];
+  if (!required) return { allowed: false, reason: "entity_not_allowed", requiredPermissions: [] };
+  return includesAnyPermission(context.permissions, required)
+    ? { allowed: true }
+    : { allowed: false, reason: "permission_required", requiredPermissions: required };
+};
+const recordSecurityEvent = (db, session, tenantId, deviceId, values = {}) => {
+  const id = crypto.randomUUID();
+  db.securityEvents ||= {};
+  db.securityEvents[id] = {
+    id, tenantId: String(tenantId), userId: session?.userId || null, role: session?.role || null,
+    deviceId: String(deviceId || ""), at: new Date().toISOString(), ...values,
+  };
+  const retained = Object.values(db.securityEvents)
+    .sort((left, right) => String(right.at || "").localeCompare(String(left.at || "")))
+    .slice(0, 5000);
+  db.securityEvents = Object.fromEntries(retained.map((entry) => [entry.id, entry]));
+  return db.securityEvents[id];
+};
 const mercadoPagoIntegration = (db, tenantId) => db.paymentIntegrations?.[String(tenantId)]?.mercadoPago || null;
 const paymentIntegrationView = (integration) => integration ? {
   provider: "mercado_pago",
@@ -1355,7 +1625,7 @@ const handleRequest = async (req, res) => {
     if (req.url === "/v1/health") return send(res, 200, {
       ok: true,
       service: "kiosco-cloud-local",
-      schemaVersion: 7,
+      schemaVersion: 8,
       localMode,
       deviceActivationRequired: requireDeviceActivation,
       emailDeliveryConfigured: emailService.configured && !emailTestMode,
@@ -1753,9 +2023,8 @@ const handleRequest = async (req, res) => {
       const payload = await body(req);
       const rawToken = String(payload.token || "").trim();
       const password = String(payload.password || "");
-      if (password.length < 8 || password.length > 128) {
-        return send(res, 400, { error: "La contraseña nueva debe tener entre 8 y 128 caracteres." });
-      }
+      const resetPasswordError = passwordPolicyError(password);
+      if (resetPasswordError) return send(res, 400, { error: resetPasswordError });
       const db = await readDb();
       const entry = rawToken.length >= 30 ? db.passwordResetTokens?.[sha256(rawToken)] : null;
       const now = Date.now();
@@ -1800,9 +2069,11 @@ const handleRequest = async (req, res) => {
       const businessName = cleanCatalogText(payload.businessName, 140);
       const businessMode = payload.businessMode === "equipo" ? "equipo" : "solo";
       const requestedReferralCode = normalizeReferralCode(payload.referralCode);
-      if (!deviceId || !username || password.length < 4 || !name || !businessName || !isValidEmail(email)) {
-        return send(res, 400, { error: "Completá el nombre, negocio, correo, usuario y una contraseña de al menos 4 caracteres" });
+      if (!deviceId || !username || !name || !businessName || !isValidEmail(email)) {
+        return send(res, 400, { error: "Completá el nombre, negocio, correo y usuario" });
       }
+      const registrationPasswordError = passwordPolicyError(password);
+      if (registrationPasswordError) return send(res, 400, { error: registrationPasswordError });
       if (payload.termsAccepted !== true || String(payload.termsVersion || "") !== TERMS_VERSION) {
         return send(res, 400, { error: "Leé y aceptá la versión vigente de los Términos y Condiciones para crear la cuenta." });
       }
@@ -2095,6 +2366,114 @@ const handleRequest = async (req, res) => {
       }
     }
     db.devices[deviceId] = { ...(db.devices[deviceId] || {}), tenantId, lastSeenAt: new Date().toISOString() };
+
+    if (req.url === "/v1/account") {
+      const account = tenantAccount(db, tenantId);
+      if (!account || account.superAdmin) return send(res, 404, { error: "El negocio no existe" });
+      if (req.method === "GET") {
+        const user = cloudUserForSession(db, session);
+        return send(res, 200, { account: accountForLogin(db, user), teamRevision: Number(account.teamRevision || 0) });
+      }
+      if (req.method === "PUT") {
+        const teamSecurity = employeeSecurityContext(db, session, tenantId);
+        if (!session || (session.role === "employee" && !teamSecurity?.permissions.has("gestionar_personal"))) return send(res, 403, { error: "No tenés permiso para administrar empleados y roles" });
+        const requestingUser = cloudUserForSession(db, session);
+        const payload = await body(req);
+        const expectedRevision = Number(account.teamRevision || 0);
+        if (Number(payload.teamRevision || 0) !== expectedRevision) {
+          return send(res, 409, {
+            error: "El equipo cambió desde otro dispositivo. Volvé a abrir Administración antes de guardar.",
+            account: accountForLogin(db, requestingUser),
+            teamRevision: expectedRevision,
+          });
+        }
+        let team;
+        try { team = sanitizeBusinessTeam(db, account, payload); }
+        catch (error) { return send(res, Number(error?.status || 400), { error: error?.message || "No se pudo validar el equipo" }); }
+        const nextAccount = {
+          ...account,
+          roles: team.roles,
+          empleados: team.employees,
+          modoNegocio: team.businessMode,
+          teamRevision: expectedRevision + 1,
+          teamUpdatedAt: new Date().toISOString(),
+        };
+        revokeChangedAccountSubjects(db, account, nextAccount, "team_updated");
+        db.system.cuentas = (db.system.cuentas || []).map((candidate) => String(candidate?.id) === tenantId ? nextAccount : candidate);
+        recordSecurityEvent(db, session, tenantId, deviceId, {
+          type: "business_team_updated", outcome: "accepted",
+          employeeCount: nextAccount.empleados.length, roleCount: nextAccount.roles.length,
+        });
+        await writeDb(db);
+        return send(res, 200, { ok: true, account: accountForLogin(db, requestingUser) || nextAccount, teamRevision: nextAccount.teamRevision });
+      }
+      return send(res, 405, { error: "Método no permitido" });
+    }
+    if (req.method === "GET" && req.url?.startsWith("/v1/security/events")) {
+      const securityContext = employeeSecurityContext(db, session, tenantId);
+      if (!session || (session.role === "employee" && !securityContext?.permissions.has("gestionar_personal"))) {
+        return send(res, 403, { error: "No tenés permiso para consultar los accesos rechazados" });
+      }
+      const limit = Math.min(200, Math.max(10, Number(new URL(req.url, "http://localhost").searchParams.get("limit") || 50)));
+      const events = Object.values(db.securityEvents || {})
+        .filter((event) => String(event?.tenantId) === tenantId)
+        .sort((left, right) => String(right.at || "").localeCompare(String(left.at || "")))
+        .slice(0, limit);
+      return send(res, 200, { events });
+    }
+    if (req.url?.startsWith("/v1/recovery")) {
+      if (!session || !["owner", "superAdmin"].includes(session.role)) return send(res, 403, { error: "Sólo el dueño puede exportar o recuperar los datos" });
+      const account = tenantAccount(db, tenantId);
+      if (!account || account.superAdmin) return send(res, 404, { error: "El negocio no existe" });
+      if (req.method === "GET" && req.url === "/v1/recovery/export") {
+        return send(res, 200, { export: recoveryExport(db, tenantId) });
+      }
+      if (req.method === "GET" && req.url === "/v1/recovery/backups") {
+        const backups = await listRecoveryBackups();
+        return send(res, 200, { backups, retentionDays: Number(process.env.KIOSCO_BACKUP_RETENTION_DAYS || 14) });
+      }
+      if (req.method === "POST" && req.url === "/v1/recovery/preview") {
+        const payload = await body(req);
+        const backupDay = String(payload.backupDay || "");
+        const backup = await readRecoveryBackup(backupDay);
+        const historicTenant = backup?.tenants?.[tenantId];
+        if (!backup || !historicTenant) return send(res, 404, { error: "Ese respaldo no contiene datos de este negocio" });
+        return send(res, 200, {
+          backupDay,
+          businessName: account.nombreNegocio,
+          ...recoveryComparison(db.tenants?.[tenantId], historicTenant),
+          warning: "La recuperación reemplazará los datos del negocio, pero conservará el abono, usuarios, contraseñas y dispositivos actuales.",
+        });
+      }
+      if (req.method === "POST" && req.url === "/v1/recovery/restore") {
+        const payload = await body(req);
+        const backupDay = String(payload.backupDay || "");
+        if (String(payload.confirmation || "").trim() !== String(account.nombreNegocio || "").trim()) {
+          return send(res, 400, { error: "Escribí exactamente el nombre del negocio para confirmar" });
+        }
+        const backup = await readRecoveryBackup(backupDay);
+        const historicTenant = backup?.tenants?.[tenantId];
+        if (!backup || !historicTenant) return send(res, 404, { error: "Ese respaldo no contiene datos de este negocio" });
+        const before = recoveryComparison(db.tenants?.[tenantId], historicTenant);
+        const recoveryPoint = await createManualRecoveryPoint(db, tenantId);
+        db.tenants[tenantId] = structuredClone(historicTenant);
+        db.cursor += 1;
+        const now = new Date().toISOString();
+        db.changes.push({
+          id: `tenant-restore:${tenantId}:${crypto.randomUUID()}`,
+          tenantId, deviceId: "kiosco-cloud-recovery", type: "tenant_restore",
+          backupDay, cursor: db.cursor, serverAt: now,
+        });
+        db.changes = compactChangeLog(db.changes);
+        recordSecurityEvent(db, session, tenantId, deviceId, {
+          type: "tenant_backup_restored", outcome: "accepted", backupDay,
+          recoveryPointId: recoveryPoint.id, previousRecords: before.current.totalRecords, restoredRecords: before.backup.totalRecords,
+        });
+        await writeDb(db);
+        return send(res, 200, { ok: true, backupDay, cursor: db.cursor, recoveryPointId: recoveryPoint.id, comparison: before });
+      }
+      return send(res, 404, { error: "Ruta de recuperación inexistente" });
+    }
 
     if (req.url?.startsWith("/v1/business-displays")) {
       if (!session || !["owner", "superAdmin"].includes(session.role)) return send(res, 403, { error: "Sólo el dueño puede administrar las pantallas remotas." });
@@ -2759,6 +3138,25 @@ const handleRequest = async (req, res) => {
           if (db.accepted[operation.id]) acceptedIds.push(operation.id);
           continue;
         }
+        const authorization = syncOperationAuthorization(db, session, tenantId, operation);
+        if (!authorization.allowed) {
+          const rejection = {
+            operationId: operation.id,
+            reason: authorization.reason,
+            requiredPermissions: authorization.requiredPermissions,
+          };
+          rejected.push(rejection);
+          recordSecurityEvent(db, session, tenantId, deviceId, {
+            type: "sync_operation_denied",
+            outcome: "denied",
+            operationType: String(operation.type || ""),
+            target: String(operation.entity || operation.section || operation.key || ""),
+            entityId: operation.entityId == null ? null : String(operation.entityId),
+            reason: authorization.reason,
+            requiredPermissions: authorization.requiredPermissions,
+          });
+          continue;
+        }
         if (operation.type === "system_set") {
           if (session?.role !== "superAdmin") {
             rejected.push({ operationId: operation.id, reason: "system_admin_required" });
@@ -2807,6 +3205,12 @@ const handleRequest = async (req, res) => {
               return true;
             });
             operation = { ...operation, value: [...incomingAccounts, ...preservedAccounts] };
+          }
+          if (operation.key === "cuentas") {
+            const previousById = new Map((db.system?.cuentas || []).map((account) => [String(account?.id), account]));
+            for (const nextAccount of operation.value || []) {
+              revokeChangedAccountSubjects(db, previousById.get(String(nextAccount?.id)), nextAccount, "administrator_updated");
+            }
           }
           db.system[operation.key] = operation.value;
           db.accepted[operation.id] = db.cursor;
@@ -2898,8 +3302,8 @@ const handleRequest = async (req, res) => {
         Number.POSITIVE_INFINITY,
       );
       const resetRequired = since > 0
-        && Number.isFinite(oldestAvailableCursor)
-        && since < oldestAvailableCursor - 1;
+        && ((Number.isFinite(oldestAvailableCursor) && since < oldestAvailableCursor - 1)
+          || db.changes.some((item) => item.type === "tenant_restore" && item.tenantId === tenantId && Number(item.cursor || 0) > since));
       return send(res, 200, {
         cursor: db.cursor,
         resetRequired,
@@ -2913,9 +3317,11 @@ const handleRequest = async (req, res) => {
       });
     }
     if (req.method === "GET" && req.url === "/v1/devices") {
+      if (!session || !["owner", "superAdmin"].includes(session.role)) return send(res, 403, { error: "Sólo el dueño puede consultar los dispositivos" });
       return send(res, 200, { devices: Object.entries(db.devices).filter(([, device]) => device.tenantId === tenantId).map(([id, device]) => ({ id, ...device })) });
     }
     if (req.method === "POST" && req.url?.startsWith("/v1/devices/revoke")) {
+      if (!session || !["owner", "superAdmin"].includes(session.role)) return send(res, 403, { error: "Sólo el dueño puede desactivar dispositivos" });
       const id = String((await body(req)).deviceId || "");
       if (db.devices[id]?.tenantId !== tenantId) return send(res, 404, { error: "Dispositivo inexistente" });
       db.devices[id].revokedAt = new Date().toISOString();

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Barcode, Bug, CalendarDays, CheckCircle2, Cloud, Clock, CreditCard, Gift, History, KeyRound, Lightbulb, MonitorUp, Pencil, Plus, Search, Settings2, Shield, Store, Trash2, UserRound, UsersRound, X, XCircle } from "lucide-react";
 import { SectionHeader } from "../../shared/layout";
 import { secureSubject } from "../../security/auth";
+import { passwordPolicyError } from "../../security/passwordPolicy";
 import { canAccessAccount, formatAccessExpiration, formatTrialExpiration, grantTrialAccess, trialAccessStatus } from "../../security/trialAccess";
 import { AppSelect, ConfirmDialog } from "../../shared/controls";
 import { BarcodeCatalogAdmin } from "./BarcodeCatalogAdmin";
@@ -219,9 +220,10 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
   };
 
   const guardarPasswordTemporal = async () => {
-    const password = resetPassword.trim();
-    if (!resetTarget || password.length < 4) {
-      setResetError("La contraseña temporal debe tener al menos 4 caracteres.");
+    const password = resetPassword;
+    const policyError = passwordPolicyError(password);
+    if (!resetTarget || policyError) {
+      setResetError(policyError || "Elegí la cuenta que querés restablecer.");
       return;
     }
     const securedPassword = await secureSubject({ password });

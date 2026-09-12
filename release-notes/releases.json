@@ -1,5 +1,42 @@
 [
   {
+    "version": "0.2.21",
+    "date": "2026-09-12",
+    "title": "Permisos reales, sesiones seguras y recuperación",
+    "summary": "Los permisos del equipo ahora se controlan también en el servidor, los cambios de acceso cortan sesiones anteriores y el dueño dispone de exportación, comparación y recuperación de copias.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "El servidor aplica una matriz de autorización por operación, entidad y sección; además registra los intentos denegados con usuario, dispositivo, recurso y permisos requeridos.",
+          "Roles, empleados y modo de trabajo se sincronizan mediante una revisión optimista del equipo, evitando que una edición atrasada reemplace cambios realizados desde otra computadora.",
+          "Eliminar un empleado o modificar su rol, estado, usuario o contraseña revoca sus sesiones y credenciales de nube anteriores; los accesos locales también se revalidan al iniciar sesión cuando hay conexión.",
+          "Las contraseñas nuevas y recuperadas comparten una política única de entre 8 y 128 caracteres, con confirmación y control para mostrar u ocultar lo escrito.",
+          "La duración máxima y el cierre por inactividad configurados en Seguridad ahora se aplican a las sesiones abiertas.",
+          "La persistencia PostgreSQL sube al esquema 8, conserva los nuevos registros de seguridad y pagos y agrega puntos de recuperación manuales previos a cada restauración.",
+          "El dueño puede exportar los datos comerciales sin credenciales, comparar cantidades por grupo y recuperar una copia histórica sólo del negocio activo, sin reemplazar usuarios, contraseñas, dispositivos ni abono."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Un empleado ya no puede hacer desde afuera de la interfaz algo que su rol no le permite: la nube lo vuelve a controlar y deshace el cambio en esa PC.",
+          "Si cambiás los permisos o eliminás a una persona del equipo, su sesión anterior deja de servir y tiene que volver a entrar con un acceso vigente.",
+          "Las opciones para cerrar la sesión después de cierto tiempo o por inactividad ahora funcionan de verdad.",
+          "Las contraseñas nuevas son más claras de crear: se piden dos veces, se pueden revisar antes de guardar y ya no se aceptan claves demasiado cortas.",
+          "El dueño puede descargar una copia de sus datos y volver a un respaldo anterior sin perder las cuentas, las computadoras autorizadas ni la suscripción actual."
+        ]
+      },
+      {
+        "title": "Calidad",
+        "items": [
+          "Se agregaron 23 pruebas automáticas para contraseñas, permisos fabricados, ediciones simultáneas del equipo, acceso a dispositivos, auditoría, revocación de sesiones, exportación, comparación y recuperación aislada de datos.",
+          "La persistencia por registros ahora prueba también que integraciones de pago, intentos de cobro y eventos de seguridad sobreviven a una lectura y escritura completas."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.20",
     "date": "2026-09-12",
     "title": "Operaciones más seguras y base de pagos",

@@ -55,7 +55,7 @@ export const PERMISOS_ACCION = [
   { id: "corregir_caja", label: "Corregir movimientos de caja" },
   { id: "gestionar_personal", label: "Gestionar empleados, roles y permisos" },
 ];
-const PERMISOS_DUENO = [...PERMISOS_MENU, "administracion"];
+const PERMISOS_DUENO = [...PERMISOS_MENU, ...PERMISOS_ACCION.map((permiso) => permiso.id)];
 
 export const permisosDe = (identidad, cuenta) => {
   if (!identidad) return [];

@@ -19,6 +19,8 @@ Con `DATABASE_URL`, Render utiliza `kiosco_private.cloud_records_v2`. Cada fila 
 - `platform_notification` y `notification_read`: avisos persistentes y recibos de lectura por usuario.
 - `push_subscription`: dispositivos que autorizaron avisos Web Push; guarda el endpoint del navegador, no la clave privada VAPID.
 - `reported_issue`: problemas enviados por los negocios al administrador.
+- `payment_integration`, `payment_oauth_state` y `payment_attempt`: configuración cifrada y operaciones preparadas para cobros.
+- `security_event`: intentos autorizados o rechazados que necesitan trazabilidad de seguridad.
 - `system`: configuración administrativa que no pertenece a una cuenta.
 - `meta`: versión del esquema y cursor de sincronización.
 
@@ -40,6 +42,8 @@ Antes de modificar una fila por primera vez cada día, el servidor guarda su val
 
 La retención se configura mediante `KIOSCO_BACKUP_RETENTION_DAYS`, entre 1 y 90 días.
 
+Antes de una restauración solicitada por el dueño se guarda además un punto de recuperación completo en `kiosco_private.manual_recovery_points_v2`. La restauración reemplaza únicamente los datos operativos del negocio elegido: no modifica credenciales, sesiones, dispositivos, estado del abono ni otros negocios.
+
 ## Autenticación y activaciones
 
 - La cuenta central se define sólo en Render mediante `KIOSCO_SUPERADMIN_USERNAME` y `KIOSCO_SUPERADMIN_PASSWORD`.
@@ -50,7 +54,7 @@ La retención se configura mediante `KIOSCO_BACKUP_RETENTION_DAYS`, entre 1 y 90
 
 ## Diagnóstico
 
-- `/v1/health`: confirma que Node/Render está funcionando y debe informar `schemaVersion: 5`.
+- `/v1/health`: confirma que Node/Render está funcionando y debe informar `schemaVersion: 8`.
 - `/v1/ready`: comprueba PostgreSQL y debe informar `storageGeneration: 2` y `payloadType: "records"`.
 - `/v1/ready/sections`: muestra cantidad y tamaño de registros por alcance sin exponer su contenido.
 
@@ -64,8 +68,8 @@ Un referido cuenta 20% únicamente mientras su abono está vigente hasta el fina
 
 ## Publicación
 
-1. Subir el código de `0.2.0` a `main`.
+1. Subir el código de la versión preparada a `main`.
 2. Esperar que Render termine de desplegar y comprobar `/v1/ready`.
-3. Crear la etiqueta y release `v0.2.0`.
+3. Crear la etiqueta y release que coincida exactamente con `package.json`.
 4. Esperar que la acción de Windows publique `KioscoPlus-Setup.exe`, `latest.yml` y el archivo `.blockmap`.
 5. Probar una instalación administradora y una instalación comercial en equipos distintos antes de entregar el instalador.

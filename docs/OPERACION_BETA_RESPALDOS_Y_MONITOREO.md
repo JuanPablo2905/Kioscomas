@@ -25,16 +25,18 @@ order by backup_day desc;
 
 ## Si un cliente pierde o modifica datos por error
 
-No ejecutar una restauración directamente sobre producción. Primero:
+El dueño puede hacer una recuperación controlada desde **Configuración > Datos y seguridad > Archivo > Respaldo y recuperación**. El procedimiento recomendado es:
 
 1. Anotar el negocio, la fecha aproximada y qué información falta.
 2. Pedirle al comercio que deje de modificar esa sección hasta terminar el diagnóstico.
-3. Exportar o copiar los registros actuales afectados.
-4. Consultar el respaldo del día correcto y reconstruirlo en una base temporal.
-5. Comparar el resultado con el estado actual.
-6. Recién después de validar con el cliente, aplicar sólo los registros necesarios.
+3. Descargar la copia completa actual y guardarla fuera de la app.
+4. Elegir una fecha y usar **Comparar antes de recuperar** para revisar cuántos registros cambiarían por grupo.
+5. Confirmar con el cliente que la fecha es correcta.
+6. Escribir exactamente el nombre del negocio y recién entonces ejecutar la recuperación.
 
-La tabla de respaldo es incremental: conserva el valor anterior de los registros que cambiaron ese día. Por eso una recuperación debe hacerse por registros y no reemplazando a ciegas toda la base.
+La tabla de respaldo es incremental: conserva el valor anterior de los registros que cambiaron ese día. El servidor reconstruye el estado por registros, crea primero un punto de recuperación manual y reemplaza sólo el espacio operativo de ese negocio. Usuarios, contraseñas, dispositivos y suscripción permanecen como están.
+
+La exportación descargable omite hashes, sales y cualquier otra credencial. La recuperación exige una sesión de dueño o superadministrador; un empleado no puede ejecutarla aunque conozca la URL de la API.
 
 ## Límites conocidos de la beta
 

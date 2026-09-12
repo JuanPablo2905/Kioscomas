@@ -4,12 +4,13 @@ import {
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
   MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
-  ChevronRight, Download, Share2, ArrowLeft, Mail,
+  ChevronRight, Download, Eye, EyeOff, Share2, ArrowLeft, Mail,
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
 import { getPwaInstallState, requestPwaInstall, subscribePwaInstall } from "../../shared/pwaInstall";
 import { TERMS_VERSION } from "../../legal/terms";
+import { passwordPolicyError, passwordPolicyHint } from "../../security/passwordPolicy";
 import { CloudWarmupStatus } from "./CloudWarmupStatus";
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const formatActivationCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
@@ -21,6 +22,9 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
   const [email, setEmail] = useState("");
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState("");
   const [nombreNegocio, setNombreNegocio] = useState("");
   const [modoNegocio, setModoNegocio] = useState("solo");
   const [activationCode, setActivationCode] = useState("");
@@ -35,6 +39,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
 
   const handleSubmit = async () => {
     if (submitting) return;
+    setFormError("");
     setSubmitting(true);
     try {
       if (modo === "login") {
@@ -44,6 +49,9 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
         await onForgotPassword({ email: email.trim() });
       } else {
         if (!nombre.trim() || !email.trim() || !usuario.trim() || !password.trim() || !nombreNegocio.trim()) return;
+        const policyError = passwordPolicyError(password);
+        if (policyError) return setFormError(policyError);
+        if (password !== passwordConfirmation) return setFormError("Las dos contraseñas no coinciden.");
         if (!termsAccepted) {
           setTermsError("Tenés que leer y aceptar los Términos y Condiciones para crear la cuenta.");
           return;
@@ -63,6 +71,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
         if (result?.ok) {
           setModo("login");
           setPassword("");
+          setPasswordConfirmation("");
           setTermsAccepted(false);
           setTermsError("");
         }
@@ -214,14 +223,22 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
             className="mb-3 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm"
           />
           <label className="text-sm text-gray-700 block mb-1">Contraseña</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            autoComplete={modo === "registro" ? "new-password" : "current-password"}
-            className={`${modo === "login" ? "mb-2" : "mb-4"} min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm`}
-          />
+          <div className={`${modo === "login" ? "mb-2" : "mb-1"} relative`}>
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setFormError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && modo === "login" && handleSubmit()}
+              autoComplete={modo === "registro" ? "new-password" : "current-password"}
+              className="min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 pr-12 text-base sm:text-sm"
+            />
+            <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"} className="absolute inset-y-0 right-0 grid w-11 place-items-center text-gray-500">{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button>
+          </div>
+          {modo === "registro" && <>
+            <p className="mb-3 text-xs leading-5 text-gray-500">{passwordPolicyHint}</p>
+            <label className="mb-1 block text-sm text-gray-700" htmlFor="registration-password-confirmation">Repetir contraseña</label>
+            <input id="registration-password-confirmation" type={showPassword ? "text" : "password"} value={passwordConfirmation} onChange={(event) => { setPasswordConfirmation(event.target.value); setFormError(""); }} onKeyDown={(event) => event.key === "Enter" && handleSubmit()} autoComplete="new-password" className="mb-4 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 text-base sm:text-sm"/>
+          </>}
           {modo === "login" && <button type="button" onClick={() => setModo("recuperar")} className="mb-4 block text-left text-xs font-semibold text-[#1C4A44] underline underline-offset-2">Olvidé mi contraseña</button>}
         </>}
 
@@ -233,7 +250,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
           {termsError && <p className="mt-2 text-xs text-red-500">{termsError}</p>}
         </div>}
 
-        {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
+        {(formError || error) && <p className="text-xs text-red-500 mb-3">{formError || error}</p>}
         {notice && <p className="mb-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs leading-5 text-green-800">{notice}</p>}
 
         <button

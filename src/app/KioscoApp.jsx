@@ -267,6 +267,7 @@ export default function KioscoApp() {
   const [notasAdmin, setNotasAdmin] = useState([]);
   const [authSecurity, setAuthSecurity] = useState({});
   const [sessionExpiresAt, setSessionExpiresAt] = useState(null);
+  const [sessionStartedAt, setSessionStartedAt] = useState(null);
   const [reportesProblemas, setReportesProblemas] = useState([]);
   const [menuPreferences, setMenuPreferences] = useState({});
   const [userPreferences, setUserPreferences] = useState({});
@@ -297,6 +298,7 @@ export default function KioscoApp() {
   const scannerLastKeyRef = useRef(0);
   const autoTutorialRef = useRef(false);
   const displayPairingOpenedRef = useRef(false);
+  const lastActivityAtRef = useRef(Date.now());
 
   const warmCloud = ({ force = false } = {}) => {
     if (PUBLIC_DEMO_MODE) return Promise.resolve();
@@ -432,6 +434,7 @@ export default function KioscoApp() {
           setCurrentUserId(sessionAccount.id);
           setIdentidad(sesion.identity);
           setSessionExpiresAt(sesion.expiresAt);
+          setSessionStartedAt(sesion.createdAt || new Date().toISOString());
         } else await repository.delete("sesion");
       }
       setNotasAdmin(notas || []);
@@ -464,6 +467,22 @@ export default function KioscoApp() {
     window.addEventListener("offline", updateNetworkStatus);
     return () => { window.removeEventListener("online", updateNetworkStatus); window.removeEventListener("offline", updateNetworkStatus); };
   }, []);
+  useEffect(() => {
+    if (PUBLIC_DEMO_MODE || !currentUserId) return undefined;
+    const verifyCloudSession = () => {
+      const config = loadCloudConfig();
+      if (!config.enabled || !config.apiUrl || cloudSession(config.apiUrl)) return;
+      repository.setContext({ tenantId: null, isSystemAdmin: false });
+      setCurrentUserId(null);
+      setIdentidad(null);
+      setSessionExpiresAt(null);
+      setSessionStartedAt(null);
+      setView("home");
+      setLoginError("Tu acceso cambió o dejó de estar habilitado. Ingresá nuevamente.");
+    };
+    window.addEventListener("kiosco-cloud-session-changed", verifyCloudSession);
+    return () => window.removeEventListener("kiosco-cloud-session-changed", verifyCloudSession);
+  }, [currentUserId]);
   useEffect(() => {
     const requestedCode = String(new URLSearchParams(window.location.search).get("displayPair") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (!requestedCode || displayPairingOpenedRef.current || cargando || !currentUserId || !identidad) return;
@@ -542,9 +561,9 @@ export default function KioscoApp() {
   useEffect(() => {
     if (cargando || PUBLIC_DEMO_MODE) return;
     if (IS_SECONDARY_ADMIN_WINDOW) return;
-    if (currentUserId && identidad && sessionExpiresAt) repository.set("sesion", { accountId: currentUserId, identity: identidad, expiresAt: sessionExpiresAt }).catch(() => {});
+    if (currentUserId && identidad && sessionExpiresAt) repository.set("sesion", { accountId: currentUserId, identity: identidad, createdAt: sessionStartedAt || new Date().toISOString(), expiresAt: sessionExpiresAt }).catch(() => {});
     else repository.delete("sesion").catch(() => {});
-  }, [currentUserId, identidad, sessionExpiresAt, cargando]);
+  }, [currentUserId, identidad, sessionStartedAt, sessionExpiresAt, cargando]);
 
   useEffect(() => {
     if (cargando || PUBLIC_DEMO_MODE) return;
@@ -557,7 +576,7 @@ export default function KioscoApp() {
   useEffect(() => { if (!cargando && !PUBLIC_DEMO_MODE) repository.set("userPreferences", userPreferences).catch(() => {}); }, [userPreferences, cargando]);
   useEffect(() => {
     if (!sessionExpiresAt) return;
-    const timer = setInterval(() => { if (Date.now() >= new Date(sessionExpiresAt).getTime()) { setCurrentUserId(null); setIdentidad(null); setSessionExpiresAt(null); setLoginError("La sesión venció. Ingresá nuevamente."); } }, 30000);
+    const timer = setInterval(() => { if (Date.now() >= new Date(sessionExpiresAt).getTime()) { setCurrentUserId(null); setIdentidad(null); setSessionExpiresAt(null); setSessionStartedAt(null); setLoginError("La sesión venció. Ingresá nuevamente."); } }, 30000);
     return () => clearInterval(timer);
   }, [sessionExpiresAt]);
   useEffect(() => {
@@ -567,6 +586,7 @@ export default function KioscoApp() {
     setCurrentUserId(null);
     setIdentidad(null);
     setSessionExpiresAt(null);
+    setSessionStartedAt(null);
     setLoginError(accountAccessMessage(account));
   }, [cuentas, cargando, currentUserId, identidad?.superAdmin, identidad?.adminApp]);
   useEffect(() => {
@@ -591,6 +611,39 @@ export default function KioscoApp() {
       : [...new Set(localPreferences.tutorialsCompleted || [])],
   };
   const currentPreferences = tutorialOpen && tutorialPreferences ? tutorialPreferences : savedPreferences;
+  useEffect(() => {
+    if (PUBLIC_DEMO_MODE || !currentUserId || !identidad) return undefined;
+    if (!sessionStartedAt) setSessionStartedAt(new Date().toISOString());
+    lastActivityAtRef.current = Date.now();
+    const markActivity = () => { lastActivityAtRef.current = Date.now(); };
+    const closeExpiredSession = () => {
+      const now = Date.now();
+      const startedAt = Date.parse(sessionStartedAt || "") || now;
+      const maximumHours = Math.max(1, Math.min(24, Number(currentPreferences.sessionHours || 8)));
+      const inactivityMinutes = Math.max(0, Number(currentPreferences.inactivityMinutes || 0));
+      const maximumReached = now >= startedAt + maximumHours * 3600000;
+      const inactivityReached = inactivityMinutes > 0 && now >= lastActivityAtRef.current + inactivityMinutes * 60000;
+      if (!maximumReached && !inactivityReached) return;
+      const cloudConfig = loadCloudConfig();
+      logoutCloud(cloudConfig.apiUrl).catch(() => {});
+      repository.setContext({ tenantId: null, isSystemAdmin: false });
+      setCurrentUserId(null);
+      setIdentidad(null);
+      setSessionExpiresAt(null);
+      setSessionStartedAt(null);
+      setView("home");
+      setLoginError(inactivityReached ? "La sesión se cerró por inactividad." : "La sesión alcanzó su duración máxima. Ingresá nuevamente.");
+    };
+    for (const eventName of ["pointerdown", "keydown", "touchstart"]) window.addEventListener(eventName, markActivity, { passive: true });
+    const timer = setInterval(closeExpiredSession, 15000);
+    const visibility = () => { if (document.visibilityState === "visible") closeExpiredSession(); };
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      for (const eventName of ["pointerdown", "keydown", "touchstart"]) window.removeEventListener(eventName, markActivity);
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [currentUserId, identidad, sessionStartedAt, currentPreferences.sessionHours, currentPreferences.inactivityMinutes]);
   const customerDisplayPreferenceKey = `business-display:${String(currentUserId || "")}`;
   const customerDisplayPreferences = userPreferences[customerDisplayPreferenceKey] || {};
   const salesPreferences = { ...currentPreferences, ...customerDisplayPreferences };
@@ -1034,7 +1087,7 @@ export default function KioscoApp() {
 
   const handleLogin = async ({ usuario, password }) => {
     const normalizedUser = String(usuario || "").trim();
-    const normalizedPassword = String(password || "").trim();
+    const normalizedPassword = String(password || "");
     setLoginNotice("");
     const guard = loginGuard(authSecurity, normalizedUser);
     if (guard.blocked) { setLoginError(`Acceso bloqueado temporalmente. Probá nuevamente en ${Math.ceil(guard.remainingMs / 60000)} minuto(s).`); return; }
@@ -1054,6 +1107,10 @@ export default function KioscoApp() {
           }
           cloudReady = true;
         } catch (error) {
+          if ([401, 403].includes(Number(error?.status))) {
+            setLoginError(error?.message || "La nube ya no autoriza estas credenciales.");
+            return;
+          }
           if (!canAccessAccount(cuenta)) {
             setLoginError(error?.message || "No se pudo consultar si la cuenta ya fue habilitada.");
             return;
@@ -1074,6 +1131,7 @@ export default function KioscoApp() {
       if (cloudReady) startAuthenticatedCloudSync(activeAccount);
       else connectLocalCloud({ businessId: activeAccount.id, username: normalizedUser, password: normalizedPassword, name: activeAccount.nombre, superAdmin: !!activeAccount.superAdmin });
       const session = createSession(activeAccount.id, identity);
+      setSessionStartedAt(session.createdAt);
       const trial = trialAccessStatus(activeAccount);
       setSessionExpiresAt(trial.active && new Date(trial.expiresAt) < new Date(session.expiresAt) ? trial.expiresAt : session.expiresAt);
       setAuthSecurity((prev) => clearLoginFailures(prev, normalizedUser));
@@ -1086,18 +1144,48 @@ export default function KioscoApp() {
       const candidate = (negocio.empleados || []).find((e) => String(e.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase());
       const empleado = candidate && await verifyPassword(normalizedPassword, candidate) ? candidate : null;
       if (empleado) {
-        if (!canAccessAccount(negocio)) {
-          setLoginError(accountAccessMessage(negocio));
+        let activeBusiness = negocio;
+        let activeEmployee = empleado;
+        let cloudReady = false;
+        const cloudConfig = loadCloudConfig();
+        if (cloudConfig.enabled && cloudConfig.apiUrl && navigator.onLine) {
+          try {
+            const remoteSession = await loginCloud(cloudConfig.apiUrl, normalizedUser, normalizedPassword, cloudConfig.deviceId);
+            const remoteAccount = await prepareCloudAccount(remoteSession.account);
+            const remoteEmployee = remoteSession.user?.role === "employee"
+              ? (remoteAccount?.empleados || []).find((item) => String(item.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())
+              : null;
+            if (!remoteAccount || !remoteEmployee) {
+              const accessError = new Error("Este empleado ya no pertenece al equipo del negocio.");
+              accessError.status = 403;
+              throw accessError;
+            }
+            activeBusiness = remoteAccount;
+            activeEmployee = remoteEmployee;
+            saveCloudAccountLocally(remoteAccount);
+            cloudReady = true;
+          } catch (error) {
+            if ([401, 403].includes(Number(error?.status))) {
+              setLoginError(error?.message || "La nube ya no autoriza estas credenciales.");
+              return;
+            }
+            repository.reportSyncError(error);
+          }
+        }
+        if (!canAccessAccount(activeBusiness)) {
+          setLoginError(accountAccessMessage(activeBusiness));
           return;
         }
         setLoginError("");
         setView("home");
-        setCurrentUserId(negocio.id);
-        const identity = { usuarioId: `empleado:${empleado.id}`, tenantId: String(negocio.id), rol: empleado.rol, nombre: empleado.nombre, superAdmin: false };
+        setCurrentUserId(activeBusiness.id);
+        const identity = { usuarioId: `empleado:${activeEmployee.id}`, tenantId: String(activeBusiness.id), rol: activeEmployee.rol, nombre: activeEmployee.nombre, superAdmin: false };
         setIdentidad(identity);
-        connectLocalCloud({ businessId: negocio.id, username: normalizedUser, password: normalizedPassword, name: empleado.nombre });
-        const session = createSession(negocio.id, identity);
-        const trial = trialAccessStatus(negocio);
+        if (cloudReady) startAuthenticatedCloudSync(activeBusiness);
+        else connectLocalCloud({ businessId: activeBusiness.id, username: normalizedUser, password: normalizedPassword, name: activeEmployee.nombre });
+        const session = createSession(activeBusiness.id, identity);
+        setSessionStartedAt(session.createdAt);
+        const trial = trialAccessStatus(activeBusiness);
         setSessionExpiresAt(trial.active && new Date(trial.expiresAt) < new Date(session.expiresAt) ? trial.expiresAt : session.expiresAt);
         setAuthSecurity((prev) => clearLoginFailures(prev, normalizedUser));
         return;
@@ -1144,6 +1232,7 @@ export default function KioscoApp() {
         setIdentidad(identity);
         startAuthenticatedCloudSync(remoteAccount);
         const session = createSession(remoteAccount.id, identity);
+        setSessionStartedAt(session.createdAt);
         const access = trialAccessStatus(remoteAccount);
         setSessionExpiresAt(access.active && new Date(access.expiresAt) < new Date(session.expiresAt) ? access.expiresAt : session.expiresAt);
         setAuthSecurity((previous) => clearLoginFailures(previous, normalizedUser));
@@ -1183,7 +1272,7 @@ export default function KioscoApp() {
 
   const handleRegister = async ({ nombre, email, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "", referralCode = "", termsAccepted = false, termsVersion = "" }) => {
     const normalizedUser = String(usuario || "").trim();
-    const normalizedPassword = String(password || "").trim();
+    const normalizedPassword = String(password || "");
     if (cuentas.some((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())) {
       setLoginError("Ese usuario ya existe, elegí otro.");
       return;
@@ -1240,6 +1329,7 @@ export default function KioscoApp() {
       setCurrentUserId(2);
       setIdentidad(PUBLIC_DEMO_IDENTITY);
       setSessionExpiresAt(null);
+      setSessionStartedAt(null);
       setView("home");
       return;
     }
@@ -1249,6 +1339,7 @@ export default function KioscoApp() {
     setCurrentUserId(null);
     setIdentidad(null);
     setSessionExpiresAt(null);
+    setSessionStartedAt(null);
     setView("home");
   };
 
@@ -1263,6 +1354,7 @@ export default function KioscoApp() {
     setNotasAdmin([]);
     setAuthSecurity({});
     setSessionExpiresAt(null);
+    setSessionStartedAt(null);
     setReportesProblemas([]);
     setMenuPreferences({});
     setUserPreferences({});
@@ -1307,7 +1399,9 @@ export default function KioscoApp() {
     saveCloudAccountLocally(adminAccount);
     setCurrentUserId(adminAccount.id);
     setIdentidad(identity);
-    setSessionExpiresAt(createSession(adminAccount.id, identity).expiresAt);
+    const localSession = createSession(adminAccount.id, identity);
+    setSessionStartedAt(localSession.createdAt);
+    setSessionExpiresAt(localSession.expiresAt);
     setView("home");
     startAuthenticatedCloudSync(adminAccount);
     setActivationStatus("activated");

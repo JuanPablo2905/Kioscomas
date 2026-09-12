@@ -42,7 +42,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   const health = await request("/v1/health");
-  test("salud informa pagos sin exponer credenciales", health.value.schemaVersion === 7 && health.value.paymentProviders?.mercadoPago?.backendEnabled === false && !JSON.stringify(health.value).includes("clientSecret"));
+  test("salud informa pagos sin exponer credenciales", health.value.schemaVersion === 8 && health.value.paymentProviders?.mercadoPago?.backendEnabled === false && !JSON.stringify(health.value).includes("clientSecret"));
   const providers = await request("/v1/catalog/providers");
   test("servidor informa catálogos gratuitos y opcionales", providers.value.providers?.some((provider) => provider.id === "open-facts" && provider.enabled) && providers.value.providers?.some((provider) => provider.id === "go-upc" && !provider.enabled));
   const boot = await request("/v1/auth/bootstrap", {
@@ -134,7 +134,7 @@ try {
   const unactivatedRegistration = await request("/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ deviceId: "not-activated-pc", name: "Cliente", email: "not-activated@example.com", businessName: "Kiosco sin activar", businessMode: "solo", username: "not-activated-owner", password: "1234", ...acceptedTerms }),
+    body: JSON.stringify({ deviceId: "not-activated-pc", name: "Cliente", email: "not-activated@example.com", businessName: "Kiosco sin activar", businessMode: "solo", username: "not-activated-owner", password: "12345678", ...acceptedTerms }),
   });
   test("una PC sin clave de instalación no puede solicitar una cuenta", unactivatedRegistration.response.status === 403);
   const missingTermsRegistration = await request("/v1/auth/register", {

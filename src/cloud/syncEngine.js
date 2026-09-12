@@ -245,6 +245,21 @@ export const syncEngine = {
     window.dispatchEvent(new CustomEvent("kiosco-cloud-update", { detail: { tenantId, bootstrap: true } }));
     return { hasRemoteData: true, cursor: Number(remote.cursor || 0) };
   },
+  async replaceTenantFromCloud() {
+    const tenantId = String(context.tenantId || "");
+    if (!tenantId) throw new Error("No hay un negocio activo para recuperar");
+    await updateQueue((items) => items.filter((item) => !belongsToTenant(item, tenantId)));
+    await updateConflicts((items) => items.filter((item) => !belongsToTenant(item, tenantId)));
+    await withDataStorageLock(async () => {
+      const allData = await readJson("datos", {});
+      await writeJson("datos", mergeTenantDataset(allData, tenantId, {}));
+    });
+    const meta = await readJson(META_KEY, {});
+    await writeJson(META_KEY, { ...meta, cursors: { ...(meta.cursors || {}), [tenantId]: 0 } });
+    const result = await this.bootstrapTenant();
+    window.dispatchEvent(new CustomEvent("kiosco-cloud-update", { detail: { tenantId, bootstrap: true, restored: true } }));
+    return result;
+  },
   async enqueue(operation) {
     const config = loadCloudConfig();
     if (!config.enabled || !config.apiUrl) return;
@@ -297,6 +312,8 @@ export const syncEngine = {
       ...retryableConflicts.map((item) => item.localOperation).filter((operation) => !activeQueue.some((queued) => queued.id === operation.id)),
     ].slice(0, SYNC_PUSH_BATCH_SIZE);
     publish({ state: "syncing", error: null, pending: activeQueue.length });
+    let rejectedNotice = "";
+    let rejectedCount = 0;
     try {
       const headers = { "content-type": "application/json", "x-device-id": config.deviceId, "x-tenant-id": tenantId };
       if (operationsToPush.length) {
@@ -309,7 +326,9 @@ export const syncEngine = {
         const result = await response.json();
         const accepted = new Set(result.acceptedIds || operationsToPush.map((item) => item.id));
         const conflictIds = new Set((result.conflicts || []).map((item)=>item.operationId));
-        const rejectedIds = new Set((result.rejected || []).map((item) => item.operationId));
+        const rejectedOperations = Array.isArray(result.rejected) ? result.rejected : [];
+        const rejectedIds = new Set(rejectedOperations.map((item) => item.operationId));
+        rejectedCount = rejectedOperations.length;
         await queueMutation;
         const latestQueue = await readJson(QUEUE_KEY, []);
         const refreshedConflicts = result.conflicts.map((conflict) => {
@@ -356,6 +375,19 @@ export const syncEngine = {
           currentQueue.filter((item) => !accepted.has(item.id) && !conflictIds.has(item.id) && !rejectedIds.has(item.id)),
           acceptedVersions,
         ));
+        if (rejectedCount) {
+          const permissions = [...new Set(rejectedOperations.flatMap((item) => item.requiredPermissions || []))];
+          rejectedNotice = permissions.length
+            ? `La nube revirtió ${rejectedCount === 1 ? "un cambio" : `${rejectedCount} cambios`} porque faltan permisos: ${permissions.join(", ")}.`
+            : `La nube revirtió ${rejectedCount === 1 ? "un cambio no autorizado" : `${rejectedCount} cambios no autorizados`}.`;
+          // El servidor no modificó su copia. Volver a hidratar este negocio
+          // elimina también la modificación optimista de esta PC, pero conserva
+          // encima cualquier otro cambio válido que continúe en la cola.
+          await this.bootstrapTenant();
+          window.dispatchEvent(new CustomEvent("kiosco-cloud-update", {
+            detail: { tenantId, rejected: rejectedCount, authorizationRejected: true },
+          }));
+        }
       }
       const meta = await readJson(META_KEY, {});
       const tenantCursor = Number(meta.cursors?.[tenantId] || 0);
@@ -420,7 +452,14 @@ export const syncEngine = {
       const conflicts = await readJson(CONFLICTS_KEY, []);
       const visiblePending = remaining.filter((item) => belongsToTenant(item, tenantId)).length;
       const visibleConflicts = conflicts.filter((item) => belongsToTenant(item, tenantId)).length;
-      publish({ state: visibleConflicts ? "conflict" : visiblePending ? "idle" : "synced", pending: visiblePending, conflicts: visibleConflicts, lastSyncAt, error: null });
+      publish({
+        state: rejectedNotice ? "error" : visibleConflicts ? "conflict" : visiblePending ? "idle" : "synced",
+        pending: visiblePending,
+        conflicts: visibleConflicts,
+        lastSyncAt,
+        error: rejectedNotice || null,
+        rejected: rejectedCount,
+      });
     } catch (error) {
       publish({ state: navigator.onLine ? "error" : "offline", error: error.message, pending: activeQueue.length });
     }
