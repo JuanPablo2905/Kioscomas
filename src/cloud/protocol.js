@@ -32,6 +32,12 @@ export const SYNCABLE_ENTITIES = new Set([
   "historialLimpiezas",
   "labelTemplates",
   "tutorialProgress",
+  // Los movimientos y eventos de caja tienen identidad propia. Guardarlos
+  // individualmente evita que dos cajas abiertas a la vez se reemplacen el
+  // historial completo entre sí.
+  "cajaMovimientos",
+  "cajaHistorial",
+  "cajaEstado",
 ]);
 
 export function normalizeOperation(operation) {

@@ -10,7 +10,7 @@ import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money 
 import { SectionHeader } from "../../shared/layout";
 import { calcularRentabilidadHistorica, detectarTicketsDuplicados } from "./reportMetrics";
 import { isWithinRange, isWithinPreviousRange } from "../../shared/dateRanges";
-import { anularTicket, restaurarStock } from "../ventas/salesRules";
+import { anularTicket, crearIdOperacion, efectivoDeTicket, numeroTicket, restaurarStock, ticketActivo, ticketAnulado, ticketDevuelto } from "../ventas/salesRules";
 import { printTicket } from "../../shared/ticketPrint";
 
 function StatCard({ label, value, sub }) {
@@ -30,7 +30,7 @@ function MotivoBorradoModal({ ticket, onClose, onConfirm }) {
       <div className="mobile-dialog bg-white rounded-xl w-full max-w-sm max-h-[calc(100dvh-1rem)] overflow-y-auto p-4 sm:p-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold text-gray-900">
-            Anular Ticket #{ticket.id}
+            Anular Ticket #{numeroTicket(ticket)}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
             <X size={20} />
@@ -75,8 +75,8 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
   const toggleReport = (id) => setOpenReports((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
 
   const ticketsPeriodo = tickets.filter((t) => isWithinRange(t.fecha, range));
-  const filtered = ticketsPeriodo.filter((t) => t.estado !== "anulado");
-  const previous = tickets.filter((t) => t.estado !== "anulado" && isWithinPreviousRange(t.fecha, range));
+  const filtered = ticketsPeriodo.filter(ticketActivo);
+  const previous = tickets.filter((t) => ticketActivo(t) && isWithinPreviousRange(t.fecha, range));
 
   const totalVendido = filtered.reduce((sum, t) => sum + t.total, 0);
   const totalAnterior = previous.reduce((sum, t) => sum + t.total, 0);
@@ -179,7 +179,7 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
   };
 
   const handleBorrarTicket = (motivo) => {
-    if (!borrandoTicket) return;
+    if (!ticketActivo(borrandoTicket)) return;
     const responsable = identidad?.nombre || identidad?.rol || "Sin identificar";
     const fecha = new Date();
     setTickets((prev) => prev.map((t) => t.id === borrandoTicket.id ? anularTicket({
@@ -198,20 +198,20 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
       setClientes((prev) => prev.map((cliente) => cliente.id === borrandoTicket.clienteId ? {
         ...cliente,
         saldo: Number(cliente.saldo || 0) - Number(borrandoTicket.total || 0),
-        movimientos: [...(cliente.movimientos || []), { id: (cliente.movimientos || []).length + 1, tipo: "anulacion", monto: Number(borrandoTicket.total || 0), nota: `Anulación ticket #${borrandoTicket.id}: ${motivo}`, fecha: fecha.toLocaleString("es-AR") }],
+        movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-anulacion"), tipo: "anulacion", monto: Number(borrandoTicket.total || 0), nota: `Anulación ticket #${numeroTicket(borrandoTicket)}: ${motivo}`, fecha: fecha.toLocaleString("es-AR") }],
       } : cliente));
     }
-    const efectivoTicket = borrandoTicket.medio === "Efectivo" ? Number(borrandoTicket.total || 0) : Number(borrandoTicket.pagos?.find((pago) => pago.metodo === "Efectivo")?.monto || 0);
+    const efectivoTicket = efectivoDeTicket(borrandoTicket);
     setCaja((prev) => ({
       ...prev,
       saldo: efectivoTicket > 0 ? Number(prev.saldo || 0) - efectivoTicket : prev.saldo,
-      movimientos: efectivoTicket > 0 ? [...(prev.movimientos || []), { id: (prev.movimientos || []).length + 1, tipo: "retiro", monto: efectivoTicket, nota: `Devolución ticket #${borrandoTicket.id}`, fecha: fecha.toLocaleString("es-AR") }] : (prev.movimientos || []),
+      movimientos: efectivoTicket > 0 ? [...(prev.movimientos || []), { id: crearIdOperacion("caja-anulacion"), tipo: "retiro", monto: efectivoTicket, nota: `Devolución ticket #${numeroTicket(borrandoTicket)}`, fecha: fecha.toLocaleString("es-AR") }] : (prev.movimientos || []),
       historial: [
         ...(prev.historial || []),
         {
-          id: (prev.historial || []).length + 1,
+          id: crearIdOperacion("auditoria-anulacion"),
           tipo: "anulacion_ticket",
-          detalle: `Ticket #${borrandoTicket.id} (${money(borrandoTicket.total)}) anulado por ${responsable}. Motivo: ${motivo}`,
+          detalle: `Ticket #${numeroTicket(borrandoTicket)} (${money(borrandoTicket.total)}) anulado por ${responsable}. Motivo: ${motivo}`,
           fecha: nowFecha(),
         },
       ],
@@ -379,7 +379,7 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
                   return (
                     <div
                       key={t.id}
-                      className={`border rounded-lg overflow-hidden ${t.estado === "anulado" ? "border-gray-300 bg-gray-100 opacity-70" : estilosDuplicado}`}
+                      className={`border rounded-lg overflow-hidden ${!ticketActivo(t) ? "border-gray-300 bg-gray-100 opacity-70" : estilosDuplicado}`}
                     >
                       <button
                         onClick={() => setExpanded(isOpen ? null : t.id)}
@@ -387,8 +387,9 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
                       >
                         <div className="text-left">
                           <p className="break-words text-sm font-medium text-gray-900">
-                            Ticket #{t.id}
-                            {t.estado === "anulado" && <span className="ml-2 inline-block text-[10px] font-semibold text-red-700">ANULADO</span>}
+                            Ticket #{numeroTicket(t)}
+                            {ticketAnulado(t) && <span className="ml-2 inline-block text-[10px] font-semibold text-red-700">ANULADO</span>}
+                            {ticketDevuelto(t) && <span className="ml-2 inline-block text-[10px] font-semibold text-amber-700">DEVUELTO</span>}
                             {alertaDuplicado && (
                               <span className="mt-1 block text-[10px] font-semibold text-red-700 sm:ml-2 sm:mt-0 sm:inline-block">{labelDuplicado} · TICKET #{alertaDuplicado.parejaId}</span>
                             )}
@@ -408,7 +409,7 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
                             {money(t.total)}
                           </p>
                           <span onClick={(event)=>{event.stopPropagation();printTicket(t,{businessName,paper:preferences.ticketPaper,template:ticketConfig.ticket,reprint:true});}} title="Reimprimir ticket" className="cursor-pointer opacity-60 hover:opacity-100"><Printer size={15}/></span>
-                          {puedeEliminarTickets && t.estado !== "anulado" && <span
+                          {puedeEliminarTickets && ticketActivo(t) && <span
                             onClick={(e) => {
                               e.stopPropagation();
                               setBorrandoTicket(t);
@@ -439,7 +440,8 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
                               <button type="button" onClick={() => volverARevisar(t)} className="rounded border border-green-300 px-2 py-1 font-semibold hover:bg-green-100">Volver a revisar</button>
                             </div>
                           )}
-                          {t.estado === "anulado" && <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">Motivo: {t.anulacion?.motivo || "Sin detalle"} · {t.anulacion?.responsable || "Sin identificar"}</div>}
+                          {ticketAnulado(t) && <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">Motivo: {t.anulacion?.motivo || "Sin detalle"} · {t.anulacion?.responsable || "Sin identificar"}</div>}
+                          {ticketDevuelto(t) && <div className="mt-2 rounded bg-amber-50 p-2 text-xs text-amber-800">Devolución: {t.devolucion?.motivo || "Devolución completa"} · {t.devolucion?.responsable || t.devolucionPor || "Sin identificar"}</div>}
                         </div>
                       )}
                     </div>

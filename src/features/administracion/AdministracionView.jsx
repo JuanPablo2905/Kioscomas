@@ -12,6 +12,7 @@ import { AppSelect } from "../../shared/controls";
 import { defaultDataset, PERMISOS_MENU, PERMISOS_ACCION } from "../../app/data";
 import { secureSubject } from "../../security/auth";
 import { auditActor, auditDisplayDetail, auditDisplayRole, auditDisplaySection, compactAuditEventsForDisplay } from "../../shared/audit";
+import { crearIdOperacion, impactoMovimientoCaja, ticketActivo } from "../ventas/salesRules";
 
 const MOCK_LOCALES = [
   {
@@ -407,7 +408,8 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
 
   const resumenes = cuentas.map((negocio) => {
     const negocioDatos = safeBusinessData(datos?.[negocio.id]);
-    const ventasHoy = negocioDatos.tickets.reduce(
+    const hoy = new Date().toDateString();
+    const ventasHoy = negocioDatos.tickets.filter((ticket) => ticketActivo(ticket) && new Date(ticket.fecha).toDateString() === hoy).reduce(
       (total, ticket) => total + (ticket.total || 0),
       0
     );
@@ -448,10 +450,8 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
       const nuevosMovimientos = negocioDatos.caja.movimientos.map((m) =>
         m.id === original.id ? { ...m, monto, nota } : m
       );
-      const contribucionOriginal =
-        original.tipo === "retiro" ? -original.monto : original.monto;
-      const contribucionNueva =
-        original.tipo === "retiro" ? -monto : monto;
+      const contribucionOriginal = impactoMovimientoCaja(original);
+      const contribucionNueva = impactoMovimientoCaja({ ...original, monto });
       const diff = contribucionNueva - contribucionOriginal;
       const actor = auditActor(identidad);
       return {
@@ -465,7 +465,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
             historial: [
               ...negocioDatos.caja.historial,
               {
-                id: negocioDatos.caja.historial.length + 1,
+                id: crearIdOperacion("caja-correccion"),
                 tipo: "correccion",
                 detalle: `Movimiento #${original.id} corregido: ${money(
                   original.monto
@@ -477,7 +477,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
           auditoria: [
             ...(negocioDatos.auditoria || []),
             {
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              id: crearIdOperacion("auditoria-caja"),
               fecha: new Date().toISOString(),
               tenantId: String(negocioAbiertoId),
               seccion: "administracion",
@@ -498,8 +498,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
     setDatos((prev) => {
       const negocioDatos = safeBusinessData(prev?.[negocioAbiertoId]);
       const original = editandoMovimiento;
-      const contribucionOriginal =
-        original.tipo === "retiro" ? -original.monto : original.monto;
+      const contribucionOriginal = impactoMovimientoCaja(original);
       const nuevosMovimientos = negocioDatos.caja.movimientos.map((m) =>
         m.id === original.id ? { ...m, eliminado: true } : m
       );
@@ -515,7 +514,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
             historial: [
               ...negocioDatos.caja.historial,
               {
-                id: negocioDatos.caja.historial.length + 1,
+                id: crearIdOperacion("caja-eliminacion"),
                 tipo: "eliminacion_movimiento",
                 detalle: `Movimiento #${original.id} eliminado: ${money(
                   original.monto
@@ -527,7 +526,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
           auditoria: [
             ...(negocioDatos.auditoria || []),
             {
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              id: crearIdOperacion("auditoria-caja"),
               fecha: new Date().toISOString(),
               tenantId: String(negocioAbiertoId),
               seccion: "administracion",
@@ -557,7 +556,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
             historial: [
               ...negocioDatos.caja.historial,
               {
-                id: negocioDatos.caja.historial.length + 1,
+                id: crearIdOperacion("caja-auditoria"),
                 tipo: "auditoria_tecnica",
                 detalle,
                 fecha: new Date().toLocaleString("es-AR"),
@@ -567,7 +566,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
           auditoria: [
             ...(negocioDatos.auditoria || []),
             {
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              id: crearIdOperacion("auditoria-cuenta"),
               fecha: new Date().toISOString(),
               tenantId: String(negocioId),
               seccion: "administracion",
@@ -594,7 +593,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
         (c.empleados || []).some((e) => String(e.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase() || String(e.email || "").trim().toLowerCase() === normalizedEmail)
     );
     if (yaExiste) return;
-    const empleadoSeguro = await secureSubject({ id: Date.now(), nombre: nombre.trim(), usuario: normalizedUser, email: normalizedEmail, password: normalizedPassword, rol });
+    const empleadoSeguro = await secureSubject({ id: crearIdOperacion("empleado"), nombre: nombre.trim(), usuario: normalizedUser, email: normalizedEmail, password: normalizedPassword, rol });
     setCuentas((prev) =>
       prev.map((c) => {
         if (c.id !== nuevoEmpleadoOpen) return c;
@@ -699,7 +698,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
 
   const resolverSugerencia = (sugerencia, aprobar) => {
     if (aprobar && sugerencia.tipo === "nuevo_producto") {
-      setProducts((prev) => [...prev, { id: Date.now(), vitrina: 0, ...sugerencia.data, historial: [historialEntry("creacion", `Producto aprobado · sugerido por ${sugerencia.autor}`)] }]);
+      setProducts((prev) => [...prev, { id: crearIdOperacion("producto"), vitrina: 0, ...sugerencia.data, historial: [historialEntry("creacion", `Producto aprobado · sugerido por ${sugerencia.autor}`)] }]);
     }
     if (aprobar && sugerencia.tipo === "actualizar_producto") {
       const data = sugerencia.data || {};

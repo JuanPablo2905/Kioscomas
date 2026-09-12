@@ -51,6 +51,20 @@ services:
         sync: false
       - key: KIOSCO_VAPID_SUBJECT
         value: mailto:soporte@kioscomas.ar
+      - key: KIOSCO_MERCADOPAGO_BACKEND_ENABLED
+        value: "0"
+      - key: KIOSCO_MERCADOPAGO_CLIENT_ID
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_CLIENT_SECRET
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_REDIRECT_URI
+        value: https://kiosco-plus-api.onrender.com/v1/payments/mercado-pago/oauth/callback
+      - key: KIOSCO_MERCADOPAGO_RETURN_URI
+        value: https://app.kioscomas.ar
+      - key: KIOSCO_MERCADOPAGO_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_WEBHOOK_SECRET
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: KIOSCO_BACKUP_RETENTION_DAYS

@@ -1,9 +1,10 @@
 import { roundQuantity, unidadInfo } from "../../shared/domain";
+import { ticketActivo } from "../ventas/salesRules";
 
 export function buildReplenishmentSuggestions(products = [], tickets = [], now = new Date(), forecastDays = 7) {
   const since = now.getTime() - 30 * 24 * 60 * 60 * 1000;
   const sold = new Map();
-  tickets.filter((ticket) => !ticket.anulado && !ticket.devuelto && new Date(ticket.fecha).getTime() >= since).forEach((ticket) => {
+  tickets.filter((ticket) => ticketActivo(ticket) && new Date(ticket.fecha).getTime() >= since).forEach((ticket) => {
     (ticket.items || []).forEach((item) => sold.set(item.productId, (sold.get(item.productId) || 0) + Number(item.cantidad || 0)));
   });
   return products.map((product) => {

@@ -7,6 +7,7 @@ import { TicketBarcode } from "../../shared/TicketBarcodeView";
 import { exportCommercialArchive } from "../../shared/archive";
 import { openEmailDraft, openWhatsApp } from "../../shared/share";
 import { KioscoDatePicker } from "../../shared/KioscoDatePicker";
+import { numeroTicket, ticketActivo } from "../ventas/salesRules";
 import {
   allowedDocumentTypes,
   buildCommercialDocument,
@@ -56,7 +57,7 @@ function TicketPreview({ config, ticket, business }) {
         {template.showBusiness && <><h3 className="mt-2 text-lg font-black">{business.razonSocial || "MI NEGOCIO"}</h3>{template.showAddress && <p className="text-[10px]">{business.domicilio || "Domicilio del negocio"}</p>}</>}
       </div>
       <div className="my-3 border-y border-dashed py-2 text-[10px]">
-        <p>Ticket #{ticket?.id || "000123"}</p>
+        <p>Ticket #{ticket ? numeroTicket(ticket) : "000123"}</p>
         <p>{new Date(ticket?.fecha || Date.now()).toLocaleString("es-AR")}</p>
         {template.showCashier && <p>Atendió: {ticket?.quien || "Usuario"}</p>}
         {template.showCustomer && <p>Cliente: {ticket?.clienteNombre || "Consumidor final"}</p>}
@@ -66,7 +67,7 @@ function TicketPreview({ config, ticket, business }) {
       </div>
       <div className="mt-3 flex justify-between border-t pt-2 text-base font-black"><span>TOTAL</span><span>{money(total)}</span></div>
       {template.showPayment && <p className="mt-1 text-[10px]">Pago: {ticket?.medio || ticket?.pagos?.map((payment) => payment.metodo).join(" + ") || "Efectivo"}</p>}
-      {template.showBarcode && <TicketBarcode ticketId={ticket?.id || "000123"} color={template.textColor} className="my-3"/>}
+      {template.showBarcode && <TicketBarcode ticketId={ticket?.codigoTicket || ticket?.id || "000123"} color={template.textColor} className="my-3"/>}
       <p className="text-center text-[10px]">{template.footer}</p>
     </div>
   );
@@ -122,7 +123,7 @@ function DocumentPreview({ document }) {
       </div>
 
       <div className="mt-6 grid gap-1 border-t pt-3 text-xs">
-        <p><b>Venta origen:</b> #{document.ticketId}</p>
+        <p><b>Venta origen:</b> #{document.ticketNumero || document.ticketId}</p>
         <p><b>Medio de pago:</b> {document.medioPago}</p>
         <p><b>Código interno:</b> {document.codigoInterno}</p>
         <p><b>Emitido por:</b> {document.emitidoPor}</p>
@@ -135,7 +136,7 @@ function DocumentPreview({ document }) {
 export function InvoiceTicketManager({ data, setters, identidad }) {
   const [mode, setMode] = useState("facturas");
   const config = { ...fiscalDefaults, ...(data.configuracionFiscal || {}), ticket: { ...fiscalDefaults.ticket, ...(data.configuracionFiscal?.ticket || {}) } };
-  const latest = data.tickets?.filter((ticket) => !ticket.anulado).slice(-50).reverse() || [];
+  const latest = data.tickets?.filter(ticketActivo).slice(-50).reverse() || [];
   const [draft, setDraft] = useState({
     tipo: "C",
     ticketId: latest[0]?.id || "",
@@ -212,7 +213,7 @@ export function InvoiceTicketManager({ data, setters, identidad }) {
     setVoidTarget(null);
   };
 
-  const documentMessage = (document) => `Comprobante comercial NO FISCAL ${document.tipo} ${document.numero}\n${document.emisor?.razonSocial || "Mi negocio"}\nTotal: ${money(document.total)}\nVenta #${document.ticketId}\nCódigo interno: ${document.codigoInterno}\n\nNo posee CAE y no es una factura fiscal autorizada por ARCA.`;
+  const documentMessage = (document) => `Comprobante comercial NO FISCAL ${document.tipo} ${document.numero}\n${document.emisor?.razonSocial || "Mi negocio"}\nTotal: ${money(document.total)}\nVenta #${document.ticketNumero || document.ticketId}\nCódigo interno: ${document.codigoInterno}\n\nNo posee CAE y no es una factura fiscal autorizada por ARCA.`;
 
   const openEmail = (document = previewDocument) => {
     const recipient = document?.receptor?.email || draft.email;
@@ -273,7 +274,7 @@ export function InvoiceTicketManager({ data, setters, identidad }) {
               <h3 className="font-semibold">Nuevo comprobante</h3>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <label className="min-w-0 text-sm">Tipo<CustomSelect className="mt-1" value={draft.tipo} onChange={(value) => setDraft((previous) => ({ ...previous, tipo: value }))} options={documentTypes.map((type) => ({ value: type, label: `Comprobante ${type}` }))}/></label>
-                <label className="min-w-0 text-sm">Venta origen<CustomSelect className="mt-1" value={String(draft.ticketId)} onChange={(value) => { setSelectedDocument(null); setDraft((previous) => ({ ...previous, ticketId: value })); }} options={[{ value: "", label: "Elegí una venta" }, ...latest.map((item) => ({ value: String(item.id), label: `#${item.id} · ${money(item.total)}` }))]}/></label>
+                <label className="min-w-0 text-sm">Venta origen<CustomSelect className="mt-1" value={String(draft.ticketId)} onChange={(value) => { setSelectedDocument(null); setDraft((previous) => ({ ...previous, ticketId: value })); }} options={[{ value: "", label: "Elegí una venta" }, ...latest.map((item) => ({ value: String(item.id), label: `#${numeroTicket(item)} · ${money(item.total)}` }))]}/></label>
                 <label className="min-w-0 text-sm">Condición del receptor<CustomSelect className="mt-1" value={draft.condicionReceptor} onChange={(value) => setDraft((previous) => ({ ...previous, condicionReceptor: value }))} options={receiverConditions}/></label>
                 <label className="min-w-0 text-sm">Cliente / razón social<input value={draft.receptor} onChange={(event) => setDraft((previous) => ({ ...previous, receptor: event.target.value }))} className={`${field} mt-1`}/></label>
                 <label className="min-w-0 text-sm">CUIT o DNI<input value={draft.receptorCuit} inputMode="numeric" onChange={(event) => setDraft((previous) => ({ ...previous, receptorCuit: event.target.value }))} className={`${field} mt-1`}/></label>
@@ -306,7 +307,7 @@ export function InvoiceTicketManager({ data, setters, identidad }) {
             <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_180px]"><label className="flex min-w-0 items-center gap-2 rounded-lg border px-3"><Search size={16} className="shrink-0 text-gray-400"/><input value={archiveQuery} onChange={(event) => setArchiveQuery(event.target.value)} placeholder="Buscar número, cliente, CUIT o ticket" className="min-h-10 w-full min-w-0 bg-transparent text-sm outline-none"/></label><CustomSelect value={archiveYear} onChange={setArchiveYear} options={[{value:"todos",label:"Todos los años"}, ...archiveYears.map((year) => ({value:String(year),label:String(year)}))]}/></div>
             <p className="mt-2 text-xs text-gray-500">{archivedDocuments.length} comprobante(s). Los números utilizados se conservan aunque uno sea anulado.</p>
             <div className="mt-3 space-y-2">{archivedDocuments.map((document) => <div key={document.id} className={`flex min-w-0 flex-col items-start gap-3 rounded-lg border p-3 text-sm sm:flex-row sm:items-center sm:justify-between ${document.estado === "anulado" ? "border-red-200 bg-red-50" : ""}`}>
-              <span className="min-w-0 break-words"><b>{document.tipo} {document.numero}</b> · {document.receptor?.nombre || document.receptor || "Consumidor final"}<small className="mt-1 block text-gray-500">{new Date(document.fecha).toLocaleString("es-AR")} · Venta #{document.ticketId}</small></span>
+              <span className="min-w-0 break-words"><b>{document.tipo} {document.numero}</b> · {document.receptor?.nombre || document.receptor || "Consumidor final"}<small className="mt-1 block text-gray-500">{new Date(document.fecha).toLocaleString("es-AR")} · Venta #{document.ticketNumero || document.ticketId}</small></span>
               <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end"><b className="mr-auto sm:mr-1">{money(document.total)}</b><span className={`rounded-full px-2 py-1 text-xs font-semibold ${document.estado === "anulado" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>{document.estado === "anulado" ? "ANULADO" : "NO FISCAL"}</span><button title="Compartir por WhatsApp" onClick={() => openWhatsApp({ text: documentMessage(document) })} className="flex min-h-9 items-center gap-1 rounded-lg border px-3 text-xs"><MessageCircle size={13}/>Enviar</button><button onClick={() => openSavedDocument(document)} className="min-h-9 rounded-lg border px-3 text-xs">Ver</button>{document.estado !== "anulado" && <button onClick={() => setVoidTarget(document)} className="flex min-h-9 items-center gap-1 rounded-lg border border-red-200 px-3 text-xs text-red-600"><XCircle size={13}/>Anular</button>}</div>
             </div>)}{archivedDocuments.length === 0 && <div className="rounded-lg border border-dashed p-6 text-center text-sm text-gray-500">No hay comprobantes que coincidan con este filtro.</div>}</div>
           </section>

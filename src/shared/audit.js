@@ -51,6 +51,24 @@ const DATA_LABELS = {
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 const itemName = (item) => item?.nombre || item?.producto || item?.concepto || item?.nota || item?.descripcion || (item?.id !== undefined ? `#${item.id}` : "registro");
 
+const purchaseOrderSummary = (order = {}, dataset = {}) => {
+  const providerRecord = (dataset?.proveedores || []).find((item) => String(item?.id) === String(order?.proveedorId));
+  const provider = String(order?.proveedorNombre || providerRecord?.nombre || "").trim();
+  const visibleProvider = provider && provider.toLocaleLowerCase("es") !== "sin proveedor" ? provider : "";
+  const names = (Array.isArray(order?.items) ? order.items : []).map((item) => {
+    const productRecord = (dataset?.products || []).find((product) => String(product?.id) === String(item?.productId));
+    const name = String(item?.nombre || item?.producto || item?.descripcion || productRecord?.nombre || "").trim();
+    if (!name) return "";
+    const quantity = Math.max(0, Number(item?.cantidad ?? item?.cantidadPedida) || 0);
+    return quantity > 0 ? `${quantity} × ${name}` : name;
+  }).filter(Boolean);
+  const uniqueNames = [...new Set(names)];
+  const products = uniqueNames.length > 3
+    ? `${uniqueNames.slice(0, 3).join(", ")} y ${uniqueNames.length - 3} más`
+    : uniqueNames.join(", ");
+  return [visibleProvider, products].filter(Boolean).join(" · ") || "Pedido sin detalle";
+};
+
 const arrayChange = (previous = [], next = []) => {
   const oldById = new Map(previous.map((item) => [String(item?.id), item]));
   const nextById = new Map(next.map((item) => [String(item?.id), item]));
@@ -162,6 +180,24 @@ function describePurchaseItems(previous, next) {
   return "Lista de compras actualizada";
 }
 
+function describePurchaseOrders(previous, next) {
+  const change = arrayChange(previous || [], next || []);
+  if (change.added.length === 1) return `Pedido generado: ${purchaseOrderSummary(change.added[0])}`;
+  if (change.added.length > 1) return `Pedidos generados: ${change.added.map((item) => purchaseOrderSummary(item)).join(" · ")}`;
+  if (change.removed.length === 1) return `Pedido eliminado: ${purchaseOrderSummary(change.removed[0])}`;
+  if (change.removed.length > 1) return `Pedidos eliminados: ${change.removed.map((item) => purchaseOrderSummary(item)).join(" · ")}`;
+  if (change.changed.length === 1) {
+    const [{ old, item }] = change.changed;
+    if (old?.estado !== item?.estado) {
+      const status = { pedido: "Pedido realizado", parcial: "Recepción parcial", recibido: "Recibido" };
+      return `Pedido actualizado: ${purchaseOrderSummary(item)} · ${status[old?.estado] || old?.estado || "Sin estado"} → ${status[item?.estado] || item?.estado || "Sin estado"}`;
+    }
+    return `Pedido actualizado: ${purchaseOrderSummary(item)}`;
+  }
+  if (change.changed.length > 1) return `Pedidos actualizados: ${change.changed.map(({ item }) => purchaseOrderSummary(item)).join(" · ")}`;
+  return "Pedidos actualizados";
+}
+
 const goalAmount = (goal) => `$${Number(goal?.objetivo || 0).toLocaleString("es-AR")}`;
 const workModeLabel = (mode) => mode === "equipo" ? "Tengo empleados" : "Trabajo solo";
 
@@ -192,6 +228,7 @@ export function describeDataChange(key, previousValue, nextValue) {
   if (key === "products") return describeProducts(previousValue, nextValue);
   if (key === "metas") return describeGoals(previousValue, nextValue);
   if (key === "comprasItems") return describePurchaseItems(previousValue, nextValue);
+  if (key === "pedidos") return describePurchaseOrders(previousValue, nextValue);
   if (key === "caja") {
     const oldMovements = previousValue?.movimientos || [];
     const nextMovements = nextValue?.movimientos || [];
@@ -208,6 +245,17 @@ export function describeDataChange(key, previousValue, nextValue) {
 export function auditDisplayDetail(event, dataset = {}) {
   if (event?.accion === "inicio_sesion") return "Inicio de sesión";
   if (event?.detalle === "Configuración del negocio modificada: modoNegocio") return `Forma de trabajo: ${workModeLabel(dataset?.modoNegocio)}`;
+  if (event?.recurso === "pedidos") {
+    const detail = String(event?.detalle || "");
+    const technicalIds = [...detail.matchAll(/#([^,\s]+)/g)].map((match) => match[1]);
+    if (technicalIds.length) {
+      const orders = technicalIds.map((id) => (dataset?.pedidos || []).find((item) => String(item?.id) === id)).filter(Boolean);
+      const action = /eliminar/i.test(detail) ? "eliminado" : /modificar|actualizar/i.test(detail) ? "actualizado" : "generado";
+      if (orders.length === 1) return `Pedido ${action}: ${purchaseOrderSummary(orders[0], dataset)}`;
+      if (orders.length > 1) return `Pedidos ${action === "generado" ? "generados" : action === "eliminado" ? "eliminados" : "actualizados"}: ${orders.map((order) => purchaseOrderSummary(order, dataset)).join(" · ")}`;
+      return `Pedido ${action}`;
+    }
+  }
   if (event?.recurso !== "metas") return event?.detalle || event?.accion;
   const technicalId = String(event.detalle || "").match(/#([^,\s]+)/)?.[1];
   const goal = technicalId ? (dataset.metas || []).find((item) => String(item.id) === technicalId) : null;

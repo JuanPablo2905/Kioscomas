@@ -1,3 +1,5 @@
+import { crearIdOperacion, numeroTicket, ticketActivo } from "../ventas/salesRules";
+
 const digits = (value) => String(value || "").replace(/\D/g, "");
 const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
@@ -62,7 +64,7 @@ export function validateDocumentDraft({ config, draft, ticket, existing = [] }) 
   const point = Number(config.puntoVenta);
   if (!Number.isInteger(point) || point < 1 || point > 99999) errors.push("El punto de venta debe ser un número entre 1 y 99999.");
   if (!ticket) errors.push("Elegí una venta de origen.");
-  if (ticket?.anulado) errors.push("No se puede generar un comprobante para una venta anulada.");
+  if (ticket && !ticketActivo(ticket)) errors.push("No se puede generar un comprobante para una venta anulada o devuelta.");
   if (!allowed.includes(draft.tipo)) errors.push(`La condición ${config.condicionFiscal} sólo admite comprobante ${allowed.join(" o ")} en este modo.`);
   if (!String(draft.receptor || "").trim()) errors.push("Completá el nombre o razón social del receptor.");
   if (draft.tipo === "A" && draft.condicionReceptor !== "Responsable inscripto") errors.push("El comprobante A requiere un receptor Responsable inscripto.");
@@ -91,7 +93,7 @@ export function buildCommercialDocument({ config, draft, ticket, existing = [], 
     };
   });
   const document = {
-    id: `cnf-${Date.now()}-${sequence}`,
+    id: crearIdOperacion("comprobante"),
     version: 1,
     clase: "comprobante-comercial-no-fiscal",
     tipo: draft.tipo,
@@ -102,6 +104,7 @@ export function buildCommercialDocument({ config, draft, ticket, existing = [], 
     estado: "emitido-no-fiscal",
     sinCae: true,
     ticketId: ticket.id,
+    ticketNumero: numeroTicket(ticket),
     emisor: {
       razonSocial: String(config.razonSocial || "").trim(),
       cuit: formatCuit(config.cuit),

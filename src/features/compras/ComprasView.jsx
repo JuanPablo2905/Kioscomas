@@ -12,6 +12,7 @@ import { AppSelect } from "../../shared/controls";
 import { KioscoDatePicker, datePickerHelpers } from "../../shared/KioscoDatePicker";
 import { buildAutomaticLowStockItems, buildReplenishmentSuggestions } from "./replenishmentRules";
 import { copyText, openEmailDraft, openWhatsApp, purchaseMessage } from "../../shared/share";
+import { crearIdOperacion } from "../ventas/salesRules";
 
 function CompartirPedidoModal({ pedido, onClose }) {
   const [phone, setPhone] = useState(pedido.phone || "");
@@ -45,12 +46,13 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
   const [buscarProducto, setBuscarProducto] = useState("");
   const [pedidoParaCompartir, setPedidoParaCompartir] = useState(null);
   const [nuevoProductoOpen, setNuevoProductoOpen] = useState(false);
+  const [recepcionError, setRecepcionError] = useState("");
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
   const [fechaEntregaEsperada, setFechaEntregaEsperada] = useState(datePickerHelpers.dateValue(tomorrow));
   const [horaEntregaEsperada, setHoraEntregaEsperada] = useState("09:00");
   const tieneCompraActiva = (productId, items = comprasItems) =>
     items.some((item) => item.productId === productId && item.estado !== "recibido");
-  const nuevoItemId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const nuevoItemId = () => crearIdOperacion("compra-item");
   const proveedorDeItem = (item) => {
     const product = products.find((p) => p.id === item.productId);
     const proveedorId = item.proveedorId ?? product?.proveedorId;
@@ -60,7 +62,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
   const crearPedido = (items) => {
     if (!items.length || !setPedidos) return;
     const proveedor = proveedorDeItem(items[0]);
-    const pedidoId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const pedidoId = crearIdOperacion("pedido-proveedor");
     setPedidos((prev) => [{ id: pedidoId, proveedorId: proveedor?.id || null, proveedorNombre: proveedor?.nombre || "Sin proveedor", estado: "pedido", fecha: new Date().toISOString(), fechaEntregaEsperada, horaEntregaEsperada, items: items.map((item) => ({ itemId: item.id, productId: item.productId, nombre: item.nombre, cantidad: Math.max(1, Number(item.cantidad) || 1), cantidadRecibida: 0, cantidadPendiente: Math.max(1, Number(item.cantidad) || 1) })) }, ...prev]);
     const ids = new Set(items.map((item) => item.id));
     setComprasItems((prev) => prev.map((item) => ids.has(item.id) ? {
@@ -171,7 +173,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
   };
 
   const handleNuevoProducto = (data) => {
-    const nuevoId = Date.now();
+    const nuevoId = crearIdOperacion("producto");
     const cantidadPedido = data.deposito > 0 ? data.deposito : Math.max(data.minimo, 1);
     setProducts((prev) => [
       ...prev,
@@ -203,7 +205,13 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
   const changeCantidad = (id, delta) => {
     setComprasItems((prev) =>
       prev.map((i) =>
-        i.id === id ? { ...i, cantidad: Math.max(1, Number(i.cantidad || 0) + delta) } : i
+        i.id === id ? {
+          ...i,
+          cantidad: Math.min(
+            i.estado === "pedido" ? Math.max(1, Number(i.cantidadPedida ?? i.cantidad) || 1) : Number.POSITIVE_INFINITY,
+            Math.max(1, Number(i.cantidad || 0) + delta),
+          ),
+        } : i
       )
     );
   };
@@ -229,13 +237,23 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
   };
 
   const confirmarRecepcion = (item) => {
-    const cantidadRecibida = Math.max(1, Number(item.cantidad) || 1);
     const cantidadPendienteAntes = Math.max(1, Number(item.cantidadPedida ?? item.cantidad) || 1);
+    const cantidadIngresada = Number(item.cantidad);
+    if (!Number.isFinite(cantidadIngresada) || cantidadIngresada <= 0) {
+      setRecepcionError(`Ingresá una cantidad válida para ${item.nombre}.`);
+      return;
+    }
+    if (cantidadIngresada > cantidadPendienteAntes + 0.000001) {
+      setRecepcionError(`No se puede recibir ${cantidadIngresada} de ${item.nombre}: quedan ${cantidadPendienteAntes} pendientes. Corregí primero el pedido si el proveedor envió de más.`);
+      return;
+    }
+    setRecepcionError("");
+    const cantidadRecibida = cantidadIngresada;
     const cantidadPendienteDespues = Math.max(0, cantidadPendienteAntes - cantidadRecibida);
     const cantidadOriginalPedida = Math.max(cantidadPendienteAntes, Number(item.cantidadOriginalPedida) || 0);
     const cantidadRecibidaAcumulada = Math.max(0, Number(item.cantidadRecibidaAcumulada) || 0) + cantidadRecibida;
     const recibidoFecha = new Date().toISOString();
-    const recepcionId = `${item.id}-recibido-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const recepcionId = crearIdOperacion(`recepcion-${item.id}`);
     if (item.productId) {
       setProducts((prev) =>
         prev.map((p) =>
@@ -345,6 +363,8 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
           )
         }
       />
+
+      {recepcionError && <div role="alert" className="mb-5 flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span>{recepcionError}</span><button type="button" onClick={() => setRecepcionError("")} className="shrink-0 rounded p-1 hover:bg-red-100" aria-label="Cerrar aviso"><X size={16}/></button></div>}
 
       {activos.some((item) => item.estado === "pendiente") && <div className="mb-6 grid gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3 sm:grid-cols-[minmax(0,1fr)_180px_130px] sm:items-end">
         <div><p className="text-sm font-semibold text-gray-900">Entrega esperada del próximo pedido</p><p className="mt-1 text-xs text-gray-500">Se guarda en cada pedido y Kiosco+ te avisa el día anterior, el mismo día y si queda demorado.</p></div>
@@ -502,6 +522,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
                   <input
                     type="number"
                     min="0"
+                    max={item.estado === "pedido" ? item.cantidadPedida : undefined}
                     step="any"
                     value={item.cantidad}
                     onFocus={(event) => event.target.select()}

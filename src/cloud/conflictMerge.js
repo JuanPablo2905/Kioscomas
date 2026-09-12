@@ -33,6 +33,10 @@ export function mergeConcurrentEntity(operation, serverValue) {
       merged[key] = Math.max(0, Number(remote[key]) + Number(local[key]) - Number(base[key]));
       continue;
     }
+    if (operation.entity === "cajaEstado" && key === "saldo" && finiteNumber(base[key]) && finiteNumber(local[key]) && finiteNumber(remote[key])) {
+      merged[key] = Math.round((Number(remote[key]) + Number(local[key]) - Number(base[key])) * 100) / 100;
+      continue;
+    }
     if (operation.entity === "products" && key === "historial") {
       const history = mergeAppendOnlyArray(local[key], remote[key]);
       if (history) { merged[key] = history; continue; }

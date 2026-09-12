@@ -32,7 +32,7 @@ export function ticketMessage(ticket, businessName = "Kiosco+") {
   const lines = (ticket?.items || []).map((item) => `• ${item.cantidad} x ${item.nombre} — $ ${Number(item.subtotal || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}${item.promocion?.nombre ? `\n  ${item.promocion.etiqueta || "PROMO"} · ${item.promocion.nombre}${Number(item.descuentoPromocion || 0) > 0 ? ` · ahorraste $ ${Number(item.descuentoPromocion).toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : ""}` : ""}`);
   const customer = ticket?.clienteNombre ? `\nCliente: ${ticket.clienteNombre}` : "";
   const savings = Number(ticket?.descuento || 0) > 0 ? `\nAHORRASTE: $ ${Number(ticket.descuento).toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : "";
-  return `${businessName}\nTicket #${ticket?.id}\n${new Date(ticket?.fecha || Date.now()).toLocaleString("es-AR")}${customer}\n\n${lines.join("\n")}\n\nTOTAL: $ ${Number(ticket?.total || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}${savings}\nPago: ${ticket?.medio || "No informado"}`;
+  return `${businessName}\nTicket #${ticket?.numero || ticket?.id}\n${new Date(ticket?.fecha || Date.now()).toLocaleString("es-AR")}${customer}\n\n${lines.join("\n")}\n\nTOTAL: $ ${Number(ticket?.total || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}${savings}\nPago: ${ticket?.medio || "No informado"}`;
 }
 
 export function openWhatsApp({ phone = "", text = "" }) {

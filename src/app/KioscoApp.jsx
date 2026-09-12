@@ -35,7 +35,7 @@ import { GlobalScanResult } from "../shared/GlobalScanResult";
 import { TutorialOverlay } from "../shared/TutorialOverlay";
 import { parseTicketBarcode } from "../shared/ticketBarcode";
 import { printTicket } from "../shared/ticketPrint";
-import { anularTicket, restaurarStock } from "../features/ventas/salesRules";
+import { anularTicket, crearIdOperacion, devolverTicket as marcarTicketDevuelto, efectivoDeTicket, numeroTicket, restaurarStock, ticketActivo } from "../features/ventas/salesRules";
 import { unidadInfo } from "../shared/domain";
 import { appendCoalescedAudit, auditActor, createAuditEvent, describeAccountChange, enrichEntityHistory, hasMeaningfulChange } from "../shared/audit";
 import { captureAppScreenshot } from "../shared/captureScreenshot";
@@ -738,7 +738,7 @@ export default function KioscoApp() {
     setHelpSpotlightOpen(true);
   };
   const reportarProblema = ({ descripcion, captura, detalleTecnico, vista: vistaReportada }) => {
-    const report = { id: Date.now(), fecha: new Date().toISOString(), estado: "nuevo", descripcion, captura: captura || null, detalleTecnico: detalleTecnico || "", negocioId: currentUserId, negocio: cuentaActual?.nombreNegocio || "Sin negocio", usuario: identidad?.nombre || "Sin identificar", vista: vistaReportada || view };
+    const report = { id: crearIdOperacion("reporte"), fecha: new Date().toISOString(), estado: "nuevo", descripcion, captura: captura || null, detalleTecnico: detalleTecnico || "", negocioId: currentUserId, negocio: cuentaActual?.nombreNegocio || "Sin negocio", usuario: identidad?.nombre || "Sin identificar", vista: vistaReportada || view };
     setReportesProblemas((previous) => [report, ...previous]);
     if (!PUBLIC_DEMO_MODE) reportPlatformIssue(report).catch(() => {});
   };
@@ -884,7 +884,7 @@ export default function KioscoApp() {
     const code = String(rawCode || "").trim();
     const ticketId = parseTicketBarcode(code);
     if (ticketId != null) {
-      const ticket = (data?.tickets || []).find((item) => String(item.id) === String(ticketId));
+      const ticket = (data?.tickets || []).find((item) => String(item.codigoTicket || item.id).toUpperCase() === String(ticketId).toUpperCase());
       return ticket ? { type: "ticket", ticket, code } : { type: "unknown", code };
     }
     const product = (data?.products || []).find((item) => String(item.codigo || "").trim() === code);
@@ -923,7 +923,7 @@ export default function KioscoApp() {
   };
 
   const voidScannedTicket = (ticket) => {
-    if (!ticket || ticket.estado === "anulado") return;
+    if (!ticketActivo(ticket)) return;
     setVoidTicketPrompt({ ticket, reason: "" });
   };
 
@@ -949,7 +949,7 @@ export default function KioscoApp() {
   const confirmVoidScannedTicket = () => {
     const ticket = voidTicketPrompt.ticket;
     const motivo = voidTicketPrompt.reason.trim();
-    if (!ticket || !motivo) return;
+    if (!ticketActivo(ticket) || !motivo) return;
     const fecha = new Date();
     const responsable = identidad?.nombre || identidad?.rol || "Sin identificar";
     setTickets((previous = []) => previous.map((item) => item.id === ticket.id ? anularTicket(item, motivo.trim(), responsable, fecha.toISOString()) : item));
@@ -958,15 +958,15 @@ export default function KioscoApp() {
       setClientes((previous = []) => previous.map((cliente) => cliente.id === ticket.clienteId ? {
         ...cliente,
         saldo: Number(cliente.saldo || 0) - Number(ticket.total || 0),
-        movimientos: [...(cliente.movimientos || []), { id: Date.now(), tipo: "anulacion", monto: Number(ticket.total || 0), nota: `Anulación ticket #${ticket.id}: ${motivo.trim()}`, fecha: fecha.toLocaleString("es-AR") }],
+        movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-anulacion"), tipo: "anulacion", monto: Number(ticket.total || 0), nota: `Anulación ticket #${numeroTicket(ticket)}: ${motivo.trim()}`, fecha: fecha.toLocaleString("es-AR") }],
       } : cliente));
     }
-    const cashAmount = ticket.medio === "Efectivo" ? Number(ticket.total || 0) : Number(ticket.pagos?.find((payment) => payment.metodo === "Efectivo")?.monto || 0);
+    const cashAmount = efectivoDeTicket(ticket);
     if (cashAmount > 0) {
       setCaja((previous) => ({
         ...previous,
         saldo: Number(previous.saldo || 0) - cashAmount,
-        movimientos: [...(previous.movimientos || []), { id: Date.now(), tipo: "retiro", monto: cashAmount, nota: `Devolución ticket #${ticket.id}`, fecha: fecha.toLocaleString("es-AR") }],
+        movimientos: [...(previous.movimientos || []), { id: crearIdOperacion("caja-anulacion"), tipo: "retiro", monto: cashAmount, nota: `Devolución ticket #${numeroTicket(ticket)}`, fecha: fecha.toLocaleString("es-AR") }],
       }));
     }
     setGlobalScanResult((current) => current?.ticket?.id === ticket.id ? { ...current, ticket: anularTicket(ticket, motivo.trim(), responsable, fecha.toISOString()) } : current);
@@ -1077,7 +1077,7 @@ export default function KioscoApp() {
       const trial = trialAccessStatus(activeAccount);
       setSessionExpiresAt(trial.active && new Date(trial.expiresAt) < new Date(session.expiresAt) ? trial.expiresAt : session.expiresAt);
       setAuthSecurity((prev) => clearLoginFailures(prev, normalizedUser));
-      setDatos((prev) => ({ ...prev, [activeAccount.id]: { ...prev[activeAccount.id], auditoria: [...(prev[activeAccount.id]?.auditoria || []), { id: Date.now(), fecha: new Date().toISOString(), tenantId: String(activeAccount.id), usuario: activeAccount.nombre, usuarioId: identity.usuarioId, rol: identity.rol, origen: activeAccount.superAdmin ? "administracion_app" : "dueno", seccion: "seguridad", accion: "inicio_sesion", detalle: "Inicio de sesión", resultado: "exitoso" }] } }));
+      setDatos((prev) => ({ ...prev, [activeAccount.id]: { ...prev[activeAccount.id], auditoria: [...(prev[activeAccount.id]?.auditoria || []), { id: crearIdOperacion("auditoria-login"), fecha: new Date().toISOString(), tenantId: String(activeAccount.id), usuario: activeAccount.nombre, usuarioId: identity.usuarioId, rol: identity.rol, origen: activeAccount.superAdmin ? "administracion_app" : "dueno", seccion: "seguridad", accion: "inicio_sesion", detalle: "Inicio de sesión", resultado: "exitoso" }] } }));
       return;
     }
 
@@ -1509,11 +1509,26 @@ export default function KioscoApp() {
           />
         );
       case "gestion":
-        return <GestionView data={data} identidad={identidad} preferences={currentPreferences} hasEmployees={hasEmployees} setters={{ setTareas, setMetas, setPromociones, setReservas, setPresupuestos, setArqueos, setConfiguracionFiscal, setComprobantes, setListaCompras, setRetornables, setCambioCaja, setAutoconsumos, setTurnos, setRecordatoriosProveedor, setProducts, setLabelTemplates, devolverTicket: (ticket) => {
-          setProducts((prev) => prev.map((product) => { const item = ticket.items?.find((line) => line.productId === product.id); if (!item) return product; const factor = product.unidad === "unidad" ? 1 : 1000; return { ...product, vitrina: Number(product.vitrina || 0) + Number(item.cantidad || 0) / factor }; }));
-          setTickets((prev) => prev.map((item) => item.id === ticket.id ? { ...item, devuelto: true, devolucionFecha: new Date().toISOString(), devolucionPor: identidad?.nombre } : item));
-          const efectivoDevuelto = ticket.medio === "Efectivo" ? Number(ticket.total || 0) : Number(ticket.pagos?.find((pago) => pago.metodo === "Efectivo")?.monto || 0);
-          if (efectivoDevuelto > 0) setCaja((prev) => ({ ...prev, saldo: Number(prev.saldo || 0) - efectivoDevuelto, movimientos: [{ id: Date.now(), tipo: "egreso", monto: efectivoDevuelto, nota: `Devolución ticket #${ticket.id}`, fecha: new Date().toLocaleString("es-AR") }, ...(prev.movimientos || [])] }));
+        return <GestionView data={data} identidad={identidad} preferences={currentPreferences} hasEmployees={hasEmployees} setters={{ setTareas, setMetas, setPromociones, setReservas, setPresupuestos, setArqueos, setConfiguracionFiscal, setComprobantes, setListaCompras, setRetornables, setCambioCaja, setAutoconsumos, setTurnos, setRecordatoriosProveedor, setProducts, setLabelTemplates, devolverTicket: (ticket, motivo = "Devolución completa") => {
+          if (!ticketActivo(ticket)) return;
+          const fecha = new Date();
+          const responsable = identidad?.nombre || identidad?.rol || "Sin identificar";
+          const numero = numeroTicket(ticket);
+          const tieneReintegroExterno = (ticket.pagos || [{ metodo: ticket.medio, monto: ticket.total }]).some((pago) => !["Efectivo", "Cuenta corriente"].includes(pago?.metodo) && Number(pago?.monto || 0) > 0);
+          setProducts((prev) => restaurarStock(prev, ticket));
+          setTickets((prev) => prev.map((item) => item.id === ticket.id ? {
+            ...marcarTicketDevuelto(item, motivo, responsable, fecha.toISOString()),
+            ...(tieneReintegroExterno ? { reintegro: { estado: "pendiente_manual", fecha: fecha.toISOString(), medios: (ticket.pagos || [{ metodo: ticket.medio, monto: ticket.total }]).filter((pago) => !["Efectivo", "Cuenta corriente"].includes(pago?.metodo)) } } : {}),
+          } : item));
+          if (ticket.medio === "Cuenta corriente" && ticket.clienteId) {
+            setClientes((prev) => prev.map((cliente) => String(cliente.id) === String(ticket.clienteId) ? {
+              ...cliente,
+              saldo: Math.round((Number(cliente.saldo || 0) - Number(ticket.total || 0)) * 100) / 100,
+              movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-devolucion"), tipo: "devolucion", monto: Number(ticket.total || 0), nota: `Devolución ticket #${numero}`, fecha: fecha.toLocaleString("es-AR"), ticketId: ticket.id }],
+            } : cliente));
+          }
+          const efectivoDevuelto = efectivoDeTicket(ticket);
+          if (efectivoDevuelto > 0) setCaja((prev) => ({ ...prev, saldo: Number(prev.saldo || 0) - efectivoDevuelto, movimientos: [...(prev.movimientos || []), { id: crearIdOperacion("caja-devolucion"), tipo: "egreso", monto: efectivoDevuelto, nota: `Devolución ticket #${numero}`, fecha: fecha.toLocaleString("es-AR"), ticketId: ticket.id }] }));
         } }} />;
       case "administracion":
         return (
@@ -1596,7 +1611,7 @@ export default function KioscoApp() {
         allowAnyCode
         resolveCode={async (code) => {
           const result = resolveScannedCode(code);
-          if (result.type === "ticket") return { kind: "ticket", displayName: `Ticket #${result.ticket.id}` };
+          if (result.type === "ticket") return { kind: "ticket", displayName: `Ticket #${numeroTicket(result.ticket)}` };
           if (result.type === "product") return { kind: "product", displayName: result.product.nombre, product: result.product };
           const catalogProduct = await lookupBarcode(code);
           return catalogProduct
@@ -1615,7 +1630,7 @@ export default function KioscoApp() {
         onVoid={() => voidScannedTicket(globalScanResult?.ticket)}
         onVerifyPending={submitPendingVerification}
       />
-      <PromptDialog open={Boolean(voidTicketPrompt.ticket)} title="Anular o devolver ticket" message={`Indicá el motivo para el ticket #${voidTicketPrompt.ticket?.id || ""}. Quedará registrado en el historial.`} value={voidTicketPrompt.reason} onChange={(reason)=>setVoidTicketPrompt((current)=>({...current,reason}))} placeholder="Ej.: devolución del cliente" confirmLabel="Confirmar anulación" onCancel={()=>setVoidTicketPrompt({ticket:null,reason:""})} onConfirm={confirmVoidScannedTicket}/>
+      <PromptDialog open={Boolean(voidTicketPrompt.ticket)} title="Anular o devolver ticket" message={`Indicá el motivo para el ticket #${numeroTicket(voidTicketPrompt.ticket)}. Quedará registrado en el historial.`} value={voidTicketPrompt.reason} onChange={(reason)=>setVoidTicketPrompt((current)=>({...current,reason}))} placeholder="Ej.: devolución del cliente" confirmLabel="Confirmar anulación" onCancel={()=>setVoidTicketPrompt({ticket:null,reason:""})} onConfirm={confirmVoidScannedTicket}/>
     </div>
   );
 }

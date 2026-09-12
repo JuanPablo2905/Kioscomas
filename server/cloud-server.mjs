@@ -10,6 +10,19 @@ import { createPostgresStore } from "./postgres-record-store.mjs";
 import { createEmailService, isValidEmail, normalizeEmail } from "./email-service.mjs";
 import { argentinaDateKey, referralStats, referralStatus } from "../src/billing/referrals.js";
 import { sanitizePublicDisplayContent } from "../src/features/ventas/displayConfig.js";
+import {
+  buildMercadoPagoAuthorizationUrl,
+  buildPointOrderPayload,
+  buildQrOrderPayload,
+  createMercadoPagoClient,
+  createPkcePair,
+  decryptPaymentSecret,
+  encryptPaymentSecret,
+  mercadoPagoAvailability,
+  mercadoPagoConfig,
+  normalizedPaymentStatus,
+  verifyMercadoPagoWebhookSignature,
+} from "./mercado-pago.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 let appVersion = "0.0.0";
@@ -46,6 +59,8 @@ const emailService = createEmailService({
   appUrl: process.env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar",
   testMode: emailTestMode,
 });
+const mercadoPago = mercadoPagoConfig(process.env);
+const mercadoPagoClient = createMercadoPagoClient({ config: mercadoPago });
 const vapidPublicKey = String(process.env.KIOSCO_VAPID_PUBLIC_KEY || "").trim();
 const vapidPrivateKey = String(process.env.KIOSCO_VAPID_PRIVATE_KEY || "").trim();
 const vapidSubject = String(process.env.KIOSCO_VAPID_SUBJECT || "mailto:soporte@kioscomas.ar").trim();
@@ -53,7 +68,7 @@ const pushDeliveryConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
 if (pushDeliveryConfigured) webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISOString();
 const refreshTokenExpiresAt = () => new Date(Date.now() + refreshTokenTtlMs).toISOString();
-const emptyDb = () => ({ schemaVersion: 6, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {}, businessDisplays: {}, displayPairingCodes: {}, displayTokens: {} });
+const emptyDb = () => ({ schemaVersion: 7, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {}, businessDisplays: {}, displayPairingCodes: {}, displayTokens: {}, paymentIntegrations: {}, paymentOauthStates: {}, paymentAttempts: {} });
 const compactChangeLog = (changes = []) => {
   let latestAccountDirectoryKept = false;
   return [...changes].reverse().filter((change) => {
@@ -380,9 +395,22 @@ const hydrateBarcodeCatalog = (db) => {
 const materializeTenantSnapshot = (tenant = {}) => {
   const dataset = { ...(tenant.sections || {}) };
   for (const [entity, records] of Object.entries(tenant.entities || {})) {
-    dataset[entity] = Object.values(records || {})
+    const values = Object.values(records || {})
       .filter((record) => !record?.deletedAt && record?.value)
       .map((record) => ({ ...record.value, _syncVersion: Number(record.version || 0) }));
+    const cajaKey = entity === "cajaMovimientos" ? "movimientos" : entity === "cajaHistorial" ? "historial" : null;
+    if (entity === "cajaEstado") {
+      const state = values.find((value) => String(value.id) === "actual");
+      if (state) dataset.caja = { ...(dataset.caja || {}), saldo: Number(state.saldo || 0), _syncSaldoVersion: Number(state._syncVersion || 0) };
+      continue;
+    }
+    if (cajaKey) {
+      const merged = new Map((dataset.caja?.[cajaKey] || []).map((item) => [String(item.id), item]));
+      for (const value of values) merged.set(String(value.id), value);
+      dataset.caja = { ...(dataset.caja || {}), [cajaKey]: [...merged.values()] };
+    } else {
+      dataset[entity] = values;
+    }
   }
   const values = {};
   for (const [key, record] of Object.entries(tenant || {})) {
@@ -417,24 +445,18 @@ const writeMirrors = async (db) => {
     Object.entries(db.barcodeCatalog || {}).map(([codigo, item]) => [codigo, item.product || null]),
   ));
   for (const [tenantId, tenant] of Object.entries(db.tenants || {})) {
-    const entities = {};
-    for (const [entity, records] of Object.entries(tenant.entities || {})) {
-      entities[entity] = Object.values(records || {})
-        .filter((item) => !item.deletedAt)
-        .map((item) => ({ ...item.value, _syncVersion: item.version }));
-    }
+    const snapshot = materializeTenantSnapshot(tenant);
     await writeJson(path.join(dataDirectory, "negocios", safeName(tenantId), "datos.json"), {
       tenantId,
       updatedAt: new Date().toISOString(),
-      ...(tenant.sections || {}),
-      ...entities,
+      ...snapshot.dataset,
     });
   }
   const day = new Date().toISOString().slice(0, 10);
   await writeJson(path.join(dataDirectory, "backups", day, "database.json"), db);
 };
 const writeDb = async (db) => {
-  db.schemaVersion = 6;
+  db.schemaVersion = 7;
   ensureReferralMetadata(db);
   db.sessions = compactSessions(db.sessions);
   db.passwordResetTokens = compactPasswordResetTokens(db.passwordResetTokens);
@@ -454,7 +476,7 @@ const send = (res, status, value) => {
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "access-control-allow-origin": "*",
-    "access-control-allow-headers": "content-type,x-device-id,x-tenant-id,authorization",
+    "access-control-allow-headers": "content-type,x-device-id,x-tenant-id,authorization,x-idempotency-key,x-request-id,x-signature",
     "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
   });
   res.end(status === 204 ? "" : JSON.stringify(value));
@@ -1168,11 +1190,35 @@ const createDisplayPairingRequest = (db, deviceId) => {
   };
 };
 const bearer = (req) => String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+const tenantAccount = (db, tenantId) => (db.system?.cuentas || []).find((account) => String(account.id) === String(tenantId));
+const cloudUserForSession = (db, session) => Object.values(db.users || {}).find(
+  (user) => String(user?.id) === String(session?.userId),
+);
+const sessionSubjectIsActive = (db, session) => {
+  if (!session) return false;
+  const user = cloudUserForSession(db, session);
+  if (!user || user.status !== "active") return false;
+  if (String(user.businessId) !== String(session.businessId) || user.role !== session.role) return false;
+  if (session.role === "superAdmin") return true;
+  const account = tenantAccount(db, session.businessId);
+  // Las rutas de bootstrap/register-local crean usuarios aislados sólo para el
+  // servidor local y las pruebas. En producción todo usuario comercial debe
+  // seguir teniendo una cuenta vigente en el padrón central.
+  if (!account) return localMode;
+  if (account.estado === "bloqueada") return false;
+  if (session.role !== "employee") return true;
+  return (account.empleados || []).some((employee) => (
+    (String(employee?.id) === String(user.id)
+      || String(employee?.usuario || "").trim().toLowerCase() === String(user.username || "").trim().toLowerCase())
+    && employee?.estado !== "bloqueado"
+  ));
+};
 const activeSession = (db, req) => {
   const session = db.sessions[bearer(req)];
-  return session && !session.revokedAt && new Date(session.expiresAt) > new Date() ? session : null;
+  return session && !session.revokedAt && new Date(session.expiresAt) > new Date() && sessionSubjectIsActive(db, session)
+    ? session
+    : null;
 };
-const tenantAccount = (db, tenantId) => (db.system?.cuentas || []).find((account) => String(account.id) === String(tenantId));
 const accountCanWrite = (db, tenantId) => {
   const account = tenantAccount(db, tenantId);
   if (!account || account.superAdmin) return true;
@@ -1182,6 +1228,120 @@ const accountCanWrite = (db, tenantId) => {
   const trialExpiresAt = Date.parse(account.trialExpiresAt || "");
   if (Number.isFinite(trialExpiresAt) && trialExpiresAt > Date.now()) return true;
   return account.estado === "aprobada";
+};
+const sessionCanTakePayments = (db, session, tenantId) => {
+  if (!session) return false;
+  if (["owner", "superAdmin"].includes(session.role)) return true;
+  const account = tenantAccount(db, tenantId);
+  const user = cloudUserForSession(db, session);
+  const employee = (account?.empleados || []).find((item) => (
+    String(item?.id) === String(user?.id)
+    || String(item?.usuario || "").trim().toLowerCase() === String(user?.username || "").trim().toLowerCase()
+  ));
+  const role = (account?.roles || []).find((item) => item?.nombre === employee?.rol);
+  return employee?.estado !== "bloqueado" && (role?.permisos || []).includes("ventas");
+};
+const mercadoPagoIntegration = (db, tenantId) => db.paymentIntegrations?.[String(tenantId)]?.mercadoPago || null;
+const paymentIntegrationView = (integration) => integration ? {
+  provider: "mercado_pago",
+  connected: integration.status === "connected",
+  status: integration.status || "disconnected",
+  sellerId: integration.sellerId || null,
+  sellerNickname: integration.sellerNickname || null,
+  connectedAt: integration.connectedAt || null,
+  updatedAt: integration.updatedAt || null,
+  tokenExpiresAt: integration.tokenExpiresAt || null,
+} : { provider: "mercado_pago", connected: false, status: "disconnected" };
+const paymentOrderStatus = (order = {}) => order.status || order.transactions?.payments?.[0]?.status || "pending";
+const paymentProviderSnapshot = (order = {}) => ({
+  id: order.id || null,
+  status: paymentOrderStatus(order),
+  statusDetail: order.status_detail || order.transactions?.payments?.[0]?.status_detail || null,
+  externalReference: order.external_reference || null,
+  totalAmount: Number(order.total_amount || order.transactions?.payments?.[0]?.amount || 0),
+  qrData: order.config?.qr?.qr_data || order.qr_data || null,
+  createdAt: order.created_date || order.date_created || null,
+  lastUpdatedAt: order.last_updated_date || order.date_last_updated || null,
+});
+const paymentAttemptView = (attempt = {}) => ({
+  id: attempt.id,
+  provider: attempt.provider,
+  type: attempt.type,
+  ticketId: attempt.ticketId || null,
+  externalReference: attempt.externalReference,
+  amount: attempt.amount,
+  currency: attempt.currency || "ARS",
+  status: attempt.status,
+  providerStatus: attempt.providerStatus || null,
+  providerStatusDetail: attempt.providerStatusDetail || null,
+  providerOrderId: attempt.providerOrderId || null,
+  qrData: attempt.qrData || null,
+  createdAt: attempt.createdAt,
+  updatedAt: attempt.updatedAt,
+  approvedAt: attempt.approvedAt || null,
+  canceledAt: attempt.canceledAt || null,
+  refundedAt: attempt.refundedAt || null,
+  failure: attempt.failure || null,
+});
+const saveMercadoPagoCredentials = (integration, tokens) => {
+  let previous = {};
+  if (integration.credentialsEncrypted && (!tokens.access_token || !tokens.refresh_token)) {
+    try { previous = decryptPaymentSecret(integration.credentialsEncrypted, mercadoPago.tokenEncryptionKey) || {}; }
+    catch { previous = {}; }
+  }
+  const accessToken = tokens.access_token || previous.accessToken;
+  const refreshToken = tokens.refresh_token || previous.refreshToken;
+  if (!accessToken) throw new Error("Mercado Pago no devolvió un token de acceso");
+  integration.credentialsEncrypted = encryptPaymentSecret({ accessToken, refreshToken }, mercadoPago.tokenEncryptionKey);
+  const expiresIn = Math.max(60, Number(tokens.expires_in || 21600));
+  integration.tokenExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+  integration.updatedAt = new Date().toISOString();
+  return integration;
+};
+const mercadoPagoAccessToken = async (integration) => {
+  if (!integration || integration.status !== "connected") throw new Error("El negocio todavía no conectó su cuenta de Mercado Pago");
+  const credentials = decryptPaymentSecret(integration.credentialsEncrypted, mercadoPago.tokenEncryptionKey) || {};
+  if (!credentials.accessToken) throw new Error("La conexión con Mercado Pago no tiene una credencial válida");
+  if (Date.parse(integration.tokenExpiresAt || "") > Date.now() + 5 * 60 * 1000) return credentials.accessToken;
+  if (!credentials.refreshToken) return credentials.accessToken;
+  const refreshed = await mercadoPagoClient.refreshAccessToken(credentials.refreshToken);
+  saveMercadoPagoCredentials(integration, refreshed);
+  return decryptPaymentSecret(integration.credentialsEncrypted, mercadoPago.tokenEncryptionKey).accessToken;
+};
+const updatePaymentAttemptFromOrder = (attempt, order) => {
+  const snapshot = paymentProviderSnapshot(order);
+  const status = normalizedPaymentStatus(snapshot.status);
+  Object.assign(attempt, {
+    providerOrderId: snapshot.id || attempt.providerOrderId,
+    providerStatus: snapshot.status,
+    providerStatusDetail: snapshot.statusDetail,
+    qrData: snapshot.qrData || attempt.qrData || null,
+    status,
+    updatedAt: new Date().toISOString(),
+    failure: status === "failed" ? { code: snapshot.statusDetail || "provider_rejected", message: "Mercado Pago rechazó el cobro" } : null,
+  });
+  if (status === "approved") attempt.approvedAt ||= attempt.updatedAt;
+  if (status === "canceled" || status === "expired") attempt.canceledAt ||= attempt.updatedAt;
+  if (status === "refunded") attempt.refundedAt ||= attempt.updatedAt;
+  return attempt;
+};
+const paymentFailure = (error) => ({
+  code: String(error?.providerCode || "provider_error").slice(0, 80),
+  message: String(error?.message || "No se pudo procesar el cobro").slice(0, 240),
+});
+const paymentReturnUrl = (status, reason = "") => {
+  try {
+    const url = new URL(mercadoPago.returnUri);
+    url.searchParams.set("payment_connection", status);
+    if (reason) url.searchParams.set("payment_reason", reason.slice(0, 80));
+    return url.toString();
+  } catch {
+    return `https://app.kioscomas.ar/?payment_connection=${encodeURIComponent(status)}`;
+  }
+};
+const redirect = (res, location) => {
+  res.writeHead(302, { location, "cache-control": "no-store" });
+  res.end();
 };
 const isLoopback = (req) => {
   const address = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
@@ -1195,11 +1355,12 @@ const handleRequest = async (req, res) => {
     if (req.url === "/v1/health") return send(res, 200, {
       ok: true,
       service: "kiosco-cloud-local",
-      schemaVersion: 6,
+      schemaVersion: 7,
       localMode,
       deviceActivationRequired: requireDeviceActivation,
       emailDeliveryConfigured: emailService.configured && !emailTestMode,
       pushDeliveryConfigured,
+      paymentProviders: { mercadoPago: mercadoPagoAvailability(mercadoPago) },
       persistence: postgresStore ? "postgresql" : "json",
       revision: String(process.env.RENDER_GIT_COMMIT || "local").slice(0, 12),
       time: new Date().toISOString(),
@@ -1209,6 +1370,93 @@ const handleRequest = async (req, res) => {
         configured: pushDeliveryConfigured,
         publicKey: pushDeliveryConfigured ? vapidPublicKey : null,
       });
+    }
+    if (req.method === "GET" && req.url?.startsWith("/v1/payments/mercado-pago/oauth/callback")) {
+      const url = new URL(req.url, "http://localhost");
+      const rawState = String(url.searchParams.get("state") || "");
+      const providerErrorCode = String(url.searchParams.get("error") || "");
+      const db = await readDb();
+      const stateKey = sha256(rawState);
+      const pending = db.paymentOauthStates?.[stateKey];
+      if (!mercadoPago.ready || !pending || pending.usedAt || Date.parse(pending.expiresAt || "") <= Date.now()) {
+        return redirect(res, paymentReturnUrl("error", "invalid_or_expired_state"));
+      }
+      if (providerErrorCode) {
+        pending.usedAt = new Date().toISOString();
+        pending.result = "provider_denied";
+        await writeDb(db);
+        return redirect(res, paymentReturnUrl("canceled", providerErrorCode));
+      }
+      try {
+        const codeVerifier = decryptPaymentSecret(pending.codeVerifierEncrypted, mercadoPago.tokenEncryptionKey)?.value;
+        const tokens = await mercadoPagoClient.exchangeAuthorizationCode({ code: url.searchParams.get("code"), codeVerifier });
+        const profile = await mercadoPagoClient.currentUser(tokens.access_token);
+        const now = new Date().toISOString();
+        db.paymentIntegrations ||= {};
+        db.paymentIntegrations[pending.tenantId] ||= {};
+        const integration = {
+          ...(db.paymentIntegrations[pending.tenantId].mercadoPago || {}),
+          provider: "mercado_pago",
+          status: "connected",
+          sellerId: String(profile?.id || tokens.user_id || "") || null,
+          sellerNickname: cleanCatalogText(profile?.nickname || profile?.email || "", 120) || null,
+          connectedAt: db.paymentIntegrations[pending.tenantId].mercadoPago?.connectedAt || now,
+          connectedBy: pending.userId,
+          updatedAt: now,
+        };
+        saveMercadoPagoCredentials(integration, tokens);
+        db.paymentIntegrations[pending.tenantId].mercadoPago = integration;
+        pending.usedAt = now;
+        pending.result = "connected";
+        await writeDb(db);
+        return redirect(res, paymentReturnUrl("connected"));
+      } catch (error) {
+        pending.usedAt = new Date().toISOString();
+        pending.result = "exchange_failed";
+        pending.failure = paymentFailure(error);
+        await writeDb(db);
+        return redirect(res, paymentReturnUrl("error", "token_exchange_failed"));
+      }
+    }
+    if (req.method === "POST" && req.url?.startsWith("/v1/payments/mercado-pago/webhook")) {
+      if (!mercadoPago.enabled || !mercadoPago.webhookConfigured) return send(res, 503, { error: "Webhook de Mercado Pago no configurado" });
+      const url = new URL(req.url, "http://localhost");
+      const payload = await body(req);
+      const dataId = String(url.searchParams.get("data.id") || payload?.data?.id || "");
+      const valid = verifyMercadoPagoWebhookSignature({
+        signature: req.headers["x-signature"],
+        requestId: req.headers["x-request-id"],
+        dataId,
+        secret: mercadoPago.webhookSecret,
+      });
+      if (!valid) return send(res, 401, { error: "Firma de webhook inválida" });
+      const db = await readDb();
+      const attempt = Object.values(db.paymentAttempts || {}).find((item) => String(item?.providerOrderId) === dataId);
+      if (!attempt) return send(res, 200, { ok: true, ignored: true });
+      const integration = mercadoPagoIntegration(db, attempt.tenantId);
+      if (!integration) return send(res, 200, { ok: true, ignored: true });
+      try {
+        const accessToken = await mercadoPagoAccessToken(integration);
+        const previousStatus = attempt.status;
+        const order = await mercadoPagoClient.getOrder({ accessToken, orderId: dataId });
+        updatePaymentAttemptFromOrder(attempt, order);
+        if (attempt.status === "approved" && previousStatus !== "approved") {
+          const notification = createPlatformNotification(db, {
+            sourceKey: `payment-approved:${attempt.id}`,
+            title: "Cobro acreditado",
+            message: `Se acreditaron $${Number(attempt.amount || 0).toLocaleString("es-AR")} por ${attempt.externalReference}.`,
+            level: "info",
+            category: "payments",
+            audience: { type: "business", businessIds: [String(attempt.tenantId)] },
+            action: { view: "ventas" },
+          }).notification;
+          await sendPushNotification(db, notification);
+        }
+        await writeDb(db);
+        return send(res, 200, { ok: true });
+      } catch (error) {
+        return send(res, 502, { error: "No se pudo confirmar el estado del cobro" });
+      }
     }
     if (req.method === "POST" && req.url === "/v1/displays/pairing-request") {
       const remoteAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
@@ -1749,6 +1997,9 @@ const handleRequest = async (req, res) => {
       try { cloudPasswordIsValid = !!user && user.status === "active" && verifyPassword(payload.password, user); } catch {}
       if (!cloudPasswordIsValid) user = migrateAppUser(db, username, payload.password);
       if (!user) return send(res, 401, { error: "Credenciales incorrectas" });
+      if (!sessionSubjectIsActive(db, { userId: user.id, businessId: user.businessId, role: user.role })) {
+        return send(res, 403, { error: "Esta cuenta fue bloqueada, eliminada o ya no pertenece al negocio" });
+      }
       const activation = db.activations?.[deviceId];
       if (requireDeviceActivation && (!activation || activation.revokedAt)) {
         return send(res, 403, { error: "Este dispositivo todavía no fue autorizado. Ingresá una clave de activación antes de iniciar sesión." });
@@ -1790,6 +2041,7 @@ const handleRequest = async (req, res) => {
       });
       if (!entry) return send(res, 401, { error: "Sesión inválida" });
       const [, old] = entry;
+      if (!sessionSubjectIsActive(db, old)) return send(res, 401, { error: "La cuenta ya no está habilitada" });
       if (db.devices[old.deviceId]?.revokedAt) return send(res, 403, { error: "Dispositivo bloqueado" });
       const activation = db.activations?.[old.deviceId];
       if (requireDeviceActivation && (!activation || activation.revokedAt)) {
@@ -1925,6 +2177,164 @@ const handleRequest = async (req, res) => {
 
     if (!["GET", "OPTIONS"].includes(req.method) && session?.role !== "superAdmin" && !req.url.startsWith("/v1/admin/") && !req.url.startsWith("/v1/notifications") && req.url !== "/v1/issues" && !accountCanWrite(db, tenantId)) {
       return send(res, 403, { error: "El abono está vencido. La cuenta se encuentra en modo consulta." });
+    }
+
+    if (req.url?.startsWith("/v1/payments")) {
+      db.paymentIntegrations ||= {};
+      db.paymentOauthStates ||= {};
+      db.paymentAttempts ||= {};
+      const integration = () => mercadoPagoIntegration(db, tenantId);
+      const ownerRequired = () => ["owner", "superAdmin"].includes(session?.role);
+
+      if (req.method === "GET" && req.url === "/v1/payments/providers") {
+        return send(res, 200, {
+          providers: [{
+            ...mercadoPagoAvailability(mercadoPago),
+            ...paymentIntegrationView(integration()),
+            capabilities: ["dynamic_qr", "point_terminal", "status", "cancel", "refund", "webhooks"],
+          }],
+        });
+      }
+
+      if (req.method === "POST" && req.url === "/v1/payments/mercado-pago/oauth/start") {
+        if (!ownerRequired()) return send(res, 403, { error: "Sólo el dueño puede conectar la cuenta de Mercado Pago" });
+        if (!mercadoPago.ready) return send(res, 503, { error: "El backend de Mercado Pago está preparado pero todavía no fue habilitado o configurado" });
+        const now = Date.now();
+        db.paymentOauthStates = Object.fromEntries(Object.entries(db.paymentOauthStates).filter(([, item]) => !item?.usedAt && Date.parse(item?.expiresAt || "") > now));
+        const state = token();
+        const pkce = createPkcePair();
+        db.paymentOauthStates[sha256(state)] = {
+          provider: "mercado_pago",
+          tenantId,
+          userId: session.userId,
+          deviceId,
+          codeVerifierEncrypted: encryptPaymentSecret({ value: pkce.verifier }, mercadoPago.tokenEncryptionKey),
+          createdAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + 10 * 60 * 1000).toISOString(),
+          usedAt: null,
+        };
+        await writeDb(db);
+        return send(res, 201, {
+          authorizationUrl: buildMercadoPagoAuthorizationUrl(mercadoPago, { state, codeChallenge: pkce.challenge }),
+          expiresAt: db.paymentOauthStates[sha256(state)].expiresAt,
+        });
+      }
+
+      if (req.method === "DELETE" && req.url === "/v1/payments/mercado-pago/connection") {
+        if (!ownerRequired()) return send(res, 403, { error: "Sólo el dueño puede desconectar la cuenta de Mercado Pago" });
+        const current = integration();
+        if (current) {
+          delete current.credentialsEncrypted;
+          current.status = "disconnected";
+          current.disconnectedAt = new Date().toISOString();
+          current.updatedAt = current.disconnectedAt;
+          current.disconnectedBy = session.userId;
+          await writeDb(db);
+        }
+        return send(res, 200, { ok: true, integration: paymentIntegrationView(current) });
+      }
+
+      if (req.method === "POST" && req.url === "/v1/payments/attempts") {
+        if (!sessionCanTakePayments(db, session, tenantId)) return send(res, 403, { error: "La cuenta no tiene permiso para cobrar ventas" });
+        if (!mercadoPago.ready) return send(res, 503, { error: "El backend de Mercado Pago todavía no está habilitado" });
+        const currentIntegration = integration();
+        if (!currentIntegration || currentIntegration.status !== "connected") return send(res, 409, { error: "Primero conectá la cuenta de Mercado Pago del negocio" });
+        const payload = await body(req);
+        const type = String(payload.type || "").trim().toLowerCase();
+        if (!["qr", "point"].includes(type)) return send(res, 400, { error: "El tipo debe ser qr o point" });
+        const idempotencyKey = cleanCatalogText(req.headers["x-idempotency-key"] || payload.idempotencyKey || "", 120);
+        if (idempotencyKey.length < 8) return send(res, 400, { error: "El cobro requiere una clave de idempotencia estable" });
+        const existingAttempt = Object.values(db.paymentAttempts).find((item) => item.tenantId === tenantId && item.provider === "mercado_pago" && item.idempotencyKey === idempotencyKey);
+        if (existingAttempt) return send(res, 200, { attempt: paymentAttemptView(existingAttempt), replayed: true });
+        let amount;
+        try { amount = Number(type === "qr" ? buildQrOrderPayload({ ...payload, externalReference: payload.externalReference || payload.ticketId }).total_amount : buildPointOrderPayload({ ...payload, externalReference: payload.externalReference || payload.ticketId }).total_amount); }
+        catch (error) { return send(res, 400, { error: error.message }); }
+        const id = crypto.randomUUID();
+        const externalReference = cleanCatalogText(payload.externalReference || payload.ticketId || id, 64);
+        const now = new Date().toISOString();
+        const attempt = {
+          id,
+          tenantId,
+          provider: "mercado_pago",
+          type,
+          ticketId: cleanCatalogText(payload.ticketId || "", 120) || null,
+          externalReference,
+          amount,
+          currency: "ARS",
+          status: "creating",
+          providerStatus: null,
+          providerOrderId: null,
+          idempotencyKey,
+          createdBy: session.userId,
+          deviceId,
+          createdAt: now,
+          updatedAt: now,
+          history: [{ status: "creating", at: now }],
+        };
+        db.paymentAttempts[id] = attempt;
+        try {
+          const accessToken = await mercadoPagoAccessToken(currentIntegration);
+          const orderPayload = type === "qr"
+            ? buildQrOrderPayload({ ...payload, amount, externalReference })
+            : buildPointOrderPayload({ ...payload, amount, externalReference });
+          const order = await mercadoPagoClient.createOrder({ accessToken, payload: orderPayload, idempotencyKey });
+          updatePaymentAttemptFromOrder(attempt, order);
+          attempt.history.push({ status: attempt.status, providerStatus: attempt.providerStatus, at: attempt.updatedAt });
+          await writeDb(db);
+          return send(res, 201, { attempt: paymentAttemptView(attempt) });
+        } catch (error) {
+          attempt.status = "failed";
+          attempt.failure = paymentFailure(error);
+          attempt.updatedAt = new Date().toISOString();
+          attempt.history.push({ status: "failed", code: attempt.failure.code, at: attempt.updatedAt });
+          await writeDb(db);
+          return send(res, 502, { error: attempt.failure.message, attempt: paymentAttemptView(attempt) });
+        }
+      }
+
+      if (req.method === "GET" && (req.url === "/v1/payments/attempts" || req.url.startsWith("/v1/payments/attempts?"))) {
+        const url = new URL(req.url, "http://localhost");
+        const status = String(url.searchParams.get("status") || "");
+        const attempts = Object.values(db.paymentAttempts)
+          .filter((item) => item.tenantId === tenantId && (!status || item.status === status))
+          .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")))
+          .slice(0, 100)
+          .map(paymentAttemptView);
+        return send(res, 200, { attempts });
+      }
+
+      const attemptMatch = req.url.match(/^\/v1\/payments\/attempts\/([^/?]+)(?:\/(refresh|cancel|refund))?$/);
+      if (attemptMatch) {
+        const attempt = db.paymentAttempts[decodeURIComponent(attemptMatch[1])];
+        if (!attempt || attempt.tenantId !== tenantId) return send(res, 404, { error: "Cobro inexistente" });
+        if (req.method === "GET" && !attemptMatch[2]) return send(res, 200, { attempt: paymentAttemptView(attempt) });
+        if (req.method !== "POST" || !attemptMatch[2]) return send(res, 405, { error: "Operación no permitida" });
+        if (!sessionCanTakePayments(db, session, tenantId)) return send(res, 403, { error: "La cuenta no tiene permiso para administrar cobros" });
+        const currentIntegration = integration();
+        if (!mercadoPago.ready || !currentIntegration || !attempt.providerOrderId) return send(res, 409, { error: "El cobro todavía no tiene una orden operable en Mercado Pago" });
+        try {
+          const accessToken = await mercadoPagoAccessToken(currentIntegration);
+          let order;
+          if (attemptMatch[2] === "refresh") order = await mercadoPagoClient.getOrder({ accessToken, orderId: attempt.providerOrderId });
+          if (attemptMatch[2] === "cancel") {
+            attempt.cancelIdempotencyKey ||= crypto.randomUUID();
+            order = await mercadoPagoClient.cancelOrder({ accessToken, orderId: attempt.providerOrderId, idempotencyKey: attempt.cancelIdempotencyKey });
+          }
+          if (attemptMatch[2] === "refund") {
+            if (attempt.status !== "approved") return send(res, 409, { error: "Sólo se puede devolver un cobro acreditado" });
+            attempt.refundIdempotencyKey ||= crypto.randomUUID();
+            order = await mercadoPagoClient.refundOrder({ accessToken, orderId: attempt.providerOrderId, idempotencyKey: attempt.refundIdempotencyKey });
+          }
+          updatePaymentAttemptFromOrder(attempt, order);
+          attempt.history.push({ status: attempt.status, providerStatus: attempt.providerStatus, action: attemptMatch[2], at: attempt.updatedAt });
+          await writeDb(db);
+          return send(res, 200, { attempt: paymentAttemptView(attempt) });
+        } catch (error) {
+          return send(res, 502, { error: paymentFailure(error).message, attempt: paymentAttemptView(attempt) });
+        }
+      }
+
+      return send(res, 404, { error: "Ruta de pagos inexistente" });
     }
 
     if (req.url?.startsWith("/v1/admin/accounts")) {

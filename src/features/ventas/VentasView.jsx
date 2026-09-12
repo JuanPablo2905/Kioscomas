@@ -10,7 +10,7 @@ import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money,
 import { SectionHeader } from "../../shared/layout";
 import { ScanModal } from "../../shared/ScanModal";
 import { AppSelect, ConfirmDialog, NumberInput } from "../../shared/controls";
-import { calcularDescuento, calcularPromocionesAplicadas, promocionesParaPantalla } from "./salesRules";
+import { calcularDescuento, calcularPromocionesAplicadas, crearIdOperacion, crearIdentidadTicket, numeroTicket, promocionesParaPantalla } from "./salesRules";
 import { groupProductFamilies, productVariant } from "../../shared/productFamilies";
 import { openCashDrawer, printTicket } from "../../shared/ticketPrint";
 import { SmallBusinessTools } from "../gestion/SmallBusinessTools";
@@ -1005,7 +1005,7 @@ export function VentasView({
   const suspenderVenta = () => {
     if (!cart.length || !setVentasSuspendidas) return;
     const fecha = new Date().toISOString();
-    setVentasSuspendidas((prev) => [...prev, { id: Date.now(), nombre: nombreSuspendida.trim() || `Venta ${prev.length + 1}`, fecha, cart: cart.map((item) => ({ ...item })), descuentoTipo, descuentoValor, total }]);
+    setVentasSuspendidas((prev) => [...prev, { id: crearIdOperacion("venta-suspendida"), nombre: nombreSuspendida.trim() || `Venta ${prev.length + 1}`, fecha, cart: cart.map((item) => ({ ...item })), descuentoTipo, descuentoValor, total }]);
     setCart([]);
     setNombreSuspendida("");
     setDescuentoValor(0);
@@ -1119,10 +1119,9 @@ export function VentasView({
       })
     );
     const fecha = new Date();
-    setTickets((prev) => {
-      const nextId = Math.max(0, ...prev.map((item) => Number(item.id) || 0)) + 1;
-      const ticket = {
-        id: nextId,
+    const identidadTicket = crearIdentidadTicket(fecha);
+    const ticket = {
+      ...identidadTicket,
         fecha: fecha.toISOString(),
         medio,
         pagos: medio === "Pago combinado" ? pagos : [{ metodo: medio, monto: total }],
@@ -1160,10 +1159,9 @@ export function VentasView({
         promociones: promoAplicada.detalles.map((detail) => ({ id: detail.promocion.id, nombre: detail.promocion.nombre, etiqueta: detail.etiqueta, descuento: detail.descuento })),
         descuentoTipo: descuentoManual > 0 ? descuentoTipo : null,
         descuentoValor: descuentoManual > 0 ? Number(descuentoValor) : 0,
-      };
-      queueMicrotask(() => setTicketParaImprimir(ticket));
-      return [...prev, ticket];
-    });
+    };
+    setTickets((prev) => [...prev, ticket]);
+    queueMicrotask(() => setTicketParaImprimir(ticket));
 
     const efectivoCobrado = medio === "Efectivo" ? total : medio === "Pago combinado" ? Number(pagos.find((pago) => pago.metodo === "Efectivo")?.monto || 0) : 0;
     if (efectivoCobrado > 0) {
@@ -1173,7 +1171,7 @@ export function VentasView({
         movimientos: [
           ...prev.movimientos,
           {
-            id: prev.movimientos.length + 1,
+            id: crearIdOperacion("caja-venta"),
             tipo: "ingreso",
             monto: efectivoCobrado,
             nota: medio === "Pago combinado" ? "Venta (parte en efectivo)" : "Venta (efectivo)",
@@ -1191,7 +1189,7 @@ export function VentasView({
                 movimientos: [
                   ...c.movimientos,
                   {
-                    id: c.movimientos.length + 1,
+                    id: crearIdOperacion("cliente-deuda"),
                     tipo: "deuda",
                     monto: total,
                     nota: "Venta a cuenta corriente",
@@ -1220,7 +1218,7 @@ export function VentasView({
         movimientos: [
           ...prev.movimientos,
           {
-            id: prev.movimientos.length + 1,
+            id: crearIdOperacion("caja"),
             tipo,
             monto,
             nota: notaFinal,
@@ -1240,7 +1238,7 @@ export function VentasView({
       movimientos: [
         ...prev.movimientos,
         {
-          id: prev.movimientos.length + 1,
+          id: crearIdOperacion("caja"),
           tipo: "ingreso",
           monto: montoApertura,
           nota: contado ? "Apertura de caja (billetes contados)" : "Apertura de caja (sin contar billetes)",
@@ -1250,7 +1248,7 @@ export function VentasView({
       historial: [
         ...prev.historial,
         {
-          id: prev.historial.length + 1,
+          id: crearIdOperacion("caja-apertura"),
           tipo: "apertura",
           monto: montoApertura,
           detalle,
@@ -1272,7 +1270,7 @@ export function VentasView({
       historial: [
         ...prev.historial,
         {
-          id: prev.historial.length + 1,
+          id: crearIdOperacion("caja-cierre"),
           tipo: "cierre",
           monto: montoContado,
           esperado: prev.saldo,
@@ -1551,7 +1549,7 @@ export function VentasView({
           }}
         />
       )}
-      {ticketParaImprimir && !["automatica","nunca"].includes(preferences.ticketPrintMode) && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-2 sm:p-4"><div className="mobile-dialog max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 sm:p-6"><h2 className="text-lg font-bold">Venta registrada</h2><p className="mt-1 text-sm opacity-65">Ticket #{ticketParaImprimir.id} · {money(ticketParaImprimir.total)}</p><p className="mt-4 text-sm font-semibold">¿Qué querés hacer con el ticket?</p><p className="mt-1 text-xs opacity-60">Podés enviarlo, imprimirlo o terminar la venta sin hacer nada.</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><input value={sharePhone} onChange={(event)=>setSharePhone(event.target.value)} placeholder="WhatsApp del cliente" className="rounded-lg border px-3 py-2 text-sm"/><input type="email" value={shareEmail} onChange={(event)=>setShareEmail(event.target.value)} placeholder="Correo del cliente" className="rounded-lg border px-3 py-2 text-sm"/></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><button onClick={()=>setTicketParaImprimir(null)} className="rounded-lg border px-3 py-2 text-sm">No hacer nada</button><button onClick={()=>openWhatsApp({phone:sharePhone,text:ticketMessage(ticketParaImprimir,businessName)})} className="flex items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white"><MessageCircle size={15}/>WhatsApp</button><button onClick={()=>openEmailDraft({to:shareEmail,subject:`Ticket #${ticketParaImprimir.id} - ${businessName}`,body:ticketMessage(ticketParaImprimir,businessName)})} className="flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-sm"><Mail size={15}/>Correo</button><button onClick={()=>printTicket(ticketParaImprimir,{businessName,paper:preferences.ticketPaper,template:ticketConfig.ticket})} className="rounded-lg bg-gray-900 px-3 py-2 text-sm text-white">Imprimir</button></div><button onClick={async()=>{try{await copyText(ticketMessage(ticketParaImprimir,businessName));setTicketCopied(true);}catch{}}} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs"><Copy size={14}/>{ticketCopied?"Ticket copiado":"Copiar texto del ticket"}</button></div></div>}
+      {ticketParaImprimir && !["automatica","nunca"].includes(preferences.ticketPrintMode) && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-2 sm:p-4"><div className="mobile-dialog max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-xl bg-white p-4 sm:p-6"><h2 className="text-lg font-bold">Venta registrada</h2><p className="mt-1 text-sm opacity-65">Ticket #{numeroTicket(ticketParaImprimir)} · {money(ticketParaImprimir.total)}</p><p className="mt-4 text-sm font-semibold">¿Qué querés hacer con el ticket?</p><p className="mt-1 text-xs opacity-60">Podés enviarlo, imprimirlo o terminar la venta sin hacer nada.</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><input value={sharePhone} onChange={(event)=>setSharePhone(event.target.value)} placeholder="WhatsApp del cliente" className="rounded-lg border px-3 py-2 text-sm"/><input type="email" value={shareEmail} onChange={(event)=>setShareEmail(event.target.value)} placeholder="Correo del cliente" className="rounded-lg border px-3 py-2 text-sm"/></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><button onClick={()=>setTicketParaImprimir(null)} className="rounded-lg border px-3 py-2 text-sm">No hacer nada</button><button onClick={()=>openWhatsApp({phone:sharePhone,text:ticketMessage(ticketParaImprimir,businessName)})} className="flex items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white"><MessageCircle size={15}/>WhatsApp</button><button onClick={()=>openEmailDraft({to:shareEmail,subject:`Ticket #${numeroTicket(ticketParaImprimir)} - ${businessName}`,body:ticketMessage(ticketParaImprimir,businessName)})} className="flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-sm"><Mail size={15}/>Correo</button><button onClick={()=>printTicket(ticketParaImprimir,{businessName,paper:preferences.ticketPaper,template:ticketConfig.ticket})} className="rounded-lg bg-gray-900 px-3 py-2 text-sm text-white">Imprimir</button></div><button onClick={async()=>{try{await copyText(ticketMessage(ticketParaImprimir,businessName));setTicketCopied(true);}catch{}}} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs"><Copy size={14}/>{ticketCopied?"Ticket copiado":"Copiar texto del ticket"}</button></div></div>}
 
       {scanOpen && (
         <ScanModal continuous products={products} preferences={preferences} onClose={() => setScanOpen(false)} onDetected={handleScanned} />

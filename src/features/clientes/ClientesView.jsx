@@ -10,6 +10,7 @@ import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money 
 import { SectionHeader } from "../../shared/layout";
 import { AppSelect } from "../../shared/controls";
 import { SmallBusinessTools } from "../gestion/SmallBusinessTools";
+import { crearIdOperacion, efectivoDeTicket, numeroTicket, ticketActivo } from "../ventas/salesRules";
 
 function ClienteModal({ onClose, onSave }) {
   const [nombre, setNombre] = useState("");
@@ -195,7 +196,10 @@ function DeudaManualModal({ cliente, onClose, onConfirm }) {
 function VincularTicketModal({ cliente, tickets, onClose, onConfirm }) {
   const [selected, setSelected] = useState(null);
   const disponibles = tickets.filter(
-    (t) => !t.clienteId && t.medio !== "Cuenta corriente"
+    (t) => !t.clienteId
+      && t.medio !== "Cuenta corriente"
+      && ticketActivo(t)
+      && Math.abs(efectivoDeTicket(t) - Number(t.total || 0)) < 0.01
   );
 
   return (
@@ -212,8 +216,7 @@ function VincularTicketModal({ cliente, tickets, onClose, onConfirm }) {
 
         {disponibles.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-6">
-            No hay tickets sueltos para vincular. Todos ya están asociados a
-            algún cliente.
+            No hay tickets activos pagados completamente en efectivo para vincular.
           </p>
         ) : (
           <div className="space-y-2 max-h-72 overflow-y-auto mb-5">
@@ -229,7 +232,7 @@ function VincularTicketModal({ cliente, tickets, onClose, onConfirm }) {
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900">
-                    Ticket #{t.id}
+                    Ticket #{numeroTicket(t)}
                   </p>
                   <p className="text-xs text-gray-500">
                     {new Date(t.fecha).toLocaleString("es-AR")} ·{" "}
@@ -359,7 +362,7 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
   const handleNuevoCliente = ({ nombre, telefono }) => {
     setClientes((prev) => [
       ...prev,
-      { id: Date.now(), nombre, telefono, saldo: 0, movimientos: [] },
+      { id: crearIdOperacion("cliente"), nombre, telefono, saldo: 0, movimientos: [] },
     ]);
     setNuevoOpen(false);
   };
@@ -380,7 +383,7 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
           movimientos: [
             ...c.movimientos,
             {
-              id: `pago-${Date.now()}`,
+              id: crearIdOperacion("cliente-pago"),
               tipo: "pago",
               monto: montoAplicado,
               nota: `Pago recibido (${medio})`,
@@ -397,7 +400,7 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
         movimientos: [
           ...prev.movimientos,
           {
-            id: `cobro-fiado-${Date.now()}`,
+            id: crearIdOperacion("caja-cobro-fiado"),
             tipo: "ingreso",
             monto: montoAplicado,
             nota: `Cobro fiado - ${clienteQuePaga.nombre}`,
@@ -421,7 +424,7 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
               movimientos: [
                 ...c.movimientos,
                 {
-                  id: `deuda-manual-${Date.now()}`,
+                  id: crearIdOperacion("cliente-deuda-manual"),
                   tipo: "deuda",
                   monto: montoValido,
                   nota,
@@ -438,7 +441,8 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
 
   const handleVincular = (ticketId) => {
     const ticket = tickets.find((t) => t.id === ticketId);
-    if (!ticket || ticket.clienteId || ticket.medio === "Cuenta corriente") return;
+    if (!ticketActivo(ticket) || ticket.clienteId || ticket.medio === "Cuenta corriente" || Math.abs(efectivoDeTicket(ticket) - Number(ticket.total || 0)) >= 0.01) return;
+    const visibleNumber = numeroTicket(ticket);
     setClientes((prev) =>
       prev.map((c) =>
         c.id === vincularCliente.id
@@ -448,10 +452,10 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
               movimientos: [
                 ...c.movimientos,
                 {
-                  id: `ticket-${ticket.id}-${Date.now()}`,
+                  id: crearIdOperacion("cliente-ticket"),
                   tipo: "deuda",
                   monto: ticket.total,
-                  nota: `Ticket #${ticket.id} vinculado como fiado`,
+                  nota: `Ticket #${visibleNumber} vinculado como fiado`,
                   fecha: new Date().toLocaleString("es-AR"),
                   ticketId: ticket.id,
                   origen: "ticket",
@@ -468,7 +472,10 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
               ...t,
               clienteId: vincularCliente.id,
               clienteNombre: vincularCliente.nombre,
+              medioOriginal: t.medio,
+              pagosOriginales: t.pagos || [{ metodo: t.medio, monto: t.total }],
               medio: "Cuenta corriente",
+              pagos: [{ metodo: "Cuenta corriente", monto: Number(t.total || 0) }],
               fiado: true,
               fechaVinculacion: new Date().toISOString(),
             }
@@ -482,10 +489,10 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
         movimientos: [
           ...prev.movimientos,
           {
-            id: `ajuste-fiado-${ticket.id}-${Date.now()}`,
+            id: crearIdOperacion("caja-ajuste-fiado"),
             tipo: "egreso",
             monto: ticket.total,
-            nota: `Ticket #${ticket.id} pasado a fiado - ${vincularCliente.nombre}`,
+            nota: `Ticket #${visibleNumber} pasado a fiado - ${vincularCliente.nombre}`,
             fecha: new Date().toLocaleString("es-AR"),
           },
         ],

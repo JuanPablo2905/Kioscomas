@@ -4,6 +4,7 @@ import { CATEGORIES, formatQuantity, money, unidadInfo } from "../../shared/doma
 import { SectionHeader } from "../../shared/layout";
 import { AppSelect } from "../../shared/controls";
 import { applyInventory, inventoryDifference, stockTotal } from "./inventoryRules";
+import { crearIdOperacion } from "../ventas/salesRules";
 
 function NuevoConteoModal({ onClose, onStart }) {
   const [category, setCategory] = useState("Todas");
@@ -22,7 +23,7 @@ export function InventoryView({ products, setProducts, inventarios = [], setInve
   const confirm = () => {
     const result = counted.map((product) => ({ productId: product.id, nombre: product.nombre, ...inventoryDifference(product, entries[product.id]) }));
     setProducts((current) => applyInventory(current, result));
-    setInventarios((current) => [{ id: Date.now(), fecha: new Date().toISOString(), categoria: draft.category, responsable: identidad?.nombre || "Sin identificar", items: result, diferenciaCosto: summary.cost }, ...current]);
+    setInventarios((current) => [{ id: crearIdOperacion("inventario"), fecha: new Date().toISOString(), categoria: draft.category, responsable: identidad?.nombre || "Sin identificar", items: result, diferenciaCosto: summary.cost }, ...current]);
     setDraft(null);
   };
   return (

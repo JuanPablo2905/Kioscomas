@@ -3,11 +3,12 @@ import { Banknote, BellRing, Check, ClipboardList, Clock, Copy, PackageOpen, Plu
 import { money } from "../../shared/domain";
 import { AppSelect, PromptDialog } from "../../shared/controls";
 import { KioscoDatePicker } from "../../shared/KioscoDatePicker";
+import { crearIdOperacion, ticketActivo } from "../ventas/salesRules";
 
 const sections = [["lista","Lista de compras",ClipboardList],["retornables","Retornables",PackageOpen],["cambio","Cambio",Banknote],["autoconsumo","Autoconsumo",RotateCcw],["turnos","Turnos",Users],["recordatorios","Recordatorios",BellRing],["resumen","Resumen diario",Printer]];
 const input = "w-full rounded-lg border px-3 py-2 text-sm";
 const today = () => new Date().toISOString().slice(0,10);
-const addItem = (setter, payload) => setter((prev) => [{ id: Date.now(), fecha: new Date().toISOString(), ...payload }, ...(prev || [])]);
+const addItem = (setter, payload) => setter((prev) => [{ id: crearIdOperacion("gestion"), fecha: new Date().toISOString(), ...payload }, ...(prev || [])]);
 
 export function SmallBusinessTools({ data, setters, identidad, preferences = {}, sectionsAllowed = sections.map(([id]) => id), staffOptions = [] }) {
   const visibleSections = sections.filter(([id]) => sectionsAllowed.includes(id));
@@ -16,7 +17,7 @@ export function SmallBusinessTools({ data, setters, identidad, preferences = {},
   const [form, setForm] = useState({ texto:"", cantidad:"1", persona:"", monto:"", productId:"", nota:"", fecha:today(), hora:"09:00", proveedorId:"" });
   const set = (key,value) => setForm((prev)=>({...prev,[key]:value}));
   const clear = () => setForm({ texto:"", cantidad:"1", persona:"", monto:"", productId:"", nota:"", fecha:today(), hora:"09:00", proveedorId:"" });
-  const ticketsHoy = useMemo(() => (data.tickets||[]).filter((t)=>!t.anulado&&String(t.fecha).slice(0,10)===today()),[data.tickets]);
+  const ticketsHoy = useMemo(() => (data.tickets||[]).filter((t)=>ticketActivo(t)&&String(t.fecha).slice(0,10)===today()),[data.tickets]);
   const gastosHoy = useMemo(() => (data.gastos||[]).filter((g)=>String(g.fecha||g.vencimiento).slice(0,10)===today()),[data.gastos]);
   const ventas = ticketsHoy.reduce((s,t)=>s+Number(t.total||0),0), gastos = gastosHoy.reduce((s,g)=>s+Number(g.monto||0),0);
   const metodos = ticketsHoy.flatMap((t)=>t.pagos?.length?t.pagos:[{metodo:t.medio,monto:t.total}]).reduce((map,p)=>({...map,[p.metodo]:(map[p.metodo]||0)+Number(p.monto||0)}),{});

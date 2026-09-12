@@ -1,5 +1,53 @@
 [
   {
+    "version": "0.2.20",
+    "date": "2026-09-12",
+    "title": "Operaciones más seguras y base de pagos",
+    "summary": "Reforzamos ventas, devoluciones, caja, compras e importaciones y dejamos preparado el backend de Mercado Pago sin activar cobros en la interfaz.",
+    "sections": [
+      {
+        "title": "Ventas, caja y devoluciones",
+        "items": [
+          "Cada venta ahora usa un identificador interno único y un número corto separado para mostrar, imprimir y escanear, evitando choques entre cajas.",
+          "Anulaciones y devoluciones comparten un único estado: dejan de sumar en reportes, comprobantes y reposición automática, sin borrar el historial.",
+          "La devolución completa vuelve a ingresar el stock, ajusta efectivo o cuenta corriente y exige confirmar un motivo antes de aplicarse.",
+          "Los cobros con tarjeta, transferencia u otro medio externo quedan marcados con reintegro pendiente para que la app no dé por devuelto dinero que todavía no salió del proveedor.",
+          "Movimientos, eventos y saldo de caja se sincronizan como registros versionados; dos equipos que cobran al mismo tiempo ya no reemplazan la actividad del otro."
+        ]
+      },
+      {
+        "title": "Compras, stock y etiquetas",
+        "items": [
+          "La recepción de mercadería valida la cantidad pendiente y avisa claramente antes de aceptar un excedente accidental.",
+          "Las importaciones reconocen números argentinos como 1.234,56, detectan correctamente CSV con coma o punto y coma y conservan los datos existentes cuando una celda viene vacía.",
+          "Las etiquetas ahora dibujan códigos EAN-8, UPC-A o EAN-13 reales y usan Code 39 válido cuando el producto posee otro formato.",
+          "Productos, clientes, proveedores, gastos, pedidos, inventarios, comprobantes y otros registros nuevos usan identificadores resistentes a altas simultáneas."
+        ]
+      },
+      {
+        "title": "Acceso y auditoría",
+        "items": [
+          "El servidor vuelve a validar la cuenta en cada solicitud y renovación: bloquear o eliminar un negocio o empleado invalida también sus sesiones abiertas.",
+          "Los pedidos del historial muestran proveedor, productos y cantidades en lugar de códigos internos, incluso al traducir registros anteriores."
+        ]
+      },
+      {
+        "title": "Mercado Pago preparado, todavía apagado",
+        "items": [
+          "Quedó implementado el backend por negocio para OAuth con PKCE, tokens cifrados, QR dinámico y órdenes para terminales Mercado Pago Point.",
+          "También se prepararon consulta de estado, idempotencia, cancelación, devolución completa y webhooks firmados con aviso de acreditación.",
+          "La función permanece desactivada y sin botones visibles hasta configurar credenciales de prueba en Render y habilitarla expresamente."
+        ]
+      },
+      {
+        "title": "Calidad",
+        "items": [
+          "Sumamos pruebas para importaciones regionales, migración y concurrencia de caja, estados de ventas, cifrado de credenciales, payloads QR y Point, idempotencia y firmas de webhook."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.19",
     "date": "2026-09-11",
     "title": "Bienvenida libre y adaptable",
@@ -20,6 +68,13 @@
         "items": [
           "Agregamos comprobaciones automáticas para conservar la posición libre y la adaptación de la bienvenida incluso con tamaños extremos.",
           "La publicación ahora comprueba que la portada conserve sus estilos fundamentales antes de aceptar una nueva versión."
+        ]
+      },
+      {
+        "title": "Administración y auditoría",
+        "items": [
+          "Los movimientos de pedidos ahora muestran el proveedor, los productos y las cantidades en lugar del identificador interno del pedido.",
+          "Los registros antiguos también se traducen automáticamente al mostrarlos y dejan de exponer códigos técnicos aunque el pedido ya no exista."
         ]
       }
     ]

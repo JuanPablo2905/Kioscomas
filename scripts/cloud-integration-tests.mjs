@@ -41,6 +41,8 @@ try {
     try { if ((await fetch(`${base}/v1/health`)).ok) break; } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  const health = await request("/v1/health");
+  test("salud informa pagos sin exponer credenciales", health.value.schemaVersion === 7 && health.value.paymentProviders?.mercadoPago?.backendEnabled === false && !JSON.stringify(health.value).includes("clientSecret"));
   const providers = await request("/v1/catalog/providers");
   test("servidor informa catálogos gratuitos y opcionales", providers.value.providers?.some((provider) => provider.id === "open-facts" && provider.enabled) && providers.value.providers?.some((provider) => provider.id === "go-upc" && !provider.enabled));
   const boot = await request("/v1/auth/bootstrap", {
@@ -181,6 +183,8 @@ try {
     "x-tenant-id": registeredAccount.id,
     authorization: `Bearer ${pendingLogin.value.accessToken}`,
   };
+  const paymentProviders = await request("/v1/payments/providers", { headers: pendingHeaders });
+  test("el negocio puede consultar pagos aunque el backend siga apagado", paymentProviders.response.ok && paymentProviders.value.providers?.[0]?.provider === "mercado_pago" && paymentProviders.value.providers?.[0]?.connected === false);
   const pendingWrite = await request("/v1/sync/push", { method: "POST", headers: pendingHeaders, body: JSON.stringify({ operations: [] }) });
   test("una cuenta en beta puede trabajar sin registrar un pago", pendingWrite.response.ok);
   const deliveryDate = argentinaDateKey(Date.now());
@@ -300,14 +304,27 @@ try {
     body: JSON.stringify({ deviceId: "activation-pc", name: "Cuenta descartable", email: "disposable@example.com", businessName: "Negocio descartable", username: "disposable-owner", password: "new-secret", ...acceptedTerms }),
   });
   const disposableId = disposableRegistration.value.account?.id;
+  const disposableLogin = await request("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "disposable-owner", password: "new-secret", deviceId: "activation-pc" }),
+  });
+  const disposableHeaders = {
+    "content-type": "application/json",
+    "x-device-id": "activation-pc",
+    "x-tenant-id": disposableId,
+    authorization: `Bearer ${disposableLogin.value.accessToken}`,
+  };
   const deletedAccount = await request(`/v1/admin/accounts/${disposableId}`, { method: "DELETE", headers: centralHeaders });
   const directoryAfterDelete = await request("/v1/admin/accounts", { headers: centralHeaders });
+  const deletedAccountOpenSession = await request("/v1/sync/bootstrap", { headers: disposableHeaders });
   const deletedAccountLogin = await request("/v1/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username: "disposable-owner", password: "new-secret", deviceId: "activation-pc" }),
   });
   test("el botón Eliminar borra el negocio y desvincula sus accesos", disposableRegistration.response.status === 201 && deletedAccount.response.ok && !directoryAfterDelete.value.accounts?.some((item) => item.id === disposableId) && deletedAccountLogin.response.status === 401);
+  test("eliminar un negocio corta también sus sesiones que ya estaban abiertas", disposableLogin.response.ok && deletedAccountOpenSession.response.status === 401);
   const staleDeletedAccountPush = await request("/v1/sync/push", {
     method: "POST",
     headers: centralHeaders,
@@ -529,6 +546,16 @@ try {
   test("dos cajas pueden guardar tickets simultáneos", concurrentTickets.every((result) => result.value.acceptedIds?.length === 1));
   const ticketsAfterConcurrentSales = await request("/v1/sync/bootstrap", { headers });
   test("ninguna venta simultánea reemplaza a la otra", ticketsAfterConcurrentSales.value.dataset?.tickets?.length === 2);
+  const cashStateBase = { id: "actual", saldo: 1000 };
+  const cashSeed = await request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [{ id: "cash-seed", deviceId: "pc-1", tenantId: "business-a", type: "entity_upsert", entity: "cajaEstado", entityId: "actual", baseVersion: null, value: cashStateBase }] }) });
+  const cashVersion = cashSeed.value.acceptedEntityVersions?.[0]?.version;
+  const concurrentCash = await Promise.all([
+    request("/v1/sync/push", { method: "POST", headers, body: JSON.stringify({ operations: [{ id: "cash-state-pc-1", deviceId: "pc-1", tenantId: "business-a", type: "entity_upsert", entity: "cajaEstado", entityId: "actual", baseVersion: cashVersion, baseValue: cashStateBase, value: { ...cashStateBase, saldo: 1200 } }, { id: "cash-move-pc-1", deviceId: "pc-1", tenantId: "business-a", type: "entity_upsert", entity: "cajaMovimientos", entityId: "cash-move-1", baseVersion: null, value: { id: "cash-move-1", tipo: "ingreso", monto: 200 } }] }) }),
+    request("/v1/sync/push", { method: "POST", headers: secondDeviceHeaders, body: JSON.stringify({ operations: [{ id: "cash-state-pc-2", deviceId: "pc-2", tenantId: "business-a", type: "entity_upsert", entity: "cajaEstado", entityId: "actual", baseVersion: cashVersion, baseValue: cashStateBase, value: { ...cashStateBase, saldo: 1400 } }, { id: "cash-move-pc-2", deviceId: "pc-2", tenantId: "business-a", type: "entity_upsert", entity: "cajaMovimientos", entityId: "cash-move-2", baseVersion: null, value: { id: "cash-move-2", tipo: "ingreso", monto: 400 } }] }) }),
+  ]);
+  const cashAfterConcurrentSales = await request("/v1/sync/bootstrap", { headers });
+  test("dos cobros en efectivo simultáneos acumulan el saldo", concurrentCash.every((result) => result.value.conflicts?.length === 0) && cashAfterConcurrentSales.value.dataset?.caja?.saldo === 1600);
+  test("dos cobros simultáneos conservan ambos movimientos de caja", cashAfterConcurrentSales.value.dataset?.caja?.movimientos?.filter((item) => String(item.id).startsWith("cash-move-")).length === 2);
   const productBase = operation.value;
   const saleFromFirstDevice = {
     ...operation,

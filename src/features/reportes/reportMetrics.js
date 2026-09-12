@@ -1,3 +1,5 @@
+import { ticketActivo } from "../ventas/salesRules";
+
 export function calcularRentabilidadHistorica(tickets) {
   let costoHistorico = 0;
   let vendidoConCosto = 0;
@@ -42,7 +44,7 @@ const firmaPagos = (ticket) => (ticket.pagos || [{ metodo: ticket.medio || "", m
 export function detectarTicketsDuplicados(tickets, ventanaHoras = 24) {
   const duplicados = new Map();
   const ordenados = [...tickets]
-    .filter((ticket) => ticket.estado !== "anulado")
+    .filter(ticketActivo)
     .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
 
   const registrar = (ticket, pareja) => duplicados.set(ticket.id, {

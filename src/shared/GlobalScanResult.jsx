@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { AlertTriangle, Package, Printer, ReceiptText, Search, ShoppingCart, Warehouse, X } from "lucide-react";
 import { money } from "./domain";
 import { TicketBarcode } from "./TicketBarcodeView";
+import { numeroTicket, ticketActivo, ticketAnulado, ticketDevuelto } from "../features/ventas/salesRules";
 
 export function GlobalScanResult({ result, onClose, onSale, onStock, onPrint, onVoid, onVerifyPending }) {
   const [verifying, setVerifying] = useState(false);
@@ -30,7 +31,7 @@ export function GlobalScanResult({ result, onClose, onSale, onStock, onPrint, on
               {type === "ticket" ? "Ticket detectado" : type === "product" ? "Producto detectado" : "Código desconocido"}
             </p>
             <h2 className="mt-1 break-words text-xl font-bold text-gray-900">
-              {ticket ? `Ticket #${ticket.id}` : product?.nombre || code}
+              {ticket ? `Ticket #${numeroTicket(ticket)}` : product?.nombre || code}
             </h2>
           </div>
           <button onClick={onClose} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg hover:bg-gray-100" aria-label="Cerrar"><X size={20}/></button>
@@ -59,18 +60,19 @@ export function GlobalScanResult({ result, onClose, onSale, onStock, onPrint, on
                 <b>{money(ticket.total)}</b>
               </div>
               <p className="mt-1 text-xs text-gray-500">Pago: {ticket.medio || "Sin informar"} · Atendió: {ticket.quien || "Sin identificar"}</p>
-              {ticket.estado === "anulado" && <p className="mt-2 rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700">Este ticket ya está anulado.</p>}
+              {ticketAnulado(ticket) && <p className="mt-2 rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700">Este ticket ya está anulado.</p>}
+              {ticketDevuelto(ticket) && <p className="mt-2 rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-800">Esta venta ya fue devuelta.</p>}
               <div className="mt-3 space-y-2 border-y py-3">
                 {(ticket.items || []).map((item, index) => {
                   const lineTotal = Number(item.subtotal ?? Number(item.precioUnitario || item.precio || 0) * Number(item.cantidad || 0));
                   return <div key={`${item.productId || item.nombre}-${index}`} className="flex items-start justify-between gap-3 text-sm"><span className="min-w-0 break-words">{item.cantidad} × {item.nombre}<small className="block text-gray-500">{money(item.precioUnitario || item.precio || 0)} c/u</small></span><b className="shrink-0">{money(lineTotal)}</b></div>;
                 })}
               </div>
-              <TicketBarcode ticketId={ticket.id} className="mt-3"/>
+              <TicketBarcode ticketId={ticket.codigoTicket || ticket.id} className="mt-3"/>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button onClick={onPrint} className="flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold"><Printer size={17}/>Reimprimir</button>
-              <button onClick={onVoid} disabled={ticket.estado === "anulado"} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"><ReceiptText size={17}/>Anular / devolver</button>
+              <button onClick={onVoid} disabled={!ticketActivo(ticket)} className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"><ReceiptText size={17}/>Anular / devolver</button>
             </div>
           </>
         )}

@@ -2,6 +2,54 @@ import { unidadInfo, roundQuantity } from "../../shared/domain";
 
 const roundMoney = (value) => Math.max(0, Math.round((Number(value) || 0) * 100) / 100);
 
+const randomOperationId = () => globalThis.crypto?.randomUUID?.()
+  || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+
+export function crearIdOperacion(prefix = "op") {
+  return `${String(prefix || "op").replace(/[^a-z0-9_-]/gi, "-")}-${randomOperationId()}`;
+}
+
+export function crearIdentidadTicket(fecha = new Date(), randomId = randomOperationId()) {
+  const time = fecha instanceof Date ? fecha.getTime() : new Date(fecha).getTime();
+  const safeTime = Number.isFinite(time) ? time : Date.now();
+  const compactRandom = String(randomId || randomOperationId()).replace(/[^a-z0-9]/gi, "").slice(-5).toUpperCase();
+  const numero = `V-${safeTime.toString(36).toUpperCase()}-${compactRandom || "00000"}`;
+  return {
+    id: `venta-${String(randomId || randomOperationId())}`,
+    numero,
+    codigoTicket: numero,
+  };
+}
+
+export function estadoTicket(ticket) {
+  if (!ticket) return "inexistente";
+  if (ticket.estado === "anulado" || ticket.anulado === true) return "anulado";
+  if (ticket.estado === "devuelto" || ticket.devuelto === true) return "devuelto";
+  return ticket.estado || "activo";
+}
+
+export const ticketAnulado = (ticket) => estadoTicket(ticket) === "anulado";
+export const ticketDevuelto = (ticket) => estadoTicket(ticket) === "devuelto";
+export const ticketActivo = (ticket) => !["anulado", "devuelto", "inexistente"].includes(estadoTicket(ticket));
+export const numeroTicket = (ticket) => String(ticket?.numero || ticket?.id || "").trim();
+
+export function efectivoDeTicket(ticket) {
+  if (Array.isArray(ticket?.pagos) && ticket.pagos.length) {
+    return roundMoney(ticket.pagos
+      .filter((pago) => pago?.metodo === "Efectivo")
+      .reduce((total, pago) => total + Number(pago?.monto || 0), 0));
+  }
+  return ticket?.medio === "Efectivo" ? roundMoney(ticket?.total) : 0;
+}
+
+export function impactoMovimientoCaja(movimiento) {
+  if (!movimiento || movimiento.eliminado) return 0;
+  const monto = roundMoney(movimiento.monto);
+  return ["retiro", "egreso"].includes(String(movimiento.tipo || "").toLowerCase())
+    ? -monto
+    : monto;
+}
+
 export function etiquetaPromocion(promocion) {
   if (!promocion) return "Promoción";
   if (promocion.tipo === "nxm") return `${Math.max(2, Number(promocion.lleva) || 2)}×${Math.max(1, Number(promocion.paga) || 1)}`;
@@ -209,5 +257,18 @@ export function restaurarStock(products, ticket) {
 }
 
 export function anularTicket(ticket, motivo, responsable, fecha = new Date().toISOString()) {
-  return { ...ticket, estado: "anulado", anulacion: { motivo, responsable, fecha } };
+  if (!ticketActivo(ticket)) return ticket;
+  return { ...ticket, estado: "anulado", anulado: true, anulacion: { motivo, responsable, fecha } };
+}
+
+export function devolverTicket(ticket, motivo, responsable, fecha = new Date().toISOString()) {
+  if (!ticketActivo(ticket)) return ticket;
+  return {
+    ...ticket,
+    estado: "devuelto",
+    devuelto: true,
+    devolucionFecha: fecha,
+    devolucionPor: responsable,
+    devolucion: { motivo: String(motivo || "Devolución completa").trim(), responsable, fecha },
+  };
 }

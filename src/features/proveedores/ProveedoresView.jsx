@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Link2, Pencil, Plus, Search, Trash2, Truck, X } from "lucide-react";
 import { SectionHeader } from "../../shared/layout";
+import { crearIdOperacion } from "../ventas/salesRules";
 
 const VACIO = { nombre: "", contacto: "", telefono: "", email: "", notas: "" };
 
@@ -126,7 +127,7 @@ export function ProveedoresView({ proveedores, setProveedores, products, setProd
   const save = (data) => {
     setProveedores((previous) => editing?.id
       ? previous.map((provider) => provider.id === editing.id ? { ...provider, ...data } : provider)
-      : [...previous, { id: Date.now(), ...data }]);
+      : [...previous, { id: crearIdOperacion("proveedor"), ...data }]);
     setEditing(undefined);
   };
   const remove = (id) => {

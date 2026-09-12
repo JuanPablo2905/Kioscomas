@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useState } from "react";
 import { Check, Grip, Printer, RotateCcw, Save, Trash2 } from "lucide-react";
 import { money } from "../../shared/domain";
+import { ProductBarcode } from "../../shared/ProductBarcodeView";
+import { crearIdOperacion } from "../ventas/salesRules";
 
 const DEFAULT_POSITIONS = {
   business: { x: 50, y: 10 }, name: { x: 50, y: 28 }, price: { x: 50, y: 48 },
@@ -24,19 +26,13 @@ const cloneConfig = (value = {}) => ({
   positions: Object.fromEntries(Object.keys(DEFAULT_POSITIONS).map((key) => [key, { ...DEFAULT_POSITIONS[key], ...(value.positions?.[key] || {}) }])),
 });
 
-function Barcode({ code, color }) {
-  const value = String(code || "7790000000000");
-  const bits = [...value].flatMap((digit, index) => Array.from({ length: 7 }, (_, bit) => ((Number(digit) + bit + index) % 3 ? 1 : 0)));
-  return <svg viewBox={`0 0 ${bits.length} 30`} preserveAspectRatio="none" className="h-8 w-32"><rect width="100%" height="100%" fill="transparent"/>{bits.map((bit, i) => bit ? <rect key={i} x={i} width="1" height={i % 8 === 0 ? 30 : 25} fill={color}/> : null)}</svg>;
-}
-
 function Element({ type, product, edit, config, draggable, onPointerDown }) {
   const common = { position: "absolute", left: `${config.positions[type].x}%`, top: `${config.positions[type].y}%`, transform: "translate(-50%, -50%)", cursor: draggable ? "grab" : "default", touchAction: "none", userSelect: "none", maxWidth: "92%", whiteSpace: "nowrap" };
   let content;
   if (type === "business") content = <span className="font-bold uppercase" style={{ fontSize: Number(config.sizes?.business) || 9 }}>{config.businessName}</span>;
   if (type === "name") content = <b className="block max-w-full overflow-hidden text-ellipsis" style={{ fontSize: Number(config.sizes?.name) || config.fontSize }}>{edit.nombre ?? product.nombre}</b>;
   if (type === "price") content = <strong style={{ color: config.priceColor, fontSize: Number(config.sizes?.price) || config.fontSize + 9 }}>{config.pricePrefix} {Number(edit.precio ?? product.venta).toLocaleString("es-AR")}</strong>;
-  if (type === "barcode") content = <Barcode code={product.codigo} color={config.textColor}/>;
+  if (type === "barcode") content = <ProductBarcode code={product.codigo} color={config.textColor}/>;
   if (type === "code") content = <span className="font-mono tracking-widest" style={{ fontSize: Number(config.sizes?.code) || 9 }}>{product.codigo || "SIN CÓDIGO"}</span>;
   return <div style={common} onPointerDown={onPointerDown} className={draggable ? "rounded border border-dashed border-blue-400 px-1 hover:bg-blue-50/30" : ""}>{content}</div>;
 }
@@ -77,7 +73,7 @@ export function LabelDesignerV2({ products, templates = [], setTemplates }) {
     if (!name || !setTemplates) return;
     const normalizedName = name.toLocaleLowerCase("es");
     const existing = templates.find((template) => template.name?.trim().toLocaleLowerCase("es") === normalizedName);
-    const template = { id: existing?.id || `label-${Date.now()}`, name, updatedAt: new Date().toISOString(), config: cloneConfig(config) };
+    const template = { id: existing?.id || crearIdOperacion("etiqueta"), name, updatedAt: new Date().toISOString(), config: cloneConfig(config) };
     setTemplates((previous = []) => existing ? previous.map((item) => item.id === existing.id ? template : item) : [template, ...previous]);
     setActiveTemplateId(template.id);
     setTemplateName("");

@@ -62,6 +62,14 @@ try {
   const goalCreated = audit.describeDataChange("metas", [], [{ id: 15, tipo: "diaria", objetivo: 50000 }]);
   const goalUpdated = audit.describeDataChange("metas", [{ id: 15, tipo: "diaria", objetivo: 50000 }], [{ id: 15, tipo: "diaria", objetivo: 75000 }]);
   test("auditoría de metas muestra el objetivo y no el identificador", goalCreated.includes("$50.000") && !goalCreated.includes("#15") && goalUpdated.includes("$75.000"));
+  const purchaseOrder = { id: "1789136848846-0aiv", proveedorNombre: "Distribuidora Norte", estado: "pedido", items: [{ nombre: "Sprite", cantidad: 11 }] };
+  const purchaseOrderCreated = audit.describeDataChange("pedidos", [], [purchaseOrder]);
+  test("un pedido muestra proveedor, producto y cantidad en lugar del identificador", purchaseOrderCreated === "Pedido generado: Distribuidora Norte · 11 × Sprite" && !purchaseOrderCreated.includes(purchaseOrder.id));
+  const legacyPurchaseOrder = { recurso: "pedidos", detalle: `pedidos: se agregaron #${purchaseOrder.id}` };
+  test("la auditoría antigua traduce el identificador de un pedido existente", audit.auditDisplayDetail(legacyPurchaseOrder, { pedidos: [purchaseOrder] }) === "Pedido generado: Distribuidora Norte · 11 × Sprite");
+  const oldOrderWithoutNames = { id: "pedido-antiguo", proveedorId: 4, items: [{ productId: 8, cantidad: 2 }] };
+  test("un pedido antiguo recupera los nombres desde los datos del negocio", audit.auditDisplayDetail({ recurso: "pedidos", detalle: "pedidos: se agregaron #pedido-antiguo" }, { pedidos: [oldOrderWithoutNames], proveedores: [{ id: 4, nombre: "Mayorista Centro" }], products: [{ id: 8, nombre: "Sprite" }] }) === "Pedido generado: Mayorista Centro · 2 × Sprite");
+  test("la auditoría antigua no expone el identificador aunque el pedido ya no exista", audit.auditDisplayDetail(legacyPurchaseOrder, { pedidos: [] }) === "Pedido generado");
   const oldLoginEvent = { usuario: "Juan", accion: "inicio_sesion" };
   test("inicio de sesión antiguo se muestra con un nombre legible", audit.auditDisplayDetail(oldLoginEvent) === "Inicio de sesión");
   test("auditoría antigua reconoce al dueño por su cuenta", audit.auditDisplayRole(oldLoginEvent, { nombre: "Juan" }) === "Dueño");
@@ -96,6 +104,8 @@ try {
   const mixedBase = { ...tickets[0], id: 20, medio: "Pago combinado", pagos: [{ metodo: "Efectivo", monto: 100 }, { metodo: "Tarjeta", monto: 100 }] };
   const mixedDifferent = { ...mixedBase, id: 21, pagos: [{ metodo: "Efectivo", monto: 50 }, { metodo: "Tarjeta", monto: 150 }] };
   test("pagos combinados diferentes no son duplicados", metrics.detectarTicketsDuplicados([mixedBase, mixedDifferent]).size === 0);
+  test("los retiros y egresos descuentan caja al corregirlos", salesRules.impactoMovimientoCaja({ tipo: "retiro", monto: 100 }) === -100 && salesRules.impactoMovimientoCaja({ tipo: "egreso", monto: 50 }) === -50);
+  test("los ingresos suman caja y los movimientos eliminados no impactan", salesRules.impactoMovimientoCaja({ tipo: "ingreso", monto: 100 }) === 100 && salesRules.impactoMovimientoCaja({ tipo: "ingreso", monto: 100, eliminado: true }) === 0);
 
   const profit = metrics.calcularRentabilidadHistorica([tickets[0]]);
   test("ganancia histórica congelada", profit.gananciaHistorica === 80);
@@ -218,6 +228,10 @@ try {
   test("importación CSV reconoce productos", importedProducts.length === 1 && importedProducts[0].codigo === "7791" && importedProducts[0].deposito === 4);
   const mergedProducts = transfer.mergeImportedProducts([{ id: 1, nombre: "Yerba", codigo: "7791", venta: 150 }], importedProducts, "actualizar");
   test("importación actualiza por código", mergedProducts.updated === 1 && mergedProducts.products[0].venta === 180);
+  const localizedProducts = transfer.parseProductFile("Nombre;Código;Costo;Venta;Depósito\nYerba;7791;1.234,56;;", "productos.csv");
+  const preservedProduct = transfer.mergeImportedProducts([{ id: 1, nombre: "Yerba", codigo: "7791", costo: 900, venta: 1500, deposito: 8 }], localizedProducts, "actualizar").products[0];
+  test("importación argentina reconoce punto de miles y coma decimal", localizedProducts[0].costo === 1234.56);
+  test("una celda vacía conserva el precio y stock existentes", preservedProduct.venta === 1500 && preservedProduct.deposito === 8 && preservedProduct.costo === 1234.56);
   test("exportación Excel genera libro compatible", transfer.productsToExcelXml(importedProducts).includes("<Workbook") && transfer.productsToExcelXml(importedProducts).includes("Yerba"));
   test("validador de código EAN-13", ean.validEanCheckDigit("4006381333931") && !ean.validEanCheckDigit("4006381333932"));
 
@@ -236,6 +250,17 @@ try {
   const ticketOps = entitySync.diffTenantEntities({ tickets: [] }, { tickets: [{ id: "ticket-a", total: 1000 }, { id: "ticket-b", total: 2000 }] }, "negocio-1", "pc-1");
   test("cada venta se sincroniza como un registro independiente", ticketOps.length === 2 && ticketOps.every((item) => item.entity === "tickets" && item.type === "entity_upsert"));
   test("la lista completa de ventas ya no viaja como una sección reemplazable", entitySync.diffTenantSections({ tickets: [] }, { tickets: [{ id: "ticket-a" }] }, "negocio-1", "pc-1").every((item) => item.section !== "tickets"));
+  const cashBefore = { caja: { saldo: 0, movimientos: [], historial: [] } };
+  const cashAfter = { caja: { saldo: 1000, movimientos: [{ id: "movimiento-a", tipo: "ingreso", monto: 1000 }], historial: [{ id: "apertura-a", tipo: "apertura", monto: 1000 }] } };
+  const cashEntityOps = entitySync.diffTenantEntities(cashBefore, cashAfter, "negocio-1", "pc-1");
+  const cashSectionOps = entitySync.diffTenantSections(cashBefore, cashAfter, "negocio-1", "pc-1");
+  test("movimientos, historial y saldo de caja se sincronizan individualmente", cashEntityOps.filter((item) => item.entity === "cajaMovimientos").length === 1 && cashEntityOps.filter((item) => item.entity === "cajaHistorial").length === 1 && cashEntityOps.some((item) => item.entity === "cajaEstado" && item.value.saldo === 1000));
+  const legacyCashMigration = entitySync.diffTenantEntities(cashAfter, cashAfter, "negocio-1", "pc-1");
+  test("la caja anterior se migra sin esperar otro movimiento", legacyCashMigration.some((item) => item.entity === "cajaMovimientos" && item.entityId === "movimiento-a") && legacyCashMigration.some((item) => item.entity === "cajaHistorial" && item.entityId === "apertura-a") && legacyCashMigration.some((item) => item.entity === "cajaEstado"));
+  test("la sección completa de caja ya no puede reemplazar saldo ni movimientos", cashSectionOps.length === 0);
+  const mergedCash = entitySync.applyEntityOperations({ caja: { saldo: 1000, movimientos: [{ id: "movimiento-a", monto: 1000 }], historial: [] } }, [{ type: "entity_upsert", entity: "cajaMovimientos", entityId: "movimiento-b", value: { id: "movimiento-b", monto: 500 }, version: 1 }]);
+  const mergedCashState = entitySync.applyEntityOperations(mergedCash, [{ type: "entity_upsert", entity: "cajaEstado", entityId: "actual", value: { id: "actual", saldo: 1500 }, version: 2 }]);
+  test("un saldo remoto conserva los movimientos de las dos cajas", mergedCashState.caja.saldo === 1500 && mergedCashState.caja._syncSaldoVersion === 2 && mergedCashState.caja.movimientos.length === 2);
   const remoteApplied=entitySync.applyEntityOperations({products:[{id:1,nombre:"A"}]},[{type:"entity_upsert",entity:"products",entityId:"1",value:{id:1,nombre:"B"},version:3}]);
   test("cambio remoto conserva versión del registro", remoteApplied.products[0].nombre==="B" && remoteApplied.products[0]._syncVersion===3);
   const burstDataset = { products: [{ id: 1, nombre: "Alfajor", deposito: 25, _syncVersion: 4 }] };
@@ -270,6 +295,8 @@ try {
     value: { id: 1, venta: 1200 },
   }, { id: 1, venta: 1300 });
   test("dos ediciones reales del mismo precio siguen pidiendo revisión", !realEditConflict.value && realEditConflict.conflictingFields?.includes("venta"));
+  const mergedCashBalance = conflictMerge.mergeConcurrentEntity({ type: "entity_upsert", entity: "cajaEstado", baseValue: { id: "actual", saldo: 1000 }, value: { id: "actual", saldo: 1300 } }, { id: "actual", saldo: 1500 });
+  test("dos cobros en efectivo simultáneos se acumulan en el saldo", mergedCashBalance.value?.saldo === 1800);
   const cleanup = archive.cleanOperationalDataset({
     tickets: [{ id: 1, fecha: "2020-01-01" }],
     comprobantes: [{ id: 2, fecha: "2020-01-01" }],

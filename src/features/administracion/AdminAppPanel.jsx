@@ -12,6 +12,7 @@ import { cloudFetch, cloudSession } from "../../cloud/cloudAuth";
 import { monthlyPriceFor, withReferralStats } from "../../billing/referrals";
 import { KioscoDatePicker, datePickerHelpers } from "../../shared/KioscoDatePicker";
 import { archiveAdminIssue, loadAdminIssues, updateAdminIssueStatus } from "../notificaciones/notificationService";
+import { crearIdOperacion } from "../ventas/salesRules";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 
@@ -277,7 +278,7 @@ export function AdminAppPanel({ cuentas, setCuentas, datos, setDatos, notas, set
 
   const agregarNota = () => {
     if (!textoNota.trim()) return;
-    setNotas((prev) => [{ id: Date.now(), texto: textoNota.trim(), prioridad, categoria, estado: "pendiente", fecha: new Date().toISOString() }, ...prev]);
+    setNotas((prev) => [{ id: crearIdOperacion("nota-admin"), texto: textoNota.trim(), prioridad, categoria, estado: "pendiente", fecha: new Date().toISOString() }, ...prev]);
     setTextoNota("");
   };
 

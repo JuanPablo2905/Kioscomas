@@ -3,6 +3,7 @@ import { AlertTriangle, CalendarClock, PackageX, X } from "lucide-react";
 import { formatQuantity, historialEntry, money, roundQuantity, unidadInfo } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
 import { AppSelect } from "../../shared/controls";
+import { crearIdOperacion } from "../ventas/salesRules";
 
 const diasHasta = (date) => {
   if (!date) return null;
@@ -44,7 +45,7 @@ export function VencimientosView({ products, setProducts, perdidas, setPerdidas 
   const confirm = ({ cantidad, motivo }) => {
     const product = discarding; let remaining = cantidad;
     setProducts((prev) => prev.map((p) => { if (p.id !== product.id) return p; const desdeDeposito = Math.min(Number(p.deposito || 0), remaining); remaining = roundQuantity(remaining - desdeDeposito); const deposito = roundQuantity(p.deposito - desdeDeposito); const vitrina = roundQuantity(Math.max(0, p.vitrina - remaining)); return { ...p, deposito, vitrina, historial: [...(p.historial || []), historialEntry("perdida", `-${cantidad} ${unidadInfo(p.unidad).baseAbbr} · ${motivo}`)] }; }));
-    setPerdidas((prev) => [{ id: Date.now(), productId: product.id, nombre: product.nombre, cantidad, unidad: product.unidad, motivo, costoTotal: (Number(product.costo) || 0) * cantidad, fecha: new Date().toISOString() }, ...prev]);
+    setPerdidas((prev) => [{ id: crearIdOperacion("perdida"), productId: product.id, nombre: product.nombre, cantidad, unidad: product.unidad, motivo, costoTotal: (Number(product.costo) || 0) * cantidad, fecha: new Date().toISOString() }, ...prev]);
     setDiscarding(null);
   };
   return <div className="p-4 sm:p-8">

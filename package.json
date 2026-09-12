@@ -1,7 +1,7 @@
 {
   "name": "kiosco-app",
   "private": true,
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "Gestión simple de stock, ventas, caja y compras para comercios.",
   "author": "Kiosco+",
   "repository": {
@@ -36,10 +36,11 @@
     "test:displays": "node scripts/remote-display-tests.mjs",
     "test:public-site": "node scripts/public-site-tests.mjs",
     "test:release-notes": "node scripts/release-notes-tests.mjs",
+    "test:payments": "node scripts/payment-backend-tests.mjs",
     "test:backup-restore": "node scripts/backup-restore-drill.mjs",
     "monitor:production": "node scripts/production-health-check.mjs",
     "push:generate-keys": "node scripts/generate-vapid-keys.mjs",
-    "test:all": "node scripts/cloud-config-tests.mjs && node scripts/cloud-warmup-tests.mjs && node scripts/postgres-record-store-tests.mjs && node scripts/backup-restore-drill.mjs && node scripts/tutorial-target-tests.mjs && node scripts/display-config-tests.mjs && node scripts/adaptive-social-card-tests.mjs && node scripts/adaptive-welcome-card-tests.mjs && node scripts/pwa-tests.mjs && node scripts/release-notes-tests.mjs && node scripts/remote-display-tests.mjs && node scripts/public-site-tests.mjs && node scripts/device-activation-enforcement-tests.mjs && node scripts/password-recovery-tests.mjs && node scripts/smoke-views.mjs && node scripts/functional-tests.mjs && vite build",
+    "test:all": "node scripts/cloud-config-tests.mjs && node scripts/cloud-warmup-tests.mjs && node scripts/postgres-record-store-tests.mjs && node scripts/backup-restore-drill.mjs && node scripts/tutorial-target-tests.mjs && node scripts/display-config-tests.mjs && node scripts/adaptive-social-card-tests.mjs && node scripts/adaptive-welcome-card-tests.mjs && node scripts/pwa-tests.mjs && node scripts/release-notes-tests.mjs && node scripts/payment-backend-tests.mjs && node scripts/remote-display-tests.mjs && node scripts/public-site-tests.mjs && node scripts/device-activation-enforcement-tests.mjs && node scripts/password-recovery-tests.mjs && node scripts/smoke-views.mjs && node scripts/functional-tests.mjs && vite build",
     "desktop": "electron .",
     "desktop:build": "vite build --mode cloud && electron-builder --win nsis --publish never",
     "desktop:portable": "vite build --mode cloud && electron-builder --win portable --publish never",

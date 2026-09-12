@@ -16,6 +16,7 @@ import { ProductTransferModal } from "./ProductTransferModal";
 import { NumberInput } from "../../shared/controls";
 import { groupProductFamilies } from "../../shared/productFamilies";
 import { KioscoDatePicker } from "../../shared/KioscoDatePicker";
+import { crearIdOperacion } from "../ventas/salesRules";
 
 const emptyForm = {
   nombre: "", codigo: "", costo: "", venta: "", deposito: "", minimo: "",
@@ -599,7 +600,7 @@ export function StockView({ products, setProducts, proveedores = [], puedeEditar
       data = { ...data, costo: editing.costo, venta: editing.venta };
     }
     if (!editing?.id && !puedeCrearDirecto && setSugerencias) {
-      setSugerencias((prev) => [...prev, { id: Date.now(), tipo: "nuevo_producto", estado: "pendiente", data, autor: identidad?.nombre || identidad?.rol || "Empleado", fecha: new Date().toISOString() }]);
+      setSugerencias((prev) => [...prev, { id: crearIdOperacion("sugerencia-producto"), tipo: "nuevo_producto", estado: "pendiente", data, autor: identidad?.nombre || identidad?.rol || "Empleado", fecha: new Date().toISOString() }]);
       finishProductFlow(); return;
     }
     if (editing && editing.id) {
@@ -628,7 +629,7 @@ export function StockView({ products, setProducts, proveedores = [], puedeEditar
       setProducts((prev) => [
         ...prev,
         {
-          id: Date.now(),
+          id: crearIdOperacion("producto"),
           vitrina: 0,
           ...data,
           historial: [historialEntry("creacion", "Producto creado")],

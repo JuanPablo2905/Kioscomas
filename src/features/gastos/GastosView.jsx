@@ -4,6 +4,7 @@ import { money } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
 import { AppSelect, DateInput, NumberInput } from "../../shared/controls";
 import { isExpenseOverdue } from "./expenseRules";
+import { crearIdOperacion } from "../ventas/salesRules";
 
 const CATEGORIES = ["Mercadería", "Servicios", "Alquiler", "Transporte", "Mantenimiento", "Impuestos", "Sueldos", "Otro"];
 
@@ -94,7 +95,7 @@ export function GastosView({ gastos, setGastos }) {
   const pending = gastos.filter((item) => item.estado === "pendiente").reduce((sum, item) => sum + item.monto, 0);
   const save = (form) => {
     const expense = {
-      id: Date.now(),
+      id: crearIdOperacion("gasto"),
       ...form,
       fecha: new Date().toISOString(),
       pagadoFecha: form.estado === "pagado" ? new Date().toISOString() : null,
