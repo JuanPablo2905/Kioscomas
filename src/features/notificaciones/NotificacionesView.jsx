@@ -15,13 +15,13 @@ const icons = { stock: Package, vitrina: Store, pedidos: PackageCheck, reservas:
 const platformIcons = { stock: Package, expirations: AlertTriangle, orders: PackageCheck };
 const platformCategoryLabels = { stock: "Stock", expirations: "Vencimientos", orders: "Pedidos", subscription: "Suscripción", maintenance: "Novedades" };
 
-export function NotificacionesView({ data, onNavigate, onOpenNotificationSettings, previewBusinessId = "", previewBusinessName = "" }) {
+export function NotificacionesView({ data, preferences = {}, onNavigate, onOpenNotificationSettings, previewBusinessId = "", previewBusinessName = "" }) {
   const [filter, setFilter] = useState("todas");
   const [platform, setPlatform] = useState([]);
   const [platformError, setPlatformError] = useState("");
   const [pushConfigured, setPushConfigured] = useState(null);
   const [notificationClock, setNotificationClock] = useState(() => Date.now());
-  const notifications = useMemo(() => buildNotifications(data, notificationClock), [data, notificationClock]);
+  const notifications = useMemo(() => buildNotifications(data, notificationClock, preferences), [data, notificationClock, preferences.expiryDays]);
   const counts = useMemo(() => Object.fromEntries(LEVELS.map((level) => [level, notifications.filter((item) => item.level === level).length])), [notifications]);
   const visible = filter === "todas" ? notifications : notifications.filter((item) => item.level === filter);
   const groups = LEVELS.map((level) => ({ level, items: visible.filter((item) => item.level === level) })).filter((group) => group.items.length);

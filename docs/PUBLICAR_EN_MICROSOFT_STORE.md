@@ -1,6 +1,6 @@
 # Publicar Kiosco+ en Microsoft Store
 
-> Estado: preparación inicial. Esta guía corresponde al paquete Windows de Kiosco+ construido con Electron.
+> Estado: proyecto y workflow preparados. La generación real del paquete queda pendiente de copiar la identidad que Partner Center asigne al producto.
 
 ## Decisiones de publicación
 
@@ -70,10 +70,12 @@ pnpm run desktop:build:store
 El resultado quedará en `release-store/` con un nombre parecido a:
 
 ```text
-KioscoPlus-Store-0.2.6-x64.appx
+KioscoPlus-Store-0.2.24-x64.appx
 ```
 
 El paquete se genera sin certificado comercial propio. Partner Center valida el paquete y Microsoft lo vuelve a firmar cuando supera la certificación.
+
+Como alternativa, después de guardar los tres valores anteriores como secretos de GitHub, se puede ejecutar **Actions > Preparar paquetes para tiendas**, elegir `microsoft-store` y descargar el `.appx` sin compilarlo en la PC local.
 
 ## Paso 5 — Crear la presentación en Partner Center
 

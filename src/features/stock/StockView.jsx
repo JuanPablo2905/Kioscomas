@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money, formatQuantity } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
-import { calcularPrecioSugerido } from "./pricing";
+import { calcularPrecioSugerido, redondearPrecio } from "./pricing";
 import { ScanModal } from "../../shared/ScanModal";
 import { CustomSelect } from "../../shared/CustomSelect";
 import { lookupBarcode } from "../../shared/productLookup";
@@ -53,7 +53,7 @@ function PreciosMasivosModal({ products, onClose, onApply }) {
 
 export function ProductModal({ initial, onClose, onSave, proveedores = [], puedeEditarPrecios = true, preferences = {}, tutorialMode = false }) {
   const [form, setForm] = useState(initial || emptyForm);
-  const [margenDeseado, setMargenDeseado] = useState("30");
+  const [margenDeseado, setMargenDeseado] = useState(String(preferences.targetMargin ?? 50));
   const [barcodeScanOpen, setBarcodeScanOpen] = useState(false);
   // Los productos nuevos también reciben valores iniciales (mínimos, unidad,
   // código escaneado, etc.). Sólo es edición cuando ya existe un id.
@@ -66,7 +66,8 @@ export function ProductModal({ initial, onClose, onSave, proveedores = [], puede
   const precioSugerido = calcularPrecioSugerido(
     form.costo,
     info.factor,
-    margenDeseado
+    margenDeseado,
+    preferences.rounding
   );
   const costoPorUnidadVenta = Number(form.costo) / info.factor;
   const margenActual =
@@ -82,7 +83,7 @@ export function ProductModal({ initial, onClose, onSave, proveedores = [], puede
     onSave({
       ...form,
       costo: Number(form.costo) || 0,
-      venta: Number(form.venta) || 0,
+      venta: redondearPrecio(form.venta, preferences.rounding),
       deposito: Number(form.deposito) || 0,
       minimo: Number(form.minimo) || 0,
       alertaVitrina: Number(form.alertaVitrina) || 0,
@@ -660,7 +661,8 @@ export function StockView({ products, setProducts, proveedores = [], puedeEditar
     setProducts((prev) => prev.map((product) => {
       if (categoria !== "Todas" && product.categoria !== categoria) return product;
       const anterior = Number(product[campo]) || 0;
-      const nuevo = Math.max(0, Math.round((modo === "porcentaje" ? anterior * (1 + numero / 100) : anterior + numero) * 100) / 100);
+      const calculated = Math.max(0, Math.round((modo === "porcentaje" ? anterior * (1 + numero / 100) : anterior + numero) * 100) / 100);
+      const nuevo = campo === "venta" ? redondearPrecio(calculated, preferences.rounding) : calculated;
       if (nuevo === anterior) return product;
       return { ...product, [campo]: nuevo, historial: [...(product.historial || []), historialEntry("edicion", `Actualización masiva · ${campo === "venta" ? "Precio de venta" : "Precio de costo"}: ${anterior} → ${nuevo}`)] };
     }));

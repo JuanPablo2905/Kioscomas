@@ -4,7 +4,7 @@ import {
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
   MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
-  ChevronRight, Settings2, RotateCcw, Bug, House, HelpCircle,
+  ChevronRight, Settings2, RotateCcw, Bug, House, HelpCircle, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { NAV_ITEMS } from "./domain";
 import { buildNotifications } from "../features/notificaciones/notificationRules";
@@ -50,8 +50,9 @@ function PendingSyncDetail({ operation, title, onClose }) {
   return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4" onMouseDown={onClose}><section className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-amber-200 bg-white p-5 text-gray-900 shadow-2xl" onMouseDown={(event)=>event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Detalle del cambio pendiente"><div className="flex items-start justify-between gap-3"><div><span className="inline-flex rounded-full bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-900">ESPERANDO ENVÍO</span><h2 className="mt-2 text-lg font-bold">Detalle del cambio pendiente</h2><p className="mt-1 text-sm text-gray-600">Esto es exactamente lo que la app está intentando enviar.</p></div><button onClick={onClose} aria-label="Cerrar detalle" className="rounded-lg border p-2 hover:bg-gray-100"><X size={17}/></button></div><div className="mt-4 grid gap-2 rounded-xl border bg-gray-50 p-3 text-sm"><div><span className="block text-xs font-semibold text-gray-500">Qué quiere hacer</span><b>{syncOperationLabel(operation.type)}</b></div><div><span className="block text-xs font-semibold text-gray-500">Área o registro</span><b>{title}</b></div><div className="grid grid-cols-2 gap-3"><div><span className="block text-xs font-semibold text-gray-500">Creado</span>{operation.createdAt ? new Date(operation.createdAt).toLocaleString("es-AR") : "Sin fecha"}</div><div><span className="block text-xs font-semibold text-gray-500">Identificador</span><span className="break-all font-mono text-xs">{operation.entityId || operation.section || operation.key || operation.id}</span></div></div><div className="grid grid-cols-2 gap-3"><div><span className="block text-xs font-semibold text-gray-500">Negocio</span><span className="break-all text-xs">{operation.tenantId || "Sin identificar"}</span></div><div><span className="block text-xs font-semibold text-gray-500">Dispositivo</span><span className="break-all font-mono text-[10px]">{operation.deviceId || "Sin identificar"}</span></div></div></div><div className="mt-4"><h3 className="text-sm font-bold">Datos principales</h3>{visibleFields.length ? <div className="mt-2 divide-y rounded-xl border">{visibleFields.map(([key, item])=><div key={key} className="grid grid-cols-[minmax(90px,0.8fr)_1.4fr] gap-3 px-3 py-2 text-xs"><b className="break-words text-gray-600">{key}</b><span className="break-words">{describeSyncValue(item)}</span></div>)}</div> : <p className="mt-2 rounded-xl border bg-gray-50 p-3 text-xs text-gray-600">{describeSyncValue(value)}</p>}</div><details className="mt-4 rounded-xl border bg-gray-950 text-white"><summary className="cursor-pointer px-3 py-2 text-xs font-bold">Ver detalle técnico para diagnóstico</summary><pre className="max-h-56 overflow-auto border-t border-gray-700 p-3 text-[10px] leading-4 whitespace-pre-wrap">{technicalDetail}</pre></details><div className="mt-4 grid grid-cols-2 gap-2"><button onClick={copyDetail} className="rounded-lg border px-3 py-2 text-sm font-semibold hover:bg-gray-50">{copied ? "Detalle copiado" : "Copiar detalle"}</button><button onClick={onClose} className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white">Cerrar</button></div></section></div>;
 }
 
-export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLogout, products, data, onReturnAdmin, menuOrder = [], onMenuOrderChange, onOpenSettings, onReportProblem, onGlobalScan, onHelp, syncStatus, onSyncNow, demoMode = false }) {
+export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLogout, products, data, preferences = {}, onReturnAdmin, menuOrder = [], onMenuOrderChange, onOpenSettings, onReportProblem, onGlobalScan, onHelp, syncStatus, onSyncNow, demoMode = false }) {
   const [ordenando, setOrdenando] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [notificationClock, setNotificationClock] = useState(() => Date.now());
   const [syncReviewOpen, setSyncReviewOpen] = useState(false);
   const [syncReview, setSyncReview] = useState({ conflicts: [], pending: [] });
@@ -102,7 +103,9 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
     [next[index], next[target]] = [next[target], next[index]];
     onMenuOrderChange?.(next);
   };
-  const notificationCount = data ? buildNotifications(data, notificationClock).length : 0;
+  const notificationCount = data ? buildNotifications(data, notificationClock, preferences).length : 0;
+  const canCollapse = preferences.sidebarMode === "plegable";
+  useEffect(() => { if (!canCollapse) setCollapsed(false); }, [canCollapse]);
   const entityLabel = (entity) => ({ products: "Producto", tickets: "Venta / ticket", clientes: "Cliente", comprasItems: "Compra", proveedores: "Proveedor", perdidas: "Pérdida", sugerencias: "Sugerencia", pedidos: "Pedido", gastos: "Gasto", ventasSuspendidas: "Venta suspendida", auditoria: "Auditoría", inventarios: "Inventario", tareas: "Tarea", metas: "Meta", promociones: "Promoción", reservas: "Reserva", presupuestos: "Presupuesto", arqueos: "Arqueo", comprobantes: "Comprobante", listaCompras: "Ítem de compra", retornables: "Retornable", autoconsumos: "Autoconsumo", turnos: "Turno", recordatoriosProveedor: "Recordatorio", movimientosStock: "Movimiento de stock", historialLimpiezas: "Limpieza", labelTemplates: "Diseño de etiqueta", tutorialProgress: "Tutorial" }[entity] || "Registro");
   const sectionLabel = (section) => ({ caja: "Caja y movimientos", tickets: "Ventas y tickets", clientes: "Clientes y fiado", comprasItems: "Lista de compras", pedidos: "Pedidos a proveedores", gastos: "Gastos", ventasSuspendidas: "Ventas suspendidas", inventarios: "Conteos de stock", perdidas: "Vencimientos y pérdidas", cart: "Carrito de venta", cajaAbierta: "Estado de la caja", promociones: "Promociones", comprobantes: "Comprobantes", movimientosStock: "Movimientos de stock", labelTemplates: "Distribuciones de etiquetas" }[section] || section || null);
   const pendingTitle = (operation) => operation?.value?.nombre || (operation?.entity ? entityLabel(operation.entity) : null) || sectionLabel(operation?.section) || (operation?.key === "cuentas" ? "Cuentas y negocios" : operation?.key) || "Datos del negocio";
@@ -145,7 +148,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
   };
 
   return (
-    <div className="app-sidebar h-full min-h-0 w-56 shrink-0 overflow-hidden border-r border-gray-200 bg-white flex flex-col">
+    <div className={`app-sidebar h-full min-h-0 w-56 shrink-0 overflow-hidden border-r border-gray-200 bg-white flex flex-col ${collapsed ? "app-sidebar--collapsed" : ""}`}>
       <ConfirmDialog open={Boolean(pendingDiscardId)} title="Descartar cambio pendiente" message="Se eliminará únicamente este intento trabado. Los datos que ya llegaron a la nube no se modificarán." confirmLabel="Descartar cambio" danger onCancel={()=>setPendingDiscardId(null)} onConfirm={discardPendingSync}/>
       <ConfirmDialog open={discardPendingBatchOpen} title="Limpiar cambios antiguos" message={`Se quitarán los ${syncReview.pending.length} intentos revisados de la cola. No se borrarán cuentas, reportes, menús ni preferencias guardadas.`} confirmLabel="Limpiar este lote" danger onCancel={()=>setDiscardPendingBatchOpen(false)} onConfirm={discardPendingBatch}/>
       <PendingSyncDetail operation={pendingDetail} title={pendingDetail ? pendingTitle(pendingDetail) : ""} onClose={()=>setPendingDetailId(null)}/>
@@ -167,6 +170,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
         <span className="font-semibold text-gray-900 truncate">
           {cuenta?.nombreNegocio || "Kiosco+"}
         </span>
+        {canCollapse && <button type="button" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? "Expandir menú lateral" : "Plegar menú lateral"} title={collapsed ? "Expandir menú" : "Plegar menú"} className="sidebar-collapse-button ml-auto grid h-10 w-10 shrink-0 place-items-center rounded-lg border text-gray-500 hover:bg-gray-50">{collapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}</button>}
       </div>
 
       <nav data-tour="main-navigation" className="app-sidebar-nav min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 space-y-1">
@@ -180,6 +184,8 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
         )}
         <button
           onClick={() => onNavigate("home")}
+          aria-current={current === "home" ? "page" : undefined}
+          title={collapsed ? "Inicio" : undefined}
           className={`sidebar-home-nav w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
             current === "home"
               ? "sidebar-nav-active bg-gray-100 text-gray-900 font-medium"
@@ -197,6 +203,8 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
             <div key={item.id} className="sidebar-nav-item flex items-center gap-1">
             <button
               onClick={() => !ordenando && onNavigate(item.id)}
+              aria-current={active ? "page" : undefined}
+              title={collapsed ? item.label : undefined}
               className={`min-w-0 flex-1 flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                 active
                   ? "sidebar-nav-active bg-gray-100 text-gray-900 font-medium"
@@ -227,6 +235,8 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
           <div className="sidebar-admin-nav pt-2 mt-2 border-t border-gray-100">
             <button
               onClick={() => onNavigate("administracion")}
+              aria-current={current === "administracion" ? "page" : undefined}
+              title={collapsed ? "Administración" : undefined}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                 current === "administracion"
                   ? "sidebar-nav-active bg-gray-100 text-gray-900 font-medium"

@@ -42,7 +42,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   const health = await request("/v1/health");
-  test("salud informa pagos sin exponer credenciales", health.value.schemaVersion === 8 && health.value.paymentProviders?.mercadoPago?.backendEnabled === false && !JSON.stringify(health.value).includes("clientSecret"));
+  test("salud informa pagos sin exponer credenciales", health.value.schemaVersion === 9 && health.value.paymentProviders?.mercadoPago?.backendEnabled === false && !JSON.stringify(health.value).includes("clientSecret"));
   const providers = await request("/v1/catalog/providers");
   test("servidor informa catálogos gratuitos y opcionales", providers.value.providers?.some((provider) => provider.id === "open-facts" && provider.enabled) && providers.value.providers?.some((provider) => provider.id === "go-upc" && !provider.enabled));
   const boot = await request("/v1/auth/bootstrap", {

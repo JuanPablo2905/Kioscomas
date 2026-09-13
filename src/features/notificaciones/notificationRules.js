@@ -13,13 +13,14 @@ const customerOrderDueAt = (order) => {
   return Number.isFinite(value.getTime()) ? value.getTime() : null;
 };
 
-export function buildNotifications(data, nowValue = Date.now()) {
+export function buildNotifications(data, nowValue = Date.now(), preferences = {}) {
   const notifications = [];
+  const expiryDays = Math.max(0, Number(preferences.expiryDays ?? 7));
   (data.products || []).forEach((product) => {
     if (product.deposito <= product.minimo) notifications.push({ id: `stock-${product.id}`, type: "stock", level: "alta", title: "Stock bajo", detail: product.nombre, view: "stock" });
     if (product.vitrina <= product.alertaVitrina) notifications.push({ id: `vitrina-${product.id}`, type: "vitrina", level: "media", title: "Reponer vitrina", detail: product.nombre, view: "vitrina" });
     const days = daysUntil(product.vencimiento, nowValue);
-    if (days !== null && days <= 30) notifications.push({ id: `vence-${product.id}`, type: "vencimiento", level: days < 0 ? "critica" : "alta", title: days < 0 ? "Producto vencido" : "Próximo a vencer", detail: `${product.nombre} · ${days < 0 ? `hace ${Math.abs(days)} día(s)` : `en ${days} día(s)`}`, view: "vencimientos" });
+    if (days !== null && days <= expiryDays) notifications.push({ id: `vence-${product.id}`, type: "vencimiento", level: days < 0 ? "critica" : "alta", title: days < 0 ? "Producto vencido" : "Próximo a vencer", detail: `${product.nombre} · ${days < 0 ? `hace ${Math.abs(days)} día(s)` : `en ${days} día(s)`}`, view: "vencimientos" });
   });
   const suggestions = (data.sugerencias || []).filter((item) => item.estado === "pendiente");
   if (suggestions.length) notifications.push({ id: "sugerencias", type: "sugerencias", level: "media", title: "Sugerencias pendientes", detail: `${suggestions.length} esperando aprobación`, view: "administracion" });

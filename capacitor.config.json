@@ -1,8 +1,7 @@
 {
   "appId": "com.kioscoapp.mobile",
-  "appName": "KioscoApp",
-  "webDir": "dist",
-  "bundledWebRuntime": false,
+  "appName": "Kiosco+",
+  "webDir": "dist-cloud-app",
   "server": {
     "androidScheme": "https"
   }

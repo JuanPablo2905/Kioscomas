@@ -579,7 +579,8 @@ function MercadoPagoBadge() {
 }
 
 function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, businessId, preferences = {} }) {
-  const [medio, setMedio] = useState("Efectivo");
+  const preferredMethod = MEDIOS_PAGO.some((option) => option.id === preferences.defaultPayment) ? preferences.defaultPayment : "Efectivo";
+  const [medio, setMedio] = useState(preferredMethod);
   const [recibido, setRecibido] = useState(String(total));
   const [clienteId, setClienteId] = useState("");
   const [pagosMixtos, setPagosMixtos] = useState({ Efectivo: "", "Mercado Pago": "", Tarjeta: "", Transferencia: "" });
@@ -843,7 +844,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
 
         <div className="text-center mb-5">
           <p className="text-sm text-gray-500 mb-1">Total a cobrar</p>
-          <p className="text-3xl font-bold text-gray-900">{money(total)}</p>
+          <p className="sensitive-value text-3xl font-bold text-gray-900">{money(total)}</p>
         </div>
 
         {esFiado && (
@@ -1088,10 +1089,10 @@ export function VentasView({
       if (id != null) cantidades.set(id, (cantidades.get(id) || 0) + Number(item.cantidad || 0));
     }));
     return products
-      .filter((product) => product.vitrina > 0)
+      .filter((product) => preferences.allowNegativeStock || product.vitrina > 0)
       .sort((a, b) => Number(Boolean(b.favorito)) - Number(Boolean(a.favorito)) || (cantidades.get(b.id) || 0) - (cantidades.get(a.id) || 0))
       .slice(0, 8);
-  }, [products, tickets]);
+  }, [products, tickets, preferences.allowNegativeStock]);
 
   const toggleFavorito = (id) => {
     setProducts((prev) => prev.map((product) => product.id === id ? { ...product, favorito: !product.favorito } : product));
@@ -1106,9 +1107,9 @@ export function VentasView({
           String(p.codigo || "").toLowerCase().includes(q) ||
           String(p.familia || "").toLowerCase().includes(q) ||
           String(p.variante || "").toLowerCase().includes(q)) &&
-        p.vitrina > 0
+        (preferences.allowNegativeStock || p.vitrina > 0)
     );
-  }, [products, query]);
+  }, [products, query, preferences.allowNegativeStock]);
   const resultFamilies = useMemo(() => groupProductFamilies(results), [results]);
   const resultRows = useMemo(() => resultFamilies.flatMap((family) => family.products.length === 1
     ? family.products
@@ -1236,7 +1237,7 @@ export function VentasView({
     const disponibles = (venta.cart || []).map((item) => {
       const product = products.find((candidate) => candidate.id === item.productId);
       if (!product) return null;
-      const max = Number(product.vitrina || 0) * unidadInfo(product.unidad).factor;
+      const max = preferences.allowNegativeStock ? Infinity : Number(product.vitrina || 0) * unidadInfo(product.unidad).factor;
       const cantidad = Math.min(Number(item.cantidad || 0), max);
       return cantidad > 0 ? { ...item, cantidad } : null;
     }).filter(Boolean);
@@ -1254,18 +1255,18 @@ export function VentasView({
   const addToCart = (product) => {
     const info = unidadInfo(product.unidad);
     const disponibleVenta = product.vitrina * info.factor;
-    if (disponibleVenta <= 0) return;
+    if (disponibleVenta <= 0 && !preferences.allowNegativeStock) return;
     setCart((prev) => {
       const existing = prev.find((c) => c.productId === product.id);
       if (existing) {
         const next = existing.cantidad + stepFor(product);
-        if (next > disponibleVenta) return prev;
+        if (next > disponibleVenta && !preferences.allowNegativeStock) return prev;
         return prev.map((c) =>
           c.productId === product.id ? { ...c, cantidad: next } : c
         );
       }
       const inicial =
-        info.factor === 1 ? 1 : Math.min(stepFor(product), disponibleVenta);
+        info.factor === 1 ? 1 : (preferences.allowNegativeStock ? stepFor(product) : Math.min(stepFor(product), disponibleVenta));
       return [...prev, { productId: product.id, cantidad: inicial }];
     });
     setQuery("");
@@ -1278,7 +1279,7 @@ export function VentasView({
           if (c.productId !== productId) return c;
           const product = products.find((p) => p.id === productId);
           const info = product ? unidadInfo(product.unidad) : { factor: 1 };
-          const max = product ? product.vitrina * info.factor : Infinity;
+          const max = product && !preferences.allowNegativeStock ? product.vitrina * info.factor : Infinity;
           const next = c.cantidad + delta;
           if (next <= 0) return null;
           if (next > max) return c;
@@ -1292,7 +1293,7 @@ export function VentasView({
     const product = products.find((p) => p.id === productId);
     if (!product) return;
     const info = unidadInfo(product.unidad);
-    const max = product.vitrina * info.factor;
+    const max = preferences.allowNegativeStock ? Infinity : product.vitrina * info.factor;
     let next = Number(value);
     if (Number.isNaN(next)) next = 0;
     next = Math.max(0, Math.min(next, max));
@@ -1310,7 +1311,7 @@ export function VentasView({
 
   const handleScanned = (code) => {
     const product = products.find((p) => p.codigo === code);
-    if (product && product.vitrina > 0) {
+    if (product && (product.vitrina > 0 || preferences.allowNegativeStock)) {
       addToCart(product);
       return true;
     }
@@ -1344,6 +1345,10 @@ export function VentasView({
     const ticket = {
       ...identidadTicket,
         fecha: fecha.toISOString(),
+        presentacionTicket: {
+          numeroVisible: preferences.ticketNumbering !== false,
+          prefijo: String(preferences.ticketPrefix || "").trim(),
+        },
         medio,
         pagos: medio === "Pago combinado" ? pagos : [{ metodo: medio, monto: total }],
         providerPayment,
@@ -1656,7 +1661,7 @@ export function VentasView({
             <span className="min-w-0 flex-1 text-xs text-gray-400">Favoritos y más vendidos</span>
             <button onClick={() => setFavoritesOpen((value) => !value)} className="rounded-lg border bg-white px-3 py-1.5 text-xs font-medium text-gray-700 sm:ml-auto">{favoritesOpen ? "Cerrar" : "Elegir favoritos"}</button>
           </div>
-          {favoritesOpen && <div className="mb-3 max-h-52 overflow-y-auto rounded-xl border bg-white p-2"><div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">{products.filter((product) => product.vitrina > 0).map((product) => <button key={product.id} onClick={() => toggleFavorito(product.id)} className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-xs ${product.favorito ? "bg-amber-50 text-amber-900" : "hover:bg-gray-50"}`}><span className="truncate pr-3">{product.nombre}</span><Star size={15} className={product.favorito ? "text-amber-500" : "text-gray-300"} fill={product.favorito ? "currentColor" : "none"}/></button>)}</div></div>}
+          {favoritesOpen && <div className="mb-3 max-h-52 overflow-y-auto rounded-xl border bg-white p-2"><div className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">{products.filter((product) => preferences.allowNegativeStock || product.vitrina > 0).map((product) => <button key={product.id} onClick={() => toggleFavorito(product.id)} className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-xs ${product.favorito ? "bg-amber-50 text-amber-900" : "hover:bg-gray-50"}`}><span className="truncate pr-3">{product.nombre}</span><Star size={15} className={product.favorito ? "text-amber-500" : "text-gray-300"} fill={product.favorito ? "currentColor" : "none"}/></button>)}</div></div>}
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
             {ventaRapida.map((product) => (
               <div key={product.id} className="relative rounded-lg border border-gray-200 bg-white p-2">
@@ -1740,7 +1745,7 @@ export function VentasView({
             </div>
             <div className="text-left md:text-right">
               {descuento > 0 && <><p className="text-sm text-gray-500">Subtotal: {money(subtotal)}</p>{promoAplicada.detalles.map((detail) => <p key={detail.promocion.id} className="text-sm font-medium text-violet-600">{detail.etiqueta} · {detail.promocion.nombre}: -{money(detail.descuento)}</p>)}{descuentoManual > 0 && <p className="text-sm font-medium text-green-600">Descuento manual: -{money(descuentoManual)}</p>}</>}
-              <p className="text-lg font-bold text-gray-900">Total: {money(total)}</p>
+              <p className="sensitive-value text-lg font-bold text-gray-900">Total: {money(total)}</p>
             </div>
           </div>
           <div className={`grid gap-2 ${preferences.customerDisplayEnabled ? "sm:grid-cols-[auto_minmax(0,1fr)]" : ""}`}>

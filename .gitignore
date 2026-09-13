@@ -22,6 +22,10 @@ dev-launcher-app/
 *.log
 *.lnk
 desktop/smoke-result.json
+# Fuentes móviles antiguas generadas durante la preparación local. Android usa desktop/icon.png.
+/assets/icon-only.png
+/assets/icon-foreground.png
+/assets/splash.png
 cloud-dev-data/
 KioscoAppv4.jsx
 .env

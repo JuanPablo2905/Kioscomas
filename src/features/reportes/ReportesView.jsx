@@ -13,17 +13,17 @@ import { isWithinRange, isWithinPreviousRange } from "../../shared/dateRanges";
 import { anularTicket, crearIdOperacion, efectivoDeTicket, numeroTicket, restaurarStock, ticketActivo, ticketAnulado, ticketDevuelto } from "../ventas/salesRules";
 import { printTicket } from "../../shared/ticketPrint";
 
-function StatCard({ label, value, sub }) {
+function StatCard({ label, value, sub, sensitive = false }) {
   return (
     <div className="min-w-0 border border-gray-200 rounded-xl p-3 sm:p-4">
       <p className="text-xs text-gray-500 mb-1">{label}</p>
-      <p className="break-words text-base font-bold text-gray-900 sm:text-lg">{value}</p>
+      <p className={`break-words text-base font-bold text-gray-900 sm:text-lg ${sensitive ? "sensitive-value" : ""}`}>{value}</p>
       {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
     </div>
   );
 }
 
-function MotivoBorradoModal({ ticket, onClose, onConfirm }) {
+function MotivoBorradoModal({ ticket, onClose, onConfirm, requireReason = true }) {
   const [motivo, setMotivo] = useState(ticket.motivoSugerido || "");
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-2 sm:p-4">
@@ -39,7 +39,7 @@ function MotivoBorradoModal({ ticket, onClose, onConfirm }) {
         <p className="text-xs text-gray-500 mb-3">
           Se devolverá el stock y se revertirá el cobro de <b>{money(ticket.total)}</b>. El ticket seguirá visible para auditoría.
         </p>
-        <label className="text-sm text-gray-700 block mb-1">Motivo</label>
+        <label className="text-sm text-gray-700 block mb-1">Motivo {requireReason ? "(obligatorio)" : "(opcional)"}</label>
         <input
           autoFocus
           value={motivo}
@@ -55,8 +55,8 @@ function MotivoBorradoModal({ ticket, onClose, onConfirm }) {
             Cancelar
           </button>
           <button
-            onClick={() => motivo.trim() && onConfirm(motivo.trim())}
-            disabled={!motivo.trim()}
+            onClick={() => onConfirm(motivo.trim() || "Sin motivo informado")}
+            disabled={requireReason && !motivo.trim()}
             className="flex-1 bg-red-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-40"
           >
             Anular y revertir
@@ -178,40 +178,41 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
     });
   };
 
-  const handleBorrarTicket = (motivo) => {
-    if (!ticketActivo(borrandoTicket)) return;
+  const handleBorrarTicket = (motivo, explicitTicket = null) => {
+    const target = explicitTicket || borrandoTicket;
+    if (!ticketActivo(target)) return;
     const responsable = identidad?.nombre || identidad?.rol || "Sin identificar";
     const fecha = new Date();
-    setTickets((prev) => prev.map((t) => t.id === borrandoTicket.id ? anularTicket({
+    setTickets((prev) => prev.map((t) => t.id === target.id ? anularTicket({
       ...t,
-      ...(borrandoTicket.duplicatePairId ? {
+      ...(target.duplicatePairId ? {
         revisionDuplicado: {
           estado: "duplicado_confirmado",
-          parejaId: borrandoTicket.duplicatePairId,
+          parejaId: target.duplicatePairId,
           fecha: fecha.toISOString(),
           responsable,
         },
       } : {}),
     }, motivo, responsable, fecha.toISOString()) : t));
-    setProducts((prev) => restaurarStock(prev, borrandoTicket));
-    if (borrandoTicket.medio === "Cuenta corriente" && borrandoTicket.clienteId && setClientes) {
-      setClientes((prev) => prev.map((cliente) => cliente.id === borrandoTicket.clienteId ? {
+    setProducts((prev) => restaurarStock(prev, target));
+    if (target.medio === "Cuenta corriente" && target.clienteId && setClientes) {
+      setClientes((prev) => prev.map((cliente) => cliente.id === target.clienteId ? {
         ...cliente,
-        saldo: Number(cliente.saldo || 0) - Number(borrandoTicket.total || 0),
-        movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-anulacion"), tipo: "anulacion", monto: Number(borrandoTicket.total || 0), nota: `Anulación ticket #${numeroTicket(borrandoTicket)}: ${motivo}`, fecha: fecha.toLocaleString("es-AR") }],
+        saldo: Number(cliente.saldo || 0) - Number(target.total || 0),
+        movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-anulacion"), tipo: "anulacion", monto: Number(target.total || 0), nota: `Anulación ticket #${numeroTicket(target)}: ${motivo}`, fecha: fecha.toLocaleString("es-AR") }],
       } : cliente));
     }
-    const efectivoTicket = efectivoDeTicket(borrandoTicket);
+    const efectivoTicket = efectivoDeTicket(target);
     setCaja((prev) => ({
       ...prev,
       saldo: efectivoTicket > 0 ? Number(prev.saldo || 0) - efectivoTicket : prev.saldo,
-      movimientos: efectivoTicket > 0 ? [...(prev.movimientos || []), { id: crearIdOperacion("caja-anulacion"), tipo: "retiro", monto: efectivoTicket, nota: `Devolución ticket #${numeroTicket(borrandoTicket)}`, fecha: fecha.toLocaleString("es-AR") }] : (prev.movimientos || []),
+      movimientos: efectivoTicket > 0 ? [...(prev.movimientos || []), { id: crearIdOperacion("caja-anulacion"), tipo: "retiro", monto: efectivoTicket, nota: `Devolución ticket #${numeroTicket(target)}`, fecha: fecha.toLocaleString("es-AR") }] : (prev.movimientos || []),
       historial: [
         ...(prev.historial || []),
         {
           id: crearIdOperacion("auditoria-anulacion"),
           tipo: "anulacion_ticket",
-          detalle: `Ticket #${numeroTicket(borrandoTicket)} (${money(borrandoTicket.total)}) anulado por ${responsable}. Motivo: ${motivo}`,
+          detalle: `Ticket #${numeroTicket(target)} (${money(target.total)}) anulado por ${responsable}. Motivo: ${motivo}`,
           fecha: nowFecha(),
         },
       ],
@@ -245,15 +246,16 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
       ) : (
         <>
           <div data-tour="reports-summary" className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-3">
-            <StatCard label="Total vendido" value={money(totalVendido)} sub={variacion === null ? "Sin período anterior para comparar" : `${variacion >= 0 ? "+" : ""}${variacion.toFixed(1)}% contra el período anterior`} />
+            <StatCard sensitive label="Total vendido" value={money(totalVendido)} sub={variacion === null ? "Sin período anterior para comparar" : `${variacion >= 0 ? "+" : ""}${variacion.toFixed(1)}% contra el período anterior`} />
             <StatCard
+              sensitive
               label="Ganancia bruta histórica"
               value={money(rentabilidad.gananciaHistorica)}
               sub={`${money(rentabilidad.costoHistorico)} de costo registrado`}
             />
-            <StatCard label="Pérdidas del período" value={money(perdidasPeriodo)} sub="Vencimientos, roturas y faltantes" />
-            <StatCard label="Gastos pagados" value={money(gastosPeriodo)} sub="Salidas operativas del período" />
-            <StatCard label="Ganancia neta real" value={money(gananciaNeta)} sub="Ganancia bruta menos pérdidas y gastos" />
+            <StatCard sensitive label="Pérdidas del período" value={money(perdidasPeriodo)} sub="Vencimientos, roturas y faltantes" />
+            <StatCard sensitive label="Gastos pagados" value={money(gastosPeriodo)} sub="Salidas operativas del período" />
+            <StatCard sensitive label="Ganancia neta real" value={money(gananciaNeta)} sub="Ganancia bruta menos pérdidas y gastos" />
             <StatCard label="Tickets" value={filtered.length} />
             <StatCard
               label="Sin movimiento"
@@ -412,7 +414,8 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
                           {puedeEliminarTickets && ticketActivo(t) && <span
                             onClick={(e) => {
                               e.stopPropagation();
-                              setBorrandoTicket(t);
+                              if (preferences.confirmDangerousActions === false && preferences.requireCorrectionReason === false) handleBorrarTicket("Anulación directa desde Reportes", t);
+                              else setBorrandoTicket(t);
                             }}
                             className="text-gray-300 hover:text-red-600"
                           >
@@ -456,6 +459,7 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
       {borrandoTicket && puedeEliminarTickets && (
         <MotivoBorradoModal
           ticket={borrandoTicket}
+          requireReason={preferences.requireCorrectionReason !== false}
           onClose={() => setBorrandoTicket(null)}
           onConfirm={handleBorrarTicket}
         />

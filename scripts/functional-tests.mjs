@@ -308,6 +308,10 @@ try {
   test("WhatsApp rechaza números incompletos", share.isValidWhatsAppPhone("123") === false && share.isValidWhatsAppPhone("11 5555-1234") === true);
   test("mensaje de pedido incluye negocio, proveedor y cantidades", share.purchaseMessage({ businessName: "Kiosco+", providerName: "Distribuidora", items: [{ nombre: "Yerba", cantidad: 3 }] }).includes("3 x Yerba"));
   test("mensaje al cliente incluye retiro y cantidades", share.customerOrderMessage({ businessName: "Kiosco+", order: customerOrderData.reservas[0] }).includes("11 x Sprite") && share.customerOrderMessage({ businessName: "Kiosco+", order: customerOrderData.reservas[0] }).includes("18:30"));
+  const visibleTicketMessage = share.ticketMessage({ numero: "123", fecha: "2026-09-13T12:00:00.000Z", total: 1000, items: [], presentacionTicket: { numeroVisible: true, prefijo: "KS-" } }, "Mi negocio");
+  const privateTicketMessage = share.ticketMessage({ numero: "123", fecha: "2026-09-13T12:00:00.000Z", total: 1000, items: [], presentacionTicket: { numeroVisible: false, prefijo: "KS-" } }, "Mi negocio");
+  test("los tickets nuevos compartidos respetan su prefijo", visibleTicketMessage.includes("Ticket #KS-123"));
+  test("un ticket configurado sin numeración no expone su identificador al compartir", !privateTicketMessage.includes("Ticket #") && !privateTicketMessage.includes("123"));
 
   console.log(`\n${passed} pruebas funcionales superadas.`);
 } finally {

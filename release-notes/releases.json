@@ -1,5 +1,54 @@
 [
   {
+    "version": "0.2.24",
+    "date": "2026-09-13",
+    "title": "Preparada para salir y más liviana al abrir",
+    "summary": "Terminamos el cuarto paquete de la revisión general: las configuraciones principales ahora hacen lo que prometen, la app carga sus áreas por separado y quedaron preparados los procesos de Mac, Microsoft Store y Google Play.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+        "Las vistas pesadas de Stock, Ventas, Compras, Gestión, Reportes, Notificaciones y Administración, junto con el escáner y las pantallas secundarias, pasan a carga diferida con React.lazy y Suspense, reduciendo el JavaScript necesario para abrir la aplicación.",
+          "El plazo de alertas de vencimiento, el medio de pago predeterminado, el stock negativo opcional, el margen objetivo, el redondeo de precios, la duración de confirmaciones, el menú plegable y la ocultación de importes quedaron conectados con la operación real.",
+          "Se incorporaron salto al contenido, foco visible, objetivos táctiles más amplios y administración de foco, Escape y tabulación dentro de los diálogos accesibles.",
+          "El service worker deja de usar una versión de caché fija: cada compilación recibe la versión de package.json y la PWA muestra un aviso cuando hay una actualización lista para recargar.",
+          "El release crea primero un borrador, ejecuta una única validación y construye Windows, Mac Intel y Mac Apple Silicon en paralelo; sólo lo publica cuando todos los instaladores terminaron.",
+          "Mac dispone de configuración condicional para certificado Developer ID, Hardened Runtime, entitlements y notarización; al faltar credenciales deja una advertencia explícita en vez de hacer pasar el artefacto como firmado.",
+          "Se agregó el proyecto Android de Capacitor con versión automática, permisos de cámara y notificaciones, firma externa y generación de Android App Bundle.",
+          "Microsoft Store y Google Play disponen de un workflow manual que valida secretos, genera el paquete correspondiente y lo entrega como artefacto sin publicar automáticamente en ninguna cuenta.",
+          "Los pushes y pull requests a main ahora ejecutan el control de calidad completo, sin esperar a que exista una etiqueta de versión."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+        "La app abre más liviana: carga cada área, el escáner y las pantallas adicionales recién cuando los usás, en lugar de meter todo junto desde el principio.",
+          "Varias opciones que antes parecían configurables pero no cambiaban nada ahora funcionan de verdad. Por ejemplo, podés elegir con qué medio empieza el cobro, cuántos días antes avisar un vencimiento o permitir una venta aunque el stock haya quedado en cero.",
+          "Si plegás el menú ganás lugar; si ocultás importes, los montos principales se desenfocan y se revelan al apuntarlos.",
+          "La versión instalada en el celular avisa cuando hay una actualización lista y ofrece aplicarla sin depender de que el navegador conserve una caché vieja.",
+          "Una nueva versión de GitHub ya no sale con Windows mientras Mac sigue trabajando: primero se arma completa y recién después se hace pública.",
+          "El proyecto para Android ya existe y puede generar el archivo que pide Google Play. También quedó automatizado el paquete de Microsoft Store.",
+          "La firma final de Mac y la subida a las tiendas siguen necesitando las cuentas, certificados y claves del titular; esas credenciales no se inventaron ni se guardaron dentro del proyecto."
+        ]
+      },
+      {
+        "title": "Distribución pendiente del titular",
+        "items": [
+          "Para un Mac sin advertencias hay que cargar el certificado y las credenciales de notarización de Apple en los secretos de GitHub.",
+          "Para Microsoft Store hay que reservar el producto y copiar los tres datos de identidad asignados por Partner Center.",
+          "Para Google Play hay que crear la cuenta, guardar la clave de carga y completar la ficha, privacidad, seguridad de datos y canal de prueba interna."
+        ]
+      },
+      {
+        "title": "Calidad",
+        "items": [
+          "Se añadió una prueba de preparación de lanzamiento que controla versión, configuraciones reales, carga diferida, accesibilidad, caché PWA, proyectos de tiendas, firma externa y dependencias entre jobs de publicación.",
+          "La compilación de producción verifica que los módulos separados se generen correctamente y mantiene las pruebas anteriores de ventas, nube, seguridad, pantallas y Mercado Pago."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.23",
     "date": "2026-09-13",
     "title": "Cobros preparados y pantallas más inteligentes",

@@ -602,6 +602,51 @@ body[data-tutorial-active="true"] .app-date-menu {
    se desplaza solamente la lista de secciones y no toda la barra lateral. */
 .app-sidebar { min-height: 0; max-height: 100%; overflow: hidden; }
 .app-sidebar-nav { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; }
+
+@media (min-width: 768px) {
+  .app-sidebar--collapsed { width: 4.75rem !important; }
+  .app-sidebar--collapsed .sidebar-brand { justify-content: center; padding-inline: .5rem; }
+  .app-sidebar--collapsed .sidebar-brand > span,
+  .app-sidebar--collapsed .sidebar-menu-heading,
+  .app-sidebar--collapsed .desktop-nav-label,
+  .app-sidebar--collapsed .sidebar-footer > p,
+  .app-sidebar--collapsed .sidebar-footer > span,
+  .app-sidebar--collapsed .sidebar-footer > .rounded-lg,
+  .app-sidebar--collapsed .sidebar-footer button span,
+  .app-sidebar--collapsed .sidebar-admin-return { display: none !important; }
+  .app-sidebar--collapsed .sidebar-brand img,
+  .app-sidebar--collapsed .sidebar-brand > span:first-child { display: none !important; }
+  .app-sidebar--collapsed .sidebar-collapse-button { margin-left: 0; }
+  .app-sidebar--collapsed .sidebar-home-nav,
+  .app-sidebar--collapsed .sidebar-nav-item > button,
+  .app-sidebar--collapsed .sidebar-admin-nav > button { justify-content: center; padding-inline: .6rem; }
+  .app-sidebar--collapsed .sidebar-nav-item > button > span { gap: 0; }
+  .app-sidebar--collapsed .sidebar-footer { padding-inline: .55rem; }
+  .app-sidebar--collapsed .sidebar-footer > .mt-3 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .app-sidebar--collapsed .sidebar-footer > button:last-child { justify-content: center; width: 100%; }
+}
+
+[data-hide-sensitive="true"] .sensitive-value {
+  filter: blur(.42rem);
+  transition: filter 140ms ease;
+  user-select: none;
+}
+[data-hide-sensitive="true"] .sensitive-value:hover,
+[data-hide-sensitive="true"] .sensitive-value:focus-visible { filter: none; user-select: auto; }
+
+.skip-to-content {
+  position: fixed; left: 1rem; top: .5rem; z-index: 9999; transform: translateY(-160%);
+  border-radius: .65rem; background: #fff; color: #173f3a; padding: .65rem 1rem;
+  font-weight: 800; box-shadow: 0 8px 24px rgb(0 0 0 / .25);
+}
+.skip-to-content:focus { transform: translateY(0); }
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--app-accent, #1C4A44) 70%, #fbbf24) !important;
+  outline-offset: 2px !important;
+}
+@media (pointer: coarse) {
+  :where(button, a, input, textarea, select):not(.customer-display-widget-frame *) { min-height: 44px; }
+}
 .sidebar-brand, .sidebar-footer { flex-shrink: 0; }
 @media (min-width: 801px) and (max-height: 760px) {
   .sidebar-brand { padding-top: .75rem !important; padding-bottom: .75rem !important; }

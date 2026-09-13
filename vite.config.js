@@ -1,11 +1,23 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const appVersion = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
+let resolvedConfig;
+const stampServiceWorker = () => ({
+  name: "kiosco-versioned-service-worker",
+  apply: "build",
+  configResolved(config) { resolvedConfig = config; },
+  closeBundle() {
+    const serviceWorkerPath = resolve(resolvedConfig.root, resolvedConfig.build.outDir, "sw.js");
+    if (!existsSync(serviceWorkerPath)) return;
+    const source = readFileSync(serviceWorkerPath, "utf8");
+    writeFileSync(serviceWorkerPath, source.replaceAll("__KIOSCO_BUILD__", appVersion));
+  },
+});
 export default defineConfig({
   base: "./",
-  plugins: [react()],
+  plugins: [react(), stampServiceWorker()],
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(appVersion),
   },

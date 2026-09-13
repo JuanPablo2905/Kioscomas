@@ -1,4 +1,6 @@
-const CACHE_NAME = "kioscoplus-shell-v8";
+// Vite reemplaza este marcador por la versión de package.json durante cada build.
+// Así una actualización nunca queda atada a un nombre de caché escrito a mano.
+const CACHE_NAME = "kioscoplus-shell-__KIOSCO_BUILD__";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll([
@@ -19,6 +21,10 @@ self.addEventListener("install", (event) => {
 });
 self.addEventListener("activate", (event) => {
   event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (event) => {

@@ -1,4 +1,6 @@
 let deferredInstallPrompt = null;
+let waitingWorker = null;
+let updateReady = false;
 const listeners = new Set();
 
 export const isPwaStandalone = () => typeof window !== "undefined" && (
@@ -9,6 +11,7 @@ export const isPwaStandalone = () => typeof window !== "undefined" && (
 export const getPwaInstallState = () => ({
   canInstall: Boolean(deferredInstallPrompt),
   standalone: isPwaStandalone(),
+  updateReady,
 });
 
 const notify = () => {
@@ -33,6 +36,28 @@ export const requestPwaInstall = async () => {
   await prompt.prompt();
   const choice = await prompt.userChoice.catch(() => null);
   return { available: true, outcome: choice?.outcome || "dismissed" };
+};
+
+export const markPwaUpdateReady = (worker = null) => {
+  waitingWorker = worker || waitingWorker;
+  updateReady = true;
+  notify();
+};
+
+export const applyPwaUpdate = () => {
+  if (!waitingWorker || !navigator.serviceWorker) {
+    window.location.reload();
+    return;
+  }
+  let reloaded = false;
+  const reload = () => {
+    if (reloaded) return;
+    reloaded = true;
+    window.location.reload();
+  };
+  navigator.serviceWorker.addEventListener("controllerchange", reload, { once: true });
+  waitingWorker.postMessage({ type: "SKIP_WAITING" });
+  window.setTimeout(reload, 1500);
 };
 
 if (typeof window !== "undefined") {

@@ -9,62 +9,83 @@ permissions:
   contents: write
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Preparar pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+      - name: Verificar versión
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          test "$TAG_VERSION" = "$PACKAGE_VERSION" || (echo "La etiqueta v$TAG_VERSION no coincide con package.json ($PACKAGE_VERSION)." && exit 1)
+      - run: pnpm install --frozen-lockfile
+      - name: Ejecutar pruebas completas
+        run: |
+          pnpm run test:all
+          pnpm run test:cloud
+      - name: Generar notas de la versión
+        run: node scripts/generate-release-notes.mjs --version "${GITHUB_REF_NAME#v}" --output release-notes.md
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-notes
+          path: release-notes.md
+
+  create-draft:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-notes
+      - name: Crear versión en borrador
+        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --draft --title "Kiosco+ $GITHUB_REF_NAME" --notes-file release-notes.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+
   release-windows:
+    needs: create-draft
     runs-on: windows-latest
     timeout-minutes: 35
     steps:
-      - name: Descargar el proyecto
-        uses: actions/checkout@v6
-
-      - name: Preparar Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
-
       - name: Preparar pnpm
         shell: pwsh
         run: |
           corepack enable
           corepack prepare pnpm@11.9.0 --activate
-
-      - name: Verificar que la etiqueta coincida con la versión
-        shell: pwsh
-        run: |
-          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
-          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($tagVersion -ne $packageVersion) {
-            throw "La etiqueta v$tagVersion no coincide con package.json ($packageVersion)."
-          }
-
-      - name: Instalar dependencias
-        run: pnpm install --frozen-lockfile
-
-      - name: Probar la aplicación
-        run: |
-          pnpm run test:all
-          pnpm run test:cloud
-
-      - name: Crear instalador y publicar actualización
-        run: pnpm run desktop:release
+      - run: pnpm install --frozen-lockfile
+      - name: Crear instalador de Windows
+        run: pnpm run desktop:build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-
-      - name: Publicar las notas de esta versión
+          CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      - name: Adjuntar instalador y metadatos
         shell: pwsh
         run: |
-          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $notesFile = Join-Path $env:RUNNER_TEMP "kiosco-plus-$packageVersion.md"
-          node scripts/generate-release-notes.mjs --version $packageVersion --output $notesFile
-          gh release edit "${{ github.ref_name }}" --notes-file $notesFile
+          $files = @("release/KioscoPlus-Setup.exe")
+          foreach ($optional in @("release/KioscoPlus-Setup.exe.blockmap", "release/latest.yml")) {
+            if (Test-Path -LiteralPath $optional) { $files += $optional }
+          }
+          gh release upload "${{ github.ref_name }}" @files --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   release-macos:
-    needs: release-windows
+    needs: create-draft
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -77,32 +98,16 @@ jobs:
             runner: macos-15-intel
     name: release-macos-${{ matrix.arch }}
     steps:
-      - name: Descargar el proyecto
-        uses: actions/checkout@v6
-
-      - name: Preparar Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
-
       - name: Preparar pnpm
         run: |
           corepack enable
           corepack prepare pnpm@11.9.0 --activate
-
-      - name: Verificar que la etiqueta coincida con la versión
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
-            echo "La etiqueta v$TAG_VERSION no coincide con package.json ($PACKAGE_VERSION)."
-            exit 1
-          fi
-
-      - name: Instalar dependencias
-        run: pnpm install --frozen-lockfile
-
-      - name: Preparar el ícono para Mac
+      - run: pnpm install --frozen-lockfile
+      - name: Preparar ícono para Mac
         run: |
           mkdir -p desktop/icon.iconset
           sips -z 16 16 desktop/icon.png --out desktop/icon.iconset/icon_16x16.png
@@ -116,13 +121,28 @@ jobs:
           sips -z 512 512 desktop/icon.png --out desktop/icon.iconset/icon_512x512.png
           sips -z 1024 1024 desktop/icon.png --out desktop/icon.iconset/icon_512x512@2x.png
           iconutil -c icns desktop/icon.iconset -o desktop/icon.icns
-
+      - name: Informar estado de firma
+        run: |
+          if [ -n "$CSC_LINK" ] && [ -n "$APPLE_ID" ]; then
+            pnpm run release:verify -- --mac-production
+          else
+            echo "::warning::El DMG se generará sin firma/notarización hasta cargar los secretos de Apple indicados en docs/PUBLICAR_EN_MAC.md."
+          fi
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - name: Crear instalador para Mac ${{ matrix.label }}
         run: pnpm run desktop:build:mac:${{ matrix.arch }}
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: Adjuntar instaladores de Mac ${{ matrix.label }} a la versión publicada
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Adjuntar instaladores de Mac ${{ matrix.label }}
         run: |
           gh release upload "$GITHUB_REF_NAME" \
             "release/KioscoPlus-Mac-${{ matrix.arch }}.dmg" \
@@ -130,3 +150,13 @@ jobs:
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: [release-windows, release-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publicar sólo cuando todos los instaladores terminaron
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}

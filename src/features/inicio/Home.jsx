@@ -10,7 +10,7 @@ import { HOME_CARDS, money } from "../../shared/domain";
 import { permisosDe } from "../../app/data";
 import { isWithinRange } from "../../shared/dateRanges";
 
-function DashboardCard({ icon: Icon, label, value, sub, tono, onClick }) {
+function DashboardCard({ icon: Icon, label, value, sub, tono, onClick, sensitive = false }) {
   const tonos = {
     verde: "text-green-600",
     rojo: "text-red-600",
@@ -23,7 +23,7 @@ function DashboardCard({ icon: Icon, label, value, sub, tono, onClick }) {
       className="home-metric-card min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-4 text-left transition-all hover:border-gray-400 hover:shadow-sm"
     >
       <Icon size={17} className="text-gray-400 mb-2" />
-      <p className={`break-words text-xl font-bold tabular-nums ${tonos[tono] || "text-gray-900"}`}>{value}</p>
+      <p className={`break-words text-xl font-bold tabular-nums ${sensitive ? "sensitive-value" : ""} ${tonos[tono] || "text-gray-900"}`}>{value}</p>
       <p className="mt-0.5 break-words text-xs text-gray-500">{label}</p>
       {sub && <p className="mt-1 break-words text-[11px] text-gray-400">{sub}</p>}
     </button>
@@ -146,6 +146,7 @@ export function Home({ onNavigate, cuenta, identidad, data, onReportProblem }) {
               value={data.cajaAbierta ? "Abierta" : "Cerrada"}
               sub={data.cajaAbierta ? money(data.caja.saldo) : null}
               tono={data.cajaAbierta ? "verde" : "gris"}
+              sensitive={data.cajaAbierta}
               onClick={() => onNavigate("ventas")}
             />
           )}
@@ -156,6 +157,7 @@ export function Home({ onNavigate, cuenta, identidad, data, onReportProblem }) {
               value={money(ventasHoy)}
               sub={`${ticketsHoy} ticket(s)`}
               tono="verde"
+              sensitive
               onClick={() => onNavigate("reportes")}
             />
           )}
@@ -186,6 +188,7 @@ export function Home({ onNavigate, cuenta, identidad, data, onReportProblem }) {
               value={money(valorStock)}
               sub="Depósito, a precio de costo"
               tono="gris"
+              sensitive
               onClick={() => onNavigate("stock")}
             />
           )}
