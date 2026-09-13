@@ -50,6 +50,8 @@ try {
   const businessId = registration.value.businessId;
   test("una contraseña válida permite crear el negocio", registration.response.status === 201 && Boolean(businessId));
   const ownerLogin = await request("/v1/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "security-owner", password: "owner-secret", deviceId: ownerDevice }) });
+  const storedAfterLogin = JSON.parse(await fs.readFile(dbPath, "utf8"));
+  test("el token de acceso no queda guardado en texto legible", !JSON.stringify(storedAfterLogin).includes(ownerLogin.value.accessToken) && Object.keys(storedAfterLogin.sessions || {}).some((key) => /^[a-f0-9]{64}$/.test(key)));
   const ownerHeaders = { "content-type": "application/json", "x-device-id": ownerDevice, "x-tenant-id": businessId, authorization: `Bearer ${ownerLogin.value.accessToken}` };
   const employeePassword = portablePassword("employee-secret");
   const employee = { id: "employee-1", nombre: "Cajera", usuario: "security-cashier", email: "cashier-security@example.com", rol: "Cajero", estado: "activo", ...employeePassword };

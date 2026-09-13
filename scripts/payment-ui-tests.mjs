@@ -22,7 +22,9 @@ test("QR dinámico y Point esperan aprobación antes de confirmar", sales.includ
 test("el importe de Mercado Pago en un pago combinado se calcula por separado", sales.includes('pagosMixtos["Mercado Pago"]') && sales.includes("montoMercadoPago"));
 test("la venta guarda la referencia segura de la operación del proveedor", sales.includes("providerPayment") && sales.includes("providerOrderId"));
 test("las preferencias permiten elegir modo, destino, caja QR y terminal Point", settings.includes("customerDisplayMercadoPagoMode") && settings.includes("customerDisplayMercadoPagoTarget") && settings.includes("customerDisplayMercadoPagoPosId") && settings.includes("customerDisplayMercadoPagoTerminalId"));
-test("el celular consulta y muestra cobros enviados desde otra caja", receiver.includes("listActivePaymentPresentations") && receiver.includes("sourceDeviceId !== paymentDeviceId()"));
+test("el celular consulta, muestra y confirma la recepción del cobro", receiver.includes("listActivePaymentPresentations") && receiver.includes("acknowledgePaymentPresentation") && receiver.includes("!next.seenAt"));
+test("la caja informa si el otro celular abrió el cobro", sales.includes("loadPaymentPresentation") && sales.includes("presentationDelivery?.seenAt") && sales.includes("El celular recibió y abrió el cobro"));
+test("el cobro combinado permite elegir y quitar medios sin cambiar de pantalla", sales.includes("metodosMixtosActivos") && sales.includes("addMixedMethod") && sales.includes("removeMixedMethod"));
 test("la pantalla del cliente muestra cada parte de un pago combinado", customerDisplay.includes('payment?.method === "Pago combinado"') && customerDisplay.includes("item.metodo") && customerDisplay.includes("item.monto"));
 test("cada tira puede elegir promociones y adapta la dirección a su forma", promotionWidget.includes("promotionIds") && promotionWidget.includes('orientation === "vertical"') && promotionWidget.includes('orientation === "horizontal"'));
 test("los medios de pago se reorganizan en horizontal, vertical o cuadrícula", paymentWidget.includes('"horizontal"') && paymentWidget.includes('"vertical"') && paymentWidget.includes('"grid"'));

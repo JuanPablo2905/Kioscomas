@@ -4,6 +4,19 @@ services:
     name: Kioscomas
     buildCommand: pnpm install --frozen-lockfile --ignore-scripts && pnpm run build:cloud-app
     staticPublishPath: ./dist-cloud-app
+    routes:
+      - type: rewrite
+        source: /pantalla
+        destination: /pantalla.html
+      - type: rewrite
+        source: /descargas
+        destination: /descargas.html
+      - type: rewrite
+        source: /funciones
+        destination: /funciones.html
+      - type: rewrite
+        source: /*
+        destination: /index.html
     headers:
       - path: /*
         name: X-Content-Type-Options
@@ -17,6 +30,9 @@ services:
       - path: /*
         name: X-Frame-Options
         value: SAMEORIGIN
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000; includeSubDomains
   - type: web
     runtime: node
     name: kiosco-plus-api
@@ -43,8 +59,14 @@ services:
         sync: false
       - key: KIOSCO_PUBLIC_APP_URL
         value: https://app.kioscomas.ar
+      - key: KIOSCO_PUBLIC_DISPLAY_URL
+        value: https://kioscomas.ar/pantalla
       - key: KIOSCO_PASSWORD_RESET_MINUTES
         value: "30"
+      - key: KIOSCO_ACCESS_TOKEN_HOURS
+        value: "2"
+      - key: KIOSCO_ALLOWED_ORIGINS
+        value: https://app.kioscomas.ar,https://kioscomas.ar,https://www.kioscomas.ar
       - key: KIOSCO_VAPID_PUBLIC_KEY
         sync: false
       - key: KIOSCO_VAPID_PRIVATE_KEY

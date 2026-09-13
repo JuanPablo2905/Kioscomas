@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, HandCoins, Smartphone, X } from "lucide-react";
 import QRCode from "qrcode";
 import { money } from "../../shared/domain";
-import { listActivePaymentPresentations, paymentDeviceId } from "./paymentService";
+import { acknowledgePaymentPresentation, listActivePaymentPresentations } from "./paymentService";
 
 export function RemotePaymentReceiver({ businessId, businessName }) {
   const [presentation, setPresentation] = useState(null);
@@ -17,8 +17,11 @@ export function RemotePaymentReceiver({ businessId, businessName }) {
       if (!navigator.onLine || document.visibilityState === "hidden") return;
       try {
         const payload = await listActivePaymentPresentations(businessId);
-        const next = (payload.presentations || []).find((item) => item.sourceDeviceId !== paymentDeviceId() && item.id !== dismissed);
-        if (active) setPresentation(next || null);
+        const next = (payload.presentations || []).find((item) => item.id !== dismissed);
+        if (active) {
+          setPresentation(next || null);
+          if (next?.id && !next.seenAt) acknowledgePaymentPresentation(businessId, next.id).catch(() => {});
+        }
       } catch { /* La recepción remota no interrumpe el resto de la app. */ }
     };
     load();
@@ -44,7 +47,7 @@ export function RemotePaymentReceiver({ businessId, businessName }) {
       <div className="mt-4 rounded-2xl bg-sky-50 p-4 text-center"><span className="text-xs font-bold text-sky-800">Importe a cobrar</span><p className="mt-1 text-4xl font-black text-sky-950">{money(presentation.amount)}</p>{presentation.method === "Pago combinado" && presentation.payments?.length > 0 && <div className="mt-3 grid gap-1 border-t border-sky-200 pt-3 text-left">{presentation.payments.map((item) => <p key={item.metodo} className="flex justify-between gap-3 text-xs"><span>{item.metodo}</span><b>{money(item.monto)}</b></p>)}</div>}</div>
       {qrImage && !approved && <img src={qrImage} alt="Código QR de Mercado Pago" className="mx-auto mt-4 aspect-square w-full max-w-[320px] rounded-2xl border bg-white p-2"/>}
       <div className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-[#009ee3] px-4 py-3 text-sm font-black text-white"><HandCoins size={18}/>{presentation.mode === "dynamic_qr" ? "QR dinámico de Mercado Pago" : "QR de Mercado Pago"}</div>
-      <p className="mt-3 text-center text-xs leading-5 text-gray-500">Esta pantalla no registra la venta. La caja que inició el cobro confirma el resultado y termina la operación.</p>
+      <p className="mt-3 text-center text-xs leading-5 text-gray-500">Esta pantalla sólo muestra el cobro. El dispositivo que inició la venta confirma el resultado y termina la operación.</p>
     </div>
   </div>;
 }

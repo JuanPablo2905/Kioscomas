@@ -109,10 +109,8 @@ export async function pollRemoteDisplayPairing(requestToken) {
 }
 
 export function remoteDisplayEntryUrl() {
-  const browserUrl = window.location.protocol === "http:" || window.location.protocol === "https:" ? window.location.href : "";
-  const url = new URL(browserUrl || import.meta.env.VITE_CLOUD_APP_URL || "https://app.kioscomas.ar");
-  url.search = ""; url.hash = ""; url.searchParams.set("window", "remote-display");
-  return url.toString();
+  const configured = import.meta.env.VITE_PUBLIC_DISPLAY_URL || "https://kioscomas.ar/pantalla";
+  return new URL(configured, window.location.href).toString();
 }
 
 export async function pairRemoteDisplay(code) {

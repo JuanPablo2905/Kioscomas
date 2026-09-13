@@ -42,6 +42,7 @@ export const NOTIFICATION_CATEGORY_OPTIONS = [
   ["stock", "Stock y reposición"],
   ["expirations", "Vencimientos de productos"],
   ["cash", "Caja y diferencias"],
+  ["payments", "Cobros y Mercado Pago"],
   ["expenses", "Gastos y pagos"],
   ["accounts", "Clientes y cuentas corrientes"],
   ["sync", "Nube y sincronización"],

@@ -6,7 +6,7 @@ const GROUPS = [
   { id: "account", label: "Cuenta y suscripción", categories: ["subscription", "accounts"] },
   { id: "orders", label: "Pedidos y compras", categories: ["orders", "expenses"] },
   { id: "stock", label: "Stock y vencimientos", categories: ["stock", "expirations"] },
-  { id: "sales", label: "Ventas y caja", categories: ["cash"] },
+  { id: "sales", label: "Ventas y caja", categories: ["cash", "payments"] },
   { id: "system", label: "Sistema y mantenimiento", categories: ["sync", "maintenance"] },
 ];
 

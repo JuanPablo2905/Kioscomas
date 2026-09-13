@@ -31,6 +31,10 @@ try {
   assert(paymentPresentation.response.status === 201 && paymentPresentation.value.presentation?.payments?.length === 2, "la caja publica un QR con el detalle completo del pago combinado");
   const activePayments = await request("/v1/payments/presentations/active", { headers });
   assert(activePayments.response.ok && activePayments.value.presentations?.[0]?.amount === 13000 && activePayments.value.presentations?.[0]?.payments?.[1]?.metodo === "Mercado Pago", "la app de otro dispositivo recibe importe, QR y reparto por medio de pago");
+  const seenPayment = await request(`/v1/payments/presentations/${paymentPresentation.value.presentation.id}/seen`, { method: "POST", headers, body: "{}" });
+  assert(seenPayment.response.ok && Boolean(seenPayment.value.presentation?.seenAt), "el celular confirma al dispositivo de caja que abrió el cobro");
+  const deliveryState = await request(`/v1/payments/presentations/${paymentPresentation.value.presentation.id}`, { headers });
+  assert(deliveryState.response.ok && deliveryState.value.presentation?.seenDeviceId === "display-admin-pc", "la caja puede consultar el estado real de entrega");
   const foreignAttempt = await request("/v1/payments/presentations", { method: "POST", headers, body: JSON.stringify({ target: "mobile", mode: "dynamic_qr", amount: 5000, attemptId: "attempt-de-otro-negocio", qrData: "qr-prueba" }) });
   assert(foreignAttempt.response.status === 400, "una presentación no puede enlazar un intento de cobro ajeno o inexistente");
   const closedPayment = await request(`/v1/payments/presentations/${paymentPresentation.value.presentation.id}`, { method: "DELETE", headers });

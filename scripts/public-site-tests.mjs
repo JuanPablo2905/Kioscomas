@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 
 const read = (file) => fs.readFile(file, "utf8");
-const [landing, landingStyles, prices, privacy, responsive, navigation, adminPanel, cloudApp, cloudServer, publicEnv, cloudEnv, releaseWorkflow, packageManifest] = await Promise.all([
+const [landing, landingStyles, prices, privacy, responsive, navigation, adminPanel, cloudApp, cloudServer, publicEnv, cloudEnv, releaseWorkflow, packageManifest, downloads, functionsPage, screenPage, redirects, renderConfig] = await Promise.all([
   read("src/landing.jsx"),
   read("src/landing.css"),
   read("src/precios.jsx"),
@@ -15,6 +15,11 @@ const [landing, landingStyles, prices, privacy, responsive, navigation, adminPan
   read(".env.cloud"),
   read(".github/workflows/release-windows.yml"),
   read("package.json"),
+  read("src/descargas.jsx"),
+  read("src/funciones.jsx"),
+  read("src/pantalla.jsx"),
+  read("public/_redirects"),
+  read("render.yaml"),
 ]);
 
 let passed = 0;
@@ -26,7 +31,7 @@ const test = (name, condition) => {
 
 test("la landing diferencia la demo de la aplicación real", landing.includes("demoUrl") && landing.includes("cloudAppUrl"));
 test("la portada conserva su diseño base completo", landingStyles.length > 10000 && [".nav{", ".hero{", ".button{", ".demo-window{", ".feature-grid{"].every((selector) => landingStyles.includes(selector)));
-test("la portada conserva también las descargas separadas para Mac", landingStyles.includes(".mac-downloads{") && landingStyles.includes(".mac-download-card{"));
+test("las descargas viven en una página propia y separan los dos tipos de Mac", downloads.includes("Mac Apple Silicon") && downloads.includes("Mac Intel") && navigation.includes('label: "Descargas"'));
 test("la página de precios enlaza la aplicación real", prices.includes("cloudAppUrl") && prices.includes("Ingresar a Kiosco+"));
 test("la beta publica precio, duración y ausencia de tarjeta", prices.includes("betaTrialDays") && prices.includes("launchPaidMonths") && prices.includes("sin tarjeta"));
 test("el precio diferencia lanzamiento y lista con una línea de tiempo", prices.includes("launchDiscount") && prices.includes("price-timeline") && prices.includes("Desde el cuarto mes pago"));
@@ -42,7 +47,9 @@ test("editar y eliminar tienen etiquetas visibles", adminPanel.includes("<Pencil
 test("la app real exige activación y la demo puede omitirla", cloudApp.includes("REQUIRE_DEVICE_ACTIVATION") && cloudApp.includes("PUBLIC_DEMO_MODE"));
 test("el servidor verifica la activación al iniciar y renovar sesión", cloudServer.includes("requireDeviceActivation") && cloudServer.includes("Este dispositivo todavía no fue autorizado") && cloudServer.includes("Este dispositivo ya no está autorizado"));
 test("el sitio público conoce la URL de la aplicación real", publicEnv.includes("VITE_CLOUD_APP_URL=https://app.kioscomas.ar"));
-test("la landing ofrece instaladores Mac para Apple Silicon e Intel", landing.includes("macAppleSiliconDownloadUrl") && landing.includes("macIntelDownloadUrl") && landing.includes('id="descargas-mac"'));
+test("la portada quedó limpia y lleva al centro de descargas", landing.includes('./descargas.html') && !landing.includes('id="descargas-mac"'));
+test("las funciones diferenciadoras tienen una página detallada", functionsPage.includes('{ id: "pantallas"') && functionsPage.includes('{ id: "mercado-pago"') && functionsPage.includes('{ id: "offline"'));
+test("la pantalla remota tiene una entrada pública independiente y fácil de recordar", screenPage.includes("RemoteDisplayScreen") && redirects.includes("/pantalla") && renderConfig.includes("source: /pantalla"));
 test("el entorno público apunta a los dos instaladores Mac", publicEnv.includes("KioscoPlus-Mac-arm64.dmg") && publicEnv.includes("KioscoPlus-Mac-x64.dmg"));
 test("la publicación de Mac separa Apple Silicon e Intel", releaseWorkflow.includes("arch: arm64") && releaseWorkflow.includes("arch: x64") && !releaseWorkflow.includes("--universal"));
 test("cada instalador Mac usa el equipo nativo correcto", releaseWorkflow.includes("runner: macos-15") && releaseWorkflow.includes("runner: macos-15-intel") && releaseWorkflow.includes("runs-on: ${{ matrix.runner }}"));

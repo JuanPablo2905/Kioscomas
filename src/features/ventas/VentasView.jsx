@@ -20,7 +20,7 @@ import { openCustomerDisplay, publishCustomerDisplay } from "./customerDisplay";
 import QRCode from "qrcode";
 import {
   PAYMENT_MODES, PAYMENT_TARGETS, cancelPaymentAttempt, closePaymentPresentation,
-  createPaymentAttempt, loadPaymentProviders, publishPaymentPresentation, refreshPaymentAttempt,
+  createPaymentAttempt, loadPaymentPresentation, loadPaymentProviders, publishPaymentPresentation, refreshPaymentAttempt,
 } from "./paymentService";
 
 const DENOMINACIONES = [20000, 10000, 2000, 1000, 500, 200, 100, 50, 20, 10];
@@ -584,6 +584,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
   const [recibido, setRecibido] = useState(String(total));
   const [clienteId, setClienteId] = useState("");
   const [pagosMixtos, setPagosMixtos] = useState({ Efectivo: "", "Mercado Pago": "", Tarjeta: "", Transferencia: "" });
+  const [metodosMixtosActivos, setMetodosMixtosActivos] = useState(["Efectivo", "Mercado Pago"]);
   const savedMode = preferences.customerDisplayMercadoPagoMode || "ask";
   const savedTarget = preferences.customerDisplayMercadoPagoTarget || "ask";
   const configuredMode = PAYMENT_MODES.some((option) => option.id === savedMode) ? savedMode : "ask";
@@ -593,6 +594,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
   const [paymentProvider, setPaymentProvider] = useState(null);
   const [paymentAttempt, setPaymentAttempt] = useState(null);
   const [paymentPresentationId, setPaymentPresentationId] = useState("");
+  const [presentationDelivery, setPresentationDelivery] = useState(null);
   const [paymentQrImage, setPaymentQrImage] = useState("");
   const [paymentQrData, setPaymentQrData] = useState("");
   const [paymentBusy, setPaymentBusy] = useState(false);
@@ -606,8 +608,8 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
   const esMixto = medio === "Pago combinado";
   const incluyeMercadoPago = medio === "Mercado Pago" || (esMixto && Number(pagosMixtos["Mercado Pago"] || 0) > 0);
   const montoMercadoPago = medio === "Mercado Pago" ? total : Number(pagosMixtos["Mercado Pago"] || 0);
-  const totalMixto = Object.values(pagosMixtos).reduce((sum, value) => sum + (Number(value) || 0), 0);
-  const pagosSeleccionados = esMixto ? Object.entries(pagosMixtos).filter(([, value]) => Number(value) > 0).map(([metodo, montoPago]) => ({ metodo, monto: Number(montoPago) })) : [];
+  const totalMixto = metodosMixtosActivos.reduce((sum, metodo) => sum + (Number(pagosMixtos[metodo]) || 0), 0);
+  const pagosSeleccionados = esMixto ? metodosMixtosActivos.filter((metodo) => Number(pagosMixtos[metodo]) > 0).map((metodo) => ({ metodo, monto: Number(pagosMixtos[metodo]) })) : [];
   const preparedForCurrentAmount = preparedAmount !== null && Math.abs(Number(preparedAmount) - montoMercadoPago) < 0.01;
   const mercadoPagoPreparado = !incluyeMercadoPago || (preparedForCurrentAmount && (mercadoPagoMode === "static_qr" ? Boolean(paymentQrImage) : paymentAttempt?.status === "approved"));
   const puedeConfirmarBase = esEfectivo
@@ -651,7 +653,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
       qrData: paymentQrData,
       qrImage: paymentQrImage,
     });
-  }, [medio, monto, vuelto, esEfectivo, total, totalMixto, pagosMixtos, incluyeMercadoPago, montoMercadoPago, mercadoPagoMode, paymentTarget, paymentAttempt?.status, paymentQrData, paymentQrImage]);
+  }, [medio, monto, vuelto, esEfectivo, total, totalMixto, pagosMixtos, metodosMixtosActivos, incluyeMercadoPago, montoMercadoPago, mercadoPagoMode, paymentTarget, paymentAttempt?.status, paymentQrData, paymentQrImage]);
 
   useEffect(() => {
     if (!businessId) return undefined;
@@ -695,6 +697,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
     const presentationId = paymentPresentationId;
     setPaymentAttempt(null);
     setPaymentPresentationId("");
+    setPresentationDelivery(null);
     setPaymentQrImage("");
     setPaymentQrData("");
     setPreparedAmount(null);
@@ -721,7 +724,22 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
       ttlSeconds: 900,
     });
     setPaymentPresentationId(result.presentation?.id || "");
+    setPresentationDelivery(result.presentation || null);
   };
+
+  useEffect(() => {
+    if (!businessId || !paymentPresentationId) return undefined;
+    let active = true;
+    const checkDelivery = async () => {
+      try {
+        const result = await loadPaymentPresentation(businessId, paymentPresentationId);
+        if (active) setPresentationDelivery(result.presentation || null);
+      } catch { /* El cobro sigue disponible en la caja aunque falle el indicador remoto. */ }
+    };
+    checkDelivery();
+    const timer = window.setInterval(checkDelivery, 2000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [businessId, paymentPresentationId]);
 
   const prepareMercadoPago = async () => {
     setPaymentError("");
@@ -803,14 +821,38 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
     return () => window.removeEventListener("keydown", onEnter, true);
   });
 
+  const availableMixedMethods = ["Efectivo", "Mercado Pago", "Tarjeta", "Transferencia"];
+  const addMixedMethod = (method) => {
+    if (!method || metodosMixtosActivos.includes(method)) return;
+    setMetodosMixtosActivos((current) => [...current, method]);
+  };
+  const removeMixedMethod = (method) => {
+    if (metodosMixtosActivos.length <= 2) return;
+    setMetodosMixtosActivos((current) => current.filter((item) => item !== method));
+    setPagosMixtos((current) => ({ ...current, [method]: "" }));
+  };
+  const confirmLabel = esFiado
+    ? "Confirmar venta fiada"
+    : incluyeMercadoPago && mercadoPagoMode === "static_qr"
+      ? "Confirmé el pago y registrar venta"
+      : "Confirmar y registrar venta";
+
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-2 sm:p-4">
-      <div className="mobile-dialog bg-white rounded-xl w-full max-w-sm max-h-[calc(100dvh-1rem)] overflow-y-auto p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+      <div className="sales-payment-dialog mobile-dialog flex max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[min(820px,94dvh)] sm:rounded-3xl">
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b bg-white px-4 py-4 sm:px-6">
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-[.16em] text-[#1C4A44]">Cobrar venta</p>
+            <h2 className="sensitive-value mt-1 break-words text-3xl font-black tabular-nums text-gray-950 sm:text-4xl">{money(total)}</h2>
+            <p className="mt-1 text-xs text-gray-500">Elegí cómo paga el cliente y completá solamente lo necesario.</p>
+          </div>
+          <button type="button" onClick={closeModal} aria-label="Cerrar cobro" className="grid h-11 w-11 shrink-0 place-items-center rounded-full border bg-white text-gray-500 hover:bg-gray-50"><X size={20}/></button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         <div data-tour="sales-payment" className="mb-5">
-          <label className="mb-2 block text-sm font-medium text-gray-700">
-            Medio de pago
-          </label>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <p className="mb-2 text-xs font-black uppercase tracking-wide text-gray-500">1. Medio de pago</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {MEDIOS_PAGO.map((m) => {
               const active = medio === m.id;
               return (
@@ -820,35 +862,25 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
                     if (medio !== m.id && incluyeMercadoPago) clearPreparedPayment();
                     setMedio(m.id);
                   }}
-                  className={`flex min-w-0 items-center justify-center gap-1.5 rounded-full px-2.5 py-2 text-center text-xs font-semibold border transition-colors sm:px-3 sm:py-1.5 ${
+                  className={`flex min-h-14 min-w-0 items-center justify-start gap-2 rounded-2xl border px-3 py-2 text-left text-xs font-bold transition-[background-color,border-color,color,box-shadow] ${
                     active
-                      ? m.activeClass
-                      : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50"
+                      ? `${m.activeClass} shadow-sm ring-2 ring-current/15`
+                      : "border-gray-200 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
                   }`}
                 >
-                  <span>{m.emoji}</span>
+                  <span className="text-base">{m.emoji}</span>
                   {m.id === "Mercado Pago" && <MercadoPagoBadge />}
-                  {m.id}
+                  <span className="min-w-0 break-words">{m.id}</span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold text-gray-900">Cobrar venta</h2>
-          <button onClick={closeModal} className="text-gray-400 hover:text-gray-700">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="text-center mb-5">
-          <p className="text-sm text-gray-500 mb-1">Total a cobrar</p>
-          <p className="sensitive-value text-3xl font-bold text-gray-900">{money(total)}</p>
-        </div>
+        <p className="mb-2 text-xs font-black uppercase tracking-wide text-gray-500">2. Detalle del cobro</p>
 
         {esFiado && (
-          <>
+          <section className="rounded-2xl border bg-gray-50 p-4">
             <label className="text-sm text-gray-700 block mb-1">Cliente</label>
             <AppSelect
               value={clienteId}
@@ -867,21 +899,21 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
                 Todavía no cargaste clientes en Clientes / Fiado.
               </p>
             )}
-          </>
+          </section>
         )}
 
         {esEfectivo && (
-          <>
+          <section className="rounded-2xl border bg-gray-50 p-4 sm:p-5">
             <label className="text-sm text-gray-700 block mb-1">
               Monto recibido
             </label>
             <input
-              autoFocus
               type="number"
               onFocus={(e) => e.target.select()}
               value={recibido}
               onChange={(e) => setRecibido(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-4"
+              inputMode="decimal"
+              className="mb-4 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-lg font-bold tabular-nums"
             />
 
             <div className="flex items-center justify-between mb-3">
@@ -923,21 +955,21 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
                 El monto recibido es menor al total.
               </p>
             )}
-          </>
+          </section>
         )}
 
-        {esMixto && <div className="mb-4 rounded-xl border bg-gray-50 p-3"><p className="mb-2 text-xs font-semibold text-gray-600">Dividí el total entre dos o más medios</p><div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">{Object.keys(pagosMixtos).map((nombre) => <label key={nombre} className="text-xs text-gray-500">{nombre}<input type="number" min="0" value={pagosMixtos[nombre]} onChange={(event) => setPagosMixtos((current) => ({ ...current, [nombre]: event.target.value }))} className="mt-1 w-full rounded-lg border bg-white px-2 py-2 text-sm"/></label>)}</div><div className={`mt-3 flex flex-col gap-1 text-sm font-semibold min-[360px]:flex-row min-[360px]:justify-between ${Math.abs(totalMixto-total)<0.01 ? "text-green-600" : "text-amber-700"}`}><span>Cargado: {money(totalMixto)}</span><span>Falta: {money(Math.max(0,total-totalMixto))}</span></div>{totalMixto > total && <p className="mt-1 text-xs text-red-600">El reparto supera el total por {money(totalMixto-total)}.</p>}</div>}
+        {esMixto && <section className="rounded-2xl border bg-gray-50 p-4 sm:p-5"><p className="text-sm font-bold text-gray-900">Dividí el total entre los medios usados</p><p className="mt-1 text-xs text-gray-500">Podés agregar o quitar filas. La pantalla del cliente mostrará este mismo reparto.</p><div className="mt-4 grid gap-2">{metodosMixtosActivos.map((nombre) => <div key={nombre} className="grid grid-cols-[minmax(0,1fr)_minmax(110px,.72fr)_auto] items-center gap-2 rounded-xl border bg-white p-2"><span className="min-w-0 break-words text-xs font-bold text-gray-700">{nombre}</span><input aria-label={`Importe con ${nombre}`} type="number" inputMode="decimal" min="0" value={pagosMixtos[nombre]} onChange={(event) => setPagosMixtos((current) => ({ ...current, [nombre]: event.target.value }))} className="min-h-10 min-w-0 rounded-lg border bg-white px-2 text-right text-sm font-bold tabular-nums"/><button type="button" disabled={metodosMixtosActivos.length <= 2} onClick={() => removeMixedMethod(nombre)} aria-label={`Quitar ${nombre}`} className="grid h-10 w-10 place-items-center rounded-lg border text-gray-400 hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-25"><X size={15}/></button></div>)}</div><div className="mt-3 flex flex-wrap gap-2">{availableMixedMethods.filter((method) => !metodosMixtosActivos.includes(method)).map((method) => <button type="button" key={method} onClick={() => addMixedMethod(method)} className="rounded-full border bg-white px-3 py-2 text-xs font-bold text-gray-700">+ {method}</button>)}</div><div className={`mt-4 grid grid-cols-2 gap-3 rounded-xl px-3 py-3 text-sm font-semibold ${Math.abs(totalMixto-total)<0.01 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}><span>Cargado<br/><b className="text-base">{money(totalMixto)}</b></span><span className="text-right">{totalMixto > total ? "Excede" : "Falta"}<br/><b className="text-base">{money(Math.abs(total-totalMixto))}</b></span></div>{totalMixto > total && <p className="mt-2 text-xs font-semibold text-red-600">El reparto supera el total.</p>}</section>}
 
         {incluyeMercadoPago && (
-          <section className="mb-4 overflow-hidden rounded-2xl border border-sky-200 bg-[#eaf7ff]">
+          <section className="mt-4 overflow-hidden rounded-2xl border border-sky-200 bg-[#eaf7ff]">
             <div className="flex items-center justify-between gap-3 bg-[#009ee3] px-4 py-3 text-white">
               <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wide">Mercado Pago</p><p className="truncate text-sm font-bold">Cobrar {money(montoMercadoPago)}</p></div>
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/20"><QrCode size={21}/></span>
             </div>
             <div className="space-y-3 p-3">
-              {configuredMode === "ask" ? <label className="block text-xs font-bold text-sky-950">¿Cómo querés cobrar?<select value={mercadoPagoMode} onChange={(event) => { clearPreparedPayment(); setMercadoPagoMode(event.target.value); }} className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900">{PAYMENT_MODES.filter((option) => option.id !== "ask").map((option) => <option key={option.id} value={option.id}>{option.label.replace("Siempre ", "")}</option>)}</select></label> : <div className="rounded-xl bg-white px-3 py-2 text-xs text-sky-950"><span className="block opacity-60">Forma predeterminada</span><b>{PAYMENT_MODES.find((option) => option.id === mercadoPagoMode)?.label || mercadoPagoMode}</b></div>}
+              {configuredMode === "ask" ? <div><p className="mb-2 text-xs font-bold text-sky-950">¿Cómo querés cobrar?</p><div className="grid gap-2 sm:grid-cols-3">{PAYMENT_MODES.filter((option) => option.id !== "ask").map((option) => <button type="button" key={option.id} onClick={() => { clearPreparedPayment(); setMercadoPagoMode(option.id); }} className={`min-h-16 rounded-xl border px-3 py-2 text-left text-xs ${mercadoPagoMode === option.id ? "border-sky-600 bg-sky-100 font-black text-sky-950 ring-2 ring-sky-200" : "border-sky-100 bg-white text-gray-700"}`}><span className="block font-bold">{option.label.replace("Siempre ", "")}</span><small className="mt-1 block leading-4 opacity-70">{option.detail}</small></button>)}</div></div> : <div className="rounded-xl bg-white px-3 py-2 text-xs text-sky-950"><span className="block opacity-60">Forma predeterminada</span><b>{PAYMENT_MODES.find((option) => option.id === mercadoPagoMode)?.label || mercadoPagoMode}</b></div>}
 
-              {mercadoPagoMode !== "point" && (configuredTarget === "ask" ? <label className="block text-xs font-bold text-sky-950">¿Dónde querés mostrar el QR?<select value={paymentTarget} onChange={(event) => { clearPreparedPayment(); setPaymentTarget(event.target.value); }} className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900">{PAYMENT_TARGETS.filter((option) => option.id !== "ask").map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label> : <div className="rounded-xl bg-white px-3 py-2 text-xs text-sky-950"><span className="block opacity-60">Destino predeterminado</span><b>{PAYMENT_TARGETS.find((option) => option.id === paymentTarget)?.label || paymentTarget}</b></div>)}
+              {mercadoPagoMode !== "point" && (configuredTarget === "ask" ? <div><p className="mb-2 text-xs font-bold text-sky-950">¿Dónde querés mostrar el QR?</p><div className="grid gap-2 sm:grid-cols-3">{PAYMENT_TARGETS.filter((option) => option.id !== "ask").map((option) => <button type="button" key={option.id} onClick={() => { clearPreparedPayment(); setPaymentTarget(option.id); }} className={`min-h-12 rounded-xl border px-3 py-2 text-left text-xs font-bold ${paymentTarget === option.id ? "border-sky-600 bg-sky-100 text-sky-950 ring-2 ring-sky-200" : "border-sky-100 bg-white text-gray-700"}`}>{option.label}</button>)}</div></div> : <div className="rounded-xl bg-white px-3 py-2 text-xs text-sky-950"><span className="block opacity-60">Destino predeterminado</span><b>{PAYMENT_TARGETS.find((option) => option.id === paymentTarget)?.label || paymentTarget}</b></div>)}
 
               {mercadoPagoMode !== "static_qr" && !paymentProvider?.connected && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">{paymentProvider?.ready ? "La cuenta todavía no está conectada. Vinculala desde Configuración > Mercado Pago." : "La conexión real todavía no está habilitada en el servidor. El QR estático sí se puede usar ahora."}</p>}
 
@@ -947,7 +979,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
 
               {paymentQrImage && paymentTarget === "cashier" && mercadoPagoMode !== "point" && <div className="rounded-2xl bg-white p-3 text-center"><img src={paymentQrImage} alt="Código QR de Mercado Pago" className="mx-auto aspect-square w-full max-w-[230px] rounded-xl object-contain"/><p className="mt-2 text-xs font-bold text-sky-950">Pedile al cliente que escanee este QR</p></div>}
               {preparedForCurrentAmount && paymentTarget === "customer_display" && mercadoPagoMode !== "point" && <p className="flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-center text-xs font-bold text-sky-950"><MonitorUp size={17}/>El QR ya está en la pantalla del cliente.</p>}
-              {preparedForCurrentAmount && paymentTarget === "mobile" && mercadoPagoMode !== "point" && <p className="flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-center text-xs font-bold text-sky-950"><Smartphone size={17}/>El QR fue enviado a la app abierta en el celular.</p>}
+              {preparedForCurrentAmount && paymentTarget === "mobile" && mercadoPagoMode !== "point" && <div className={`rounded-xl border px-3 py-3 text-xs ${presentationDelivery?.seenAt ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}><p className="flex items-center justify-center gap-2 text-center font-black"><Smartphone size={17}/>{presentationDelivery?.seenAt ? "El celular recibió y abrió el cobro." : "Esperando que un celular con Kiosco+ abra el cobro…"}</p><p className="mt-1 text-center leading-4 opacity-75">{presentationDelivery?.seenAt ? "Ya podés mostrarle el QR al cliente." : presentationDelivery?.pushDeliveryCount > 0 ? "También enviamos un aviso al otro dispositivo." : "Abrí la app en el celular con la misma cuenta y mantenela visible."}</p></div>}
               {preparedForCurrentAmount && mercadoPagoMode === "point" && <p className="flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-center text-xs font-bold text-sky-950"><CreditCard size={17}/>El importe fue enviado al Point. Esperando el pago.</p>}
 
               {(!preparedForCurrentAmount || paymentAttempt?.status === "failed" || paymentAttempt?.status === "expired" || paymentAttempt?.status === "canceled") && <button type="button" onClick={prepareMercadoPago} disabled={paymentBusy || !(montoMercadoPago > 0)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#009ee3] px-4 text-sm font-black text-white disabled:opacity-50">{paymentBusy ? <RefreshCw className="animate-spin" size={18}/> : mercadoPagoMode === "point" ? <CreditCard size={18}/> : <QrCode size={18}/>} {paymentBusy ? "Preparando…" : mercadoPagoMode === "static_qr" ? "Mostrar QR estático" : mercadoPagoMode === "dynamic_qr" ? "Generar QR dinámico" : "Enviar cobro al Point"}</button>}
@@ -957,16 +989,17 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
         )}
 
         {!esEfectivo && !esFiado && !esMixto && medio !== "Mercado Pago" && (
-          <p className="text-xs text-gray-500 mb-4">
+          <p className="rounded-2xl border bg-gray-50 p-4 text-xs leading-5 text-gray-600">
             Se registra como pagado por {medio.toLowerCase()}, sin afectar el
             efectivo físico de la caja.
           </p>
         )}
 
-        <div className="grid grid-cols-2 gap-2">
+        </div>
+        <footer className="sticky bottom-0 z-10 grid grid-cols-[minmax(0,.7fr)_minmax(0,1.3fr)] gap-2 border-t bg-white px-4 py-3 sm:px-6 sm:py-4">
           <button
             onClick={closeModal}
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
+            className="min-h-12 rounded-xl border border-gray-300 px-4 text-sm font-bold hover:bg-gray-50"
           >
             Cancelar
           </button>
@@ -974,11 +1007,11 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
             data-tour="sales-confirm"
             onClick={confirmSale}
             disabled={!puedeConfirmar}
-            className="flex-1 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-40"
+            className="min-h-12 rounded-xl bg-gray-950 px-4 text-sm font-black text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500"
           >
-            {esFiado ? "Confirmar venta (fiado)" : "Confirmar venta"}
+            {confirmLabel}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   );

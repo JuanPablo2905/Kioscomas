@@ -23,7 +23,7 @@ const serviceWorkerPath = resolve(publicDir, "sw.js");
 const serviceWorker = await readFile(serviceWorkerPath, "utf8");
 await writeFile(
   serviceWorkerPath,
-  serviceWorker.replace('    "./",', '    "./",\n    "./app.html",\n    "./precios.html",'),
+  serviceWorker.replace('    "./",', '    "./",\n    "./app.html",\n    "./precios.html",\n    "./descargas.html",\n    "./funciones.html",\n    "./pantalla.html",'),
   "utf8",
 );
 
@@ -32,5 +32,8 @@ await rm(sourceDir, { recursive: true, force: true });
 console.log("Sitio público preparado en dist-public:");
 console.log("- / abre la landing");
 console.log("- /app.html abre la demo");
+console.log("- /pantalla abre la vinculación de pantallas remotas");
+console.log("- /descargas.html reúne todos los instaladores");
+console.log("- /funciones.html explica las funciones en detalle");
 console.log("- /terminos.html muestra los términos y condiciones");
 console.log("- /privacidad.html muestra la política de privacidad");

@@ -44,6 +44,8 @@ export const listPaymentAttempts = (businessId) => request(businessId, "/v1/paym
 
 export const publishPaymentPresentation = (businessId, payload) => request(businessId, "/v1/payments/presentations", { method: "POST", body: JSON.stringify(payload) });
 export const listActivePaymentPresentations = (businessId) => request(businessId, "/v1/payments/presentations/active");
+export const loadPaymentPresentation = (businessId, presentationId) => request(businessId, `/v1/payments/presentations/${encodeURIComponent(presentationId)}`);
+export const acknowledgePaymentPresentation = (businessId, presentationId) => request(businessId, `/v1/payments/presentations/${encodeURIComponent(presentationId)}/seen`, { method: "POST", body: "{}" });
 export const closePaymentPresentation = (businessId, presentationId) => request(businessId, `/v1/payments/presentations/${encodeURIComponent(presentationId)}`, { method: "DELETE" });
 
 export const PAYMENT_MODES = [
@@ -55,7 +57,7 @@ export const PAYMENT_MODES = [
 
 export const PAYMENT_TARGETS = [
   { id: "ask", label: "Preguntarme dónde mostrarlo" },
-  { id: "cashier", label: "En el dispositivo que cobra" },
+  { id: "cashier", label: "En este dispositivo" },
   { id: "customer_display", label: "En la pantalla del cliente" },
-  { id: "mobile", label: "En la app abierta en un celular" },
+  { id: "mobile", label: "En otro celular con la app abierta" },
 ];

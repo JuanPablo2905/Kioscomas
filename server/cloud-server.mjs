@@ -41,7 +41,7 @@ const databaseUrl = String(process.env.DATABASE_URL || "").trim();
 let postgresStore = null;
 const configuredSuperAdminUsername = String(process.env.KIOSCO_SUPERADMIN_USERNAME || "").trim();
 const configuredSuperAdminPassword = String(process.env.KIOSCO_SUPERADMIN_PASSWORD || "");
-const configuredAccessTokenHours = Number(process.env.KIOSCO_ACCESS_TOKEN_HOURS || 24);
+const configuredAccessTokenHours = Number(process.env.KIOSCO_ACCESS_TOKEN_HOURS || (localMode ? 24 : 2));
 const accessTokenTtlMs = (Number.isFinite(configuredAccessTokenHours) && configuredAccessTokenHours > 0
   ? Math.min(configuredAccessTokenHours, 24 * 30)
   : 24) * 60 * 60 * 1000;
@@ -534,19 +534,56 @@ const recoveryExport = (db, tenantId) => {
     additionalValues: snapshot.values,
   };
 };
+const configuredAllowedOrigins = String(process.env.KIOSCO_ALLOWED_ORIGINS || "https://app.kioscomas.ar,https://kioscomas.ar,https://www.kioscomas.ar")
+  .split(",").map((origin) => origin.trim().replace(/\/$/, "")).filter(Boolean);
+const isLocalWebOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin);
+const allowedCorsOrigin = (req) => {
+  const origin = String(req?.headers?.origin || "").trim().replace(/\/$/, "");
+  if (!origin) return "";
+  // La app de escritorio usa un origen opaco (null), Capacitor usa localhost y
+  // el entorno de desarrollo también parte de localhost. La autenticación real
+  // sigue dependiendo del token, negocio y dispositivo, no de CORS.
+  if (configuredAllowedOrigins.includes(origin) || isLocalWebOrigin(origin) || origin === "capacitor://localhost" || origin === "null") return origin;
+  return "";
+};
 const send = (res, status, value) => {
-  res.writeHead(status, {
+  const requestOrigin = String(res.kioscoRequest?.headers?.origin || "").trim();
+  const corsOrigin = allowedCorsOrigin(res.kioscoRequest);
+  const headers = {
     "content-type": "application/json; charset=utf-8",
-    "access-control-allow-origin": "*",
     "access-control-allow-headers": "content-type,x-device-id,x-tenant-id,authorization,x-idempotency-key,x-request-id,x-signature",
     "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
-  });
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "no-referrer",
+    "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+    vary: "Origin",
+    ...(corsOrigin ? { "access-control-allow-origin": corsOrigin } : {}),
+  };
+  if (requestOrigin && !corsOrigin) return res.writeHead(403, headers).end(JSON.stringify({ error: "Origen web no autorizado" }));
+  res.writeHead(status, headers);
   res.end(status === 204 ? "" : JSON.stringify(value));
 };
 const body = async (req) => {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  const maximumBytes = req.url?.startsWith("/v1/sync") ? 8 * 1024 * 1024 : 1280 * 1024;
+  let receivedBytes = 0;
+  for await (const chunk of req) {
+    receivedBytes += chunk.length;
+    if (receivedBytes > maximumBytes) {
+      const error = new Error("El contenido enviado supera el tamaño permitido");
+      error.statusCode = 413;
+      throw error;
+    }
+    chunks.push(chunk);
+  }
+  try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
+  catch {
+    const error = new Error("El contenido enviado no es JSON válido");
+    error.statusCode = 400;
+    throw error;
+  }
 };
 const hashPassword = (password, salt = crypto.randomBytes(16).toString("hex")) => ({
   salt,
@@ -720,6 +757,34 @@ const sendPushNotification = async (db, notification) => {
   notification.pushDispatchedAt = new Date().toISOString();
   notification.pushDeliveryCount = sent;
   return { sent, unavailable: false };
+};
+const sendPaymentPresentationPush = async (db, presentation) => {
+  if (!pushDeliveryConfigured || !presentation) return 0;
+  const payload = JSON.stringify({
+    id: `payment-presentation-${presentation.id}`,
+    title: "Cobro listo para mostrar",
+    body: `Abrí Kiosco+ para mostrar el QR de $${Number(presentation.amount || 0).toLocaleString("es-AR")}.`,
+    level: "importante",
+    url: "/?view=ventas",
+  });
+  let sent = 0;
+  await Promise.all(Object.values(db.pushSubscriptions || {}).map(async (entry) => {
+    // Es una acción solicitada en ese momento por la persona que está cobrando,
+    // no un aviso automático: no se demora por horarios silenciosos.
+    if (!entry || entry.revokedAt || String(entry.businessId || "") !== String(presentation.tenantId || "") || String(entry.deviceId || "") === String(presentation.sourceDeviceId || "")) return;
+    try {
+      await webpush.sendNotification(entry.subscription, payload, { TTL: 15 * 60 });
+      entry.lastSuccessAt = new Date().toISOString();
+      sent += 1;
+    } catch (error) {
+      entry.lastErrorAt = new Date().toISOString();
+      entry.lastError = String(error?.message || error).slice(0, 180);
+      if ([404, 410].includes(Number(error?.statusCode))) entry.revokedAt = entry.lastErrorAt;
+    }
+  }));
+  presentation.pushDeliveryCount = sent;
+  presentation.pushDispatchedAt = new Date().toISOString();
+  return sent;
 };
 const duePushNotifications = (db, now = Date.now()) => Object.values(db.platformNotifications || {}).filter((notification) => {
   if (!notification || notification.archivedAt || notification.pushDispatchedAt) return false;
@@ -1310,6 +1375,7 @@ const displaySecretHash = (value) => crypto.createHash("sha256").update(String(v
 const displayCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const displayPairingCode = () => Array.from(crypto.randomBytes(8), (byte) => displayCodeAlphabet[byte % displayCodeAlphabet.length]).join("");
 const publicDisplayUrl = () => String(process.env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar").replace(/\/+$/, "");
+const publicDisplayEntryUrl = () => String(process.env.KIOSCO_PUBLIC_DISPLAY_URL || "https://kioscomas.ar/pantalla").replace(/\/+$/, "");
 const displayTokenFromRequest = (req) => String(req.headers.authorization || "").replace(/^Display\s+/i, "").trim();
 const activeDisplayToken = (db, req) => {
   const raw = displayTokenFromRequest(req);
@@ -1332,7 +1398,7 @@ const createDisplayPairing = (db, display) => {
     displayId: display.id, businessId: display.businessId, createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), usedAt: null,
   };
-  return { code, expiresAt: db.displayPairingCodes[displaySecretHash(code)].expiresAt, pairingUrl: `${publicDisplayUrl()}/?window=remote-display&pair=${encodeURIComponent(code)}` };
+  return { code, expiresAt: db.displayPairingCodes[displaySecretHash(code)].expiresAt, pairingUrl: `${publicDisplayEntryUrl()}?pair=${encodeURIComponent(code)}` };
 };
 const createDisplayPairingRequest = (db, deviceId) => {
   db.displayPairingCodes ||= {};
@@ -1355,6 +1421,7 @@ const createDisplayPairingRequest = (db, deviceId) => {
   };
 };
 const bearer = (req) => String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+const accessTokenHash = (value) => crypto.createHash("sha256").update(String(value || "")).digest("hex");
 const tenantAccount = (db, tenantId) => (db.system?.cuentas || []).find((account) => String(account.id) === String(tenantId));
 const cloudUserForSession = (db, session) => Object.values(db.users || {}).find(
   (user) => String(user?.id) === String(session?.userId),
@@ -1379,7 +1446,8 @@ const sessionSubjectIsActive = (db, session) => {
   ));
 };
 const activeSession = (db, req) => {
-  const session = db.sessions[bearer(req)];
+  const rawToken = bearer(req);
+  const session = db.sessions[accessTokenHash(rawToken)] || db.sessions[rawToken];
   return session && !session.revokedAt && new Date(session.expiresAt) > new Date() && sessionSubjectIsActive(db, session)
     ? session
     : null;
@@ -1570,6 +1638,9 @@ const paymentPresentationView = (presentation = {}, db = {}) => {
     attemptId: presentation.attemptId || null,
     status: attempt?.status || presentation.status || "active",
     sourceDeviceId: presentation.sourceDeviceId || null,
+    seenAt: presentation.seenAt || null,
+    seenDeviceId: presentation.seenDeviceId || null,
+    pushDeliveryCount: Number(presentation.pushDeliveryCount || 0),
     createdAt: presentation.createdAt,
     expiresAt: presentation.expiresAt,
   };
@@ -1643,9 +1714,44 @@ const isLoopback = (req) => {
   return address === "127.0.0.1" || address === "::1";
 };
 const displayPairAttempts = new Map();
+const sensitiveRequestAttempts = new Map();
+const requestAddress = (req) => String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
+const pruneAttemptMap = (map, cutoff) => {
+  if (map.size < 2000) return;
+  for (const [key, timestamps] of map) if (!(timestamps || []).some((at) => at > cutoff)) map.delete(key);
+  while (map.size > 5000) map.delete(map.keys().next().value);
+};
+const enforceSensitiveRequestLimit = (req, res) => {
+  if (localMode) return true;
+  const rules = {
+    "POST /v1/auth/login": { maximum: 12, windowMs: 15 * 60 * 1000 },
+    "POST /v1/auth/register": { maximum: 6, windowMs: 60 * 60 * 1000 },
+    "POST /v1/auth/pair-device": { maximum: 8, windowMs: 15 * 60 * 1000 },
+    "POST /v1/auth/bootstrap": { maximum: 4, windowMs: 60 * 60 * 1000 },
+    "POST /v1/auth/password/forgot": { maximum: 10, windowMs: 60 * 60 * 1000 },
+  };
+  const routeKey = `${req.method} ${String(req.url || "").split("?")[0]}`;
+  const rule = rules[routeKey];
+  if (!rule) return true;
+  const now = Date.now();
+  pruneAttemptMap(sensitiveRequestAttempts, now - 60 * 60 * 1000);
+  const key = `${routeKey}:${requestAddress(req)}`;
+  const attempts = (sensitiveRequestAttempts.get(key) || []).filter((at) => at > now - rule.windowMs);
+  if (attempts.length >= rule.maximum) {
+    const retryAfter = Math.max(1, Math.ceil((attempts[0] + rule.windowMs - now) / 1000));
+    res.setHeader("retry-after", String(retryAfter));
+    send(res, 429, { error: "Hubo demasiados intentos. Esperá unos minutos antes de volver a probar." });
+    return false;
+  }
+  attempts.push(now);
+  sensitiveRequestAttempts.set(key, attempts);
+  return true;
+};
 
 const handleRequest = async (req, res) => {
+  res.kioscoRequest = req;
   try {
+    if (!enforceSensitiveRequestLimit(req, res)) return;
     if (req.method === "OPTIONS") return send(res, 204, {});
     if (req.url === "/v1/health") return send(res, 200, {
       ok: true,
@@ -1754,7 +1860,8 @@ const handleRequest = async (req, res) => {
       }
     }
     if (req.method === "POST" && req.url === "/v1/displays/pairing-request") {
-      const remoteAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
+      const remoteAddress = requestAddress(req);
+      pruneAttemptMap(displayPairAttempts, Date.now() - 10 * 60 * 1000);
       const attempts = (displayPairAttempts.get(`request:${remoteAddress}`) || []).filter((at) => at > Date.now() - 10 * 60 * 1000);
       if (attempts.length >= 12) return send(res, 429, { error: "Se solicitaron demasiados códigos. Esperá unos minutos." });
       attempts.push(Date.now()); displayPairAttempts.set(`request:${remoteAddress}`, attempts);
@@ -1786,7 +1893,8 @@ const handleRequest = async (req, res) => {
       return send(res, 202, { ok: true, status: "pending", expiresAt: pairing.expiresAt });
     }
     if (req.method === "POST" && req.url === "/v1/displays/pair") {
-      const remoteAddress = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
+      const remoteAddress = requestAddress(req);
+      pruneAttemptMap(displayPairAttempts, Date.now() - 10 * 60 * 1000);
       const attempts = (displayPairAttempts.get(remoteAddress) || []).filter((at) => at > Date.now() - 10 * 60 * 1000);
       if (attempts.length >= 12) return send(res, 429, { error: "Hubo demasiados intentos. Esperá unos minutos." });
       attempts.push(Date.now()); displayPairAttempts.set(remoteAddress, attempts);
@@ -2240,7 +2348,7 @@ const handleRequest = async (req, res) => {
       const accessToken = token();
       const refreshToken = token();
       const expiresAt = accessTokenExpiresAt();
-      db.sessions[accessToken] = {
+      db.sessions[accessTokenHash(accessToken)] = {
         userId: user.id,
         businessId: user.businessId,
         deviceId,
@@ -2304,7 +2412,7 @@ const handleRequest = async (req, res) => {
       const accessToken = token();
       const refreshToken = token();
       const expiresAt = accessTokenExpiresAt();
-      db.sessions[accessToken] = {
+      db.sessions[accessTokenHash(accessToken)] = {
         userId: user.id,
         businessId: user.businessId,
         deviceId,
@@ -2352,7 +2460,7 @@ const handleRequest = async (req, res) => {
       const accessToken = token();
       const refreshToken = token();
       const expiresAt = accessTokenExpiresAt();
-      db.sessions[accessToken] = {
+      db.sessions[accessTokenHash(accessToken)] = {
         ...old,
         expiresAt,
         refreshExpiresAt: refreshTokenExpiresAt(),
@@ -2638,11 +2746,29 @@ const handleRequest = async (req, res) => {
           expiresAt: new Date(now.getTime() + Math.max(60, Math.min(1800, Number(payload.ttlSeconds) || 900)) * 1000).toISOString(),
         };
         db.paymentPresentations[id] = presentation;
+        await sendPaymentPresentationPush(db, presentation);
         await writeDb(db);
         return send(res, 201, { presentation: paymentPresentationView(presentation, db) });
       }
 
+      const presentationSeenMatch = req.url.match(/^\/v1\/payments\/presentations\/([^/?]+)\/seen$/);
+      if (req.method === "POST" && presentationSeenMatch) {
+        const presentation = db.paymentPresentations[decodeURIComponent(presentationSeenMatch[1])];
+        if (!presentation || presentation.tenantId !== tenantId || presentation.status === "closed") return send(res, 404, { error: "Presentación de cobro inexistente" });
+        if (!sessionCanTakePayments(db, session, tenantId)) return send(res, 403, { error: "La cuenta no tiene permiso para ver cobros" });
+        presentation.seenAt ||= new Date().toISOString();
+        presentation.seenDeviceId ||= deviceId;
+        await writeDb(db);
+        return send(res, 200, { presentation: paymentPresentationView(presentation, db) });
+      }
+
       const presentationMatch = req.url.match(/^\/v1\/payments\/presentations\/([^/?]+)$/);
+      if (req.method === "GET" && presentationMatch) {
+        const presentation = db.paymentPresentations[decodeURIComponent(presentationMatch[1])];
+        if (!presentation || presentation.tenantId !== tenantId) return send(res, 404, { error: "Presentación de cobro inexistente" });
+        if (!sessionCanTakePayments(db, session, tenantId)) return send(res, 403, { error: "La cuenta no tiene permiso para ver cobros" });
+        return send(res, 200, { presentation: paymentPresentationView(presentation, db) });
+      }
       if (req.method === "DELETE" && presentationMatch) {
         const presentation = db.paymentPresentations[decodeURIComponent(presentationMatch[1])];
         if (!presentation || presentation.tenantId !== tenantId) return send(res, 404, { error: "Presentación de cobro inexistente" });
@@ -3423,6 +3549,8 @@ const handleRequest = async (req, res) => {
     return send(res, 404, { error: "Ruta inexistente" });
   } catch (error) {
     console.error(error);
+    const statusCode = Number(error?.statusCode);
+    if ([400, 413].includes(statusCode)) return send(res, statusCode, { error: error.message });
     return send(res, 500, { error: localMode ? "Error interno del servidor local" : "La nube tuvo un problema temporal al guardar. Intentá nuevamente." });
   }
 };

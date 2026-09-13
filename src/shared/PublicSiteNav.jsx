@@ -3,11 +3,11 @@ import { ArrowRight, Download, LogIn, Menu, X } from "lucide-react";
 
 const links = [
   { id: "inicio", label: "Inicio", href: "./" },
-  { id: "funciones", label: "Funciones", href: "./#funciones" },
+  { id: "funciones", label: "Funciones", href: "./funciones.html" },
   { id: "como-funciona", label: "Cómo funciona", href: "./#como-funciona" },
   { id: "sin-internet", label: "Sin Internet", href: "./#sin-internet" },
   { id: "precios", label: "Precios", href: "./precios.html" },
-  { id: "preguntas", label: "Preguntas", href: "./#preguntas" },
+  { id: "descargas", label: "Descargas", href: "./descargas.html" },
 ];
 
 export function PublicSiteNav({

@@ -1,5 +1,46 @@
 [
   {
+    "version": "0.2.26",
+    "date": "2026-09-13",
+    "title": "Cobros que llegan, avisos ordenados y sitio más claro",
+    "summary": "La caja ahora confirma si el QR llegó al celular, el centro de avisos separa lo propio del negocio de las novedades generales y la web reúne descargas y funciones en páginas fáciles de encontrar.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "Las presentaciones de cobro enviadas al celular incorporan confirmación de recepción, consulta individual de estado y notificación push dirigida a otros dispositivos del mismo negocio.",
+          "El modal de cobro se reorganizó como una única vista adaptable: medios de pago visibles, detalle contextual, filas editables para pagos combinados y estado de entrega del QR sin abrir diálogos encadenados.",
+          "El centro de notificaciones separa avisos operativos, cuenta y plan, y comunicaciones de Kiosco+; además cruza claves de origen para no repetir localmente una alerta ya entregada por la nube.",
+          "La portada deriva el detalle a las nuevas páginas de Funciones y Descargas, mantiene una presentación destacada pero honesta de Mercado Pago y publica kioscomas.ar/pantalla como acceso directo para TVs remotas publicitarias.",
+          "Las configuraciones de interfaz aplican densidad, forma de controles, ancho y plegado recordado del menú, máximo de columnas y ocultación persistente de valores sensibles sin revelarlos accidentalmente al pasar el puntero.",
+          "El cálculo automático de contraste deja de recorrer la interfaz en cada movimiento del mouse y las pestañas horizontales ocultan la barra que se confundía con un slider.",
+          "El servidor limita intentos sensibles y tamaños de petición, restringe orígenes web, añade cabeceras defensivas, reduce a dos horas las sesiones de producción y guarda mediante hash los tokens de acceso nuevos.",
+          "Los Términos identifican de forma inequívoca al servicio y al Proveedor, conservando el domicilio confirmado por el titular."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Cuando mandás el QR a un celular, la app de la caja ya no queda adivinando: muestra si todavía lo está esperando o si el otro teléfono realmente lo abrió.",
+          "Cobrar es más directo. Elegís el medio, completás lo necesario y, si pagan combinado, agregás o quitás cada forma de pago en la misma pantalla.",
+          "Los avisos del comercio ya no se mezclan con mensajes generales: stock y pedidos van por un lado, cuenta y plan por otro, y las novedades de Kiosco+ quedan aparte.",
+          "La dirección fácil para una TV es kioscomas.ar/pantalla. La TV muestra un QR y un código; el dueño los autoriza desde su propia app.",
+          "La página principal quedó más limpia: las descargas tienen su propia sección y las funciones importantes se explican con más detalle en otra página.",
+          "Se corrigieron detalles molestos de interfaz, como botones que cambiaban de color al mover el mouse y una barra amarilla que parecía un control deslizable.",
+          "También cerramos varias puertas invisibles del servidor para que sea más difícil abusar del inicio de sesión, enviar archivos enormes o usar la API desde una web no autorizada."
+        ]
+      },
+      {
+        "title": "Calidad y seguridad",
+        "items": [
+          "Se agregaron pruebas del envío y acuse de recibo del QR, pagos combinados, separación y deduplicación de avisos, rutas públicas, almacenamiento de sesiones y controles de interfaz.",
+          "El proyecto incorpora una guía de alcance de incidentes, respuesta, rotación de secretos y medidas externas que debe mantener el titular.",
+          "QR dinámico y Point continúan detrás de la habilitación del backend de Mercado Pago; la web los presenta como integración en preparación y no como una función ya disponible."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.25",
     "date": "2026-09-13",
     "title": "El despliegue ya termina correctamente",

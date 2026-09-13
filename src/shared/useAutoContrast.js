@@ -128,18 +128,10 @@ export function useAutoContrast() {
       reconnect(observer);
     };
     window.addEventListener("kiosco-contrast-refresh", refresh);
-    window.addEventListener("pointerover", scheduleRefresh, true);
-    window.addEventListener("pointerout", scheduleRefresh, true);
-    window.addEventListener("focusin", scheduleRefresh, true);
-    window.addEventListener("focusout", scheduleRefresh, true);
     return () => {
       if (frame) cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener("kiosco-contrast-refresh", refresh);
-      window.removeEventListener("pointerover", scheduleRefresh, true);
-      window.removeEventListener("pointerout", scheduleRefresh, true);
-      window.removeEventListener("focusin", scheduleRefresh, true);
-      window.removeEventListener("focusout", scheduleRefresh, true);
     };
   }, []);
 }
