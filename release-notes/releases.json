@@ -1,5 +1,37 @@
 [
   {
+    "version": "0.2.25",
+    "date": "2026-09-13",
+    "title": "El despliegue ya termina correctamente",
+    "summary": "Corregimos el proceso auxiliar que mantenía abierta la validación de GitHub después de que todas las pruebas de seguridad ya habían terminado.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "El servidor de nube ahora responde a SIGTERM y SIGINT cerrando primero el servidor HTTP, después la conexión de PostgreSQL y finalmente el proceso con un código de salida correcto.",
+          "El cierre dispone de una protección de cinco segundos para impedir que una conexión dañada mantenga indefinidamente vivo el proceso durante un despliegue.",
+          "Las cinco baterías que levantan un servidor auxiliar esperan su salida y aplican una terminación forzada únicamente si no responde dentro del plazo de gracia.",
+          "La validación queda preparada para comportarse igual en los ejecutores Linux de GitHub y en las pruebas locales de Windows."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Las pruebas terminaban bien, pero una parte invisible del servidor quedaba encendida y GitHub esperaba hasta cancelar todo a los 35 minutos.",
+          "Ahora, cuando termina una prueba, también se apaga correctamente ese servidor y el despliegue puede seguir con los instaladores de Windows y Mac.",
+          "Agregamos una salida de emergencia: si algún servidor de prueba no responde, se cierra solo en pocos segundos en vez de dejar bloqueada toda la versión."
+        ]
+      },
+      {
+        "title": "Calidad",
+        "items": [
+          "La corrección se verifica ejecutando consecutivamente las pruebas de seguridad, activación de dispositivos, recuperación de contraseña, pantallas remotas e integración completa con la nube.",
+          "Se conserva todo lo incorporado en 0.2.24: configuraciones reales, apertura más liviana, accesibilidad y preparación para Mac, Microsoft Store y Google Play."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.24",
     "date": "2026-09-13",
     "title": "Preparada para salir y más liviana al abrir",

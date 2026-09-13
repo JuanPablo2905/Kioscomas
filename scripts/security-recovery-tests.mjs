@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { TERMS_VERSION } from "../src/legal/terms.js";
+import { stopChildProcess } from "./test-child-process.mjs";
 
 const port = 8817;
 const dataDir = path.join(tmpdir(), `kiosco-security-recovery-${Date.now()}`);
@@ -116,6 +117,6 @@ try {
 
   console.log(`\n${passed} pruebas de seguridad y recuperación superadas.`);
 } finally {
-  child.kill();
+  await stopChildProcess(child);
   await fs.rm(dataDir, { recursive: true, force: true });
 }

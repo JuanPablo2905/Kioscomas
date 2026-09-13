@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { stopChildProcess } from "./test-child-process.mjs";
 
 const port = 8812;
 const dataDir = path.join(tmpdir(), `kiosco-display-test-${Date.now()}`);
@@ -59,6 +60,6 @@ try {
   const stored = JSON.stringify(JSON.parse(await fs.readFile(dbPath, "utf8")));
   assert(!stored.includes(paired.value.displayToken) && !stored.includes(requested.value.pairing.code) && !stored.includes(requested.value.pairing.requestToken), "el servidor nunca guarda códigos ni credenciales en texto legible");
 } finally {
-  child.kill();
+  await stopChildProcess(child);
   await fs.rm(dataDir, { recursive: true, force: true });
 }

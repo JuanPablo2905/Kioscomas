@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { stopChildProcess } from "./test-child-process.mjs";
 
 const port = 8803;
 const dataDir = path.join(tmpdir(), `kiosco-device-activation-test-${Date.now()}`);
@@ -74,6 +75,6 @@ try {
   });
   assert(accepted.response.ok && Boolean(accepted.value.accessToken), "el navegador autorizado puede iniciar sesión");
 } finally {
-  child.kill();
+  await stopChildProcess(child);
   await fs.rm(dataDir, { recursive: true, force: true });
 }

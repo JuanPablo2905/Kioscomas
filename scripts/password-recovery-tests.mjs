@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { TERMS_VERSION } from "../src/legal/terms.js";
 import { createEmailService } from "../server/email-service.mjs";
+import { stopChildProcess } from "./test-child-process.mjs";
 
 const port = 8804;
 const dataDir = path.join(tmpdir(), `kiosco-password-recovery-test-${Date.now()}`);
@@ -147,6 +148,6 @@ try {
   const ipLimited = await post("/v1/auth/password/forgot", { email: "second.recovery@example.com" });
   assert(ipLimited.response.status === 202 && !ipLimited.value.testResetToken, "el límite por IP evita envíos masivos y conserva la respuesta neutra");
 } finally {
-  child.kill();
+  await stopChildProcess(child);
   await fs.rm(dataDir, { recursive: true, force: true });
 }

@@ -3521,11 +3521,31 @@ const startServer = async () => {
   reminderTimer.unref();
 };
 
-const shutdown = async () => {
-  try { await postgresStore?.close(); } catch { /* El proceso ya está terminando. */ }
+let shuttingDown = false;
+const shutdown = async (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const forceExit = setTimeout(() => process.exit(1), 5_000);
+  forceExit.unref();
+  try {
+    await new Promise((resolve) => {
+      if (!server.listening) {
+        resolve();
+        return;
+      }
+      server.close(() => resolve());
+      server.closeIdleConnections?.();
+    });
+    await postgresStore?.close();
+    clearTimeout(forceExit);
+    process.exit(0);
+  } catch (error) {
+    console.error(`No se pudo cerrar el servidor después de ${signal}`, error);
+    process.exit(1);
+  }
 };
-process.once("SIGTERM", shutdown);
-process.once("SIGINT", shutdown);
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+process.once("SIGINT", () => void shutdown("SIGINT"));
 
 startServer().catch((error) => {
   console.error("No se pudo iniciar la persistencia cloud", error);
