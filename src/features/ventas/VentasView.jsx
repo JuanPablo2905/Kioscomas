@@ -4,7 +4,7 @@ import {
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
   MessageCircle, Mail, Copy, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
-  ChevronRight, MonitorUp, Star, Zap,
+  ChevronRight, MonitorUp, Star, Zap, Smartphone, QrCode, RefreshCw,
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money, formatQuantity, roundQuantity } from "../../shared/domain";
 import { SectionHeader } from "../../shared/layout";
@@ -17,9 +17,15 @@ import { SmallBusinessTools } from "../gestion/SmallBusinessTools";
 import { Budgets, CustomerOrders } from "./SalesSupportTools";
 import { copyText, openEmailDraft, openWhatsApp, ticketMessage } from "../../shared/share";
 import { openCustomerDisplay, publishCustomerDisplay } from "./customerDisplay";
+import QRCode from "qrcode";
+import {
+  PAYMENT_MODES, PAYMENT_TARGETS, cancelPaymentAttempt, closePaymentPresentation,
+  createPaymentAttempt, loadPaymentProviders, publishPaymentPresentation, refreshPaymentAttempt,
+} from "./paymentService";
 
 const DENOMINACIONES = [20000, 10000, 2000, 1000, 500, 200, 100, 50, 20, 10];
 const UMBRAL_DIFERENCIA_INUSUAL = 1000;
+const PAYMENT_FINAL_STATES = new Set(["approved", "failed", "canceled", "expired", "refunded", "charged_back"]);
 
 function DenomCounter({ values, onChange }) {
   return (
@@ -572,36 +578,219 @@ function MercadoPagoBadge() {
   );
 }
 
-function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange }) {
+function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, businessId, preferences = {} }) {
   const [medio, setMedio] = useState("Efectivo");
   const [recibido, setRecibido] = useState(String(total));
   const [clienteId, setClienteId] = useState("");
   const [pagosMixtos, setPagosMixtos] = useState({ Efectivo: "", "Mercado Pago": "", Tarjeta: "", Transferencia: "" });
+  const savedMode = preferences.customerDisplayMercadoPagoMode || "ask";
+  const savedTarget = preferences.customerDisplayMercadoPagoTarget || "ask";
+  const configuredMode = PAYMENT_MODES.some((option) => option.id === savedMode) ? savedMode : "ask";
+  const configuredTarget = PAYMENT_TARGETS.some((option) => option.id === savedTarget) ? savedTarget : "ask";
+  const [mercadoPagoMode, setMercadoPagoMode] = useState(configuredMode === "ask" ? "static_qr" : configuredMode);
+  const [paymentTarget, setPaymentTarget] = useState(configuredTarget === "ask" ? (preferences.customerDisplayEnabled ? "customer_display" : "cashier") : configuredTarget);
+  const [paymentProvider, setPaymentProvider] = useState(null);
+  const [paymentAttempt, setPaymentAttempt] = useState(null);
+  const [paymentPresentationId, setPaymentPresentationId] = useState("");
+  const [paymentQrImage, setPaymentQrImage] = useState("");
+  const [paymentQrData, setPaymentQrData] = useState("");
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [preparedAmount, setPreparedAmount] = useState(null);
   const monto = Number(recibido) || 0;
   const vuelto = monto - total;
   const combinacion = vuelto > 0 ? calcularVuelto(vuelto) : [];
   const esEfectivo = medio === "Efectivo";
   const esFiado = medio === "Cuenta corriente";
   const esMixto = medio === "Pago combinado";
+  const incluyeMercadoPago = medio === "Mercado Pago" || (esMixto && Number(pagosMixtos["Mercado Pago"] || 0) > 0);
+  const montoMercadoPago = medio === "Mercado Pago" ? total : Number(pagosMixtos["Mercado Pago"] || 0);
   const totalMixto = Object.values(pagosMixtos).reduce((sum, value) => sum + (Number(value) || 0), 0);
   const pagosSeleccionados = esMixto ? Object.entries(pagosMixtos).filter(([, value]) => Number(value) > 0).map(([metodo, montoPago]) => ({ metodo, monto: Number(montoPago) })) : [];
-  const puedeConfirmar = esEfectivo
+  const preparedForCurrentAmount = preparedAmount !== null && Math.abs(Number(preparedAmount) - montoMercadoPago) < 0.01;
+  const mercadoPagoPreparado = !incluyeMercadoPago || (preparedForCurrentAmount && (mercadoPagoMode === "static_qr" ? Boolean(paymentQrImage) : paymentAttempt?.status === "approved"));
+  const puedeConfirmarBase = esEfectivo
     ? monto >= total
     : esFiado
     ? Boolean(clienteId)
     : esMixto
     ? Math.abs(totalMixto - total) < 0.01
     : true;
+  const puedeConfirmar = puedeConfirmarBase && mercadoPagoPreparado && !paymentBusy;
   const confirmingRef = useRef(false);
   const confirmSale = () => {
     if (!puedeConfirmar || confirmingRef.current) return;
     confirmingRef.current = true;
-    onConfirm({ medio, clienteId: clienteId ? Number(clienteId) : null, pagos: pagosSeleccionados, received: esEfectivo ? monto : null, change: esEfectivo ? Math.max(0, vuelto) : null });
+    if (paymentPresentationId) closePaymentPresentation(businessId, paymentPresentationId).catch(() => {});
+    onConfirm({
+      medio,
+      clienteId: clienteId ? Number(clienteId) : null,
+      pagos: pagosSeleccionados,
+      received: esEfectivo ? monto : null,
+      change: esEfectivo ? Math.max(0, vuelto) : null,
+      providerPayment: paymentAttempt
+        ? { id: paymentAttempt.id, provider: paymentAttempt.provider, type: paymentAttempt.type, mode: mercadoPagoMode, target: mercadoPagoMode === "point" ? "point" : paymentTarget, amount: montoMercadoPago, status: paymentAttempt.status, providerStatus: paymentAttempt.providerStatus || null, providerOrderId: paymentAttempt.providerOrderId || null, externalReference: paymentAttempt.externalReference || null }
+        : incluyeMercadoPago
+        ? { provider: "mercado_pago", type: "static_qr", mode: "static_qr", target: paymentTarget, amount: montoMercadoPago, status: "confirmed_manually" }
+        : null,
+    });
   };
 
   useEffect(() => {
-    onPaymentChange?.({ method: medio, received: esEfectivo ? monto : null, change: esEfectivo ? Math.max(0, vuelto) : null, payments: pagosSeleccionados });
-  }, [medio, monto, vuelto, esEfectivo, totalMixto, pagosMixtos]);
+    onPaymentChange?.({
+      method: medio,
+      amount: total,
+      mercadoPagoAmount: incluyeMercadoPago ? montoMercadoPago : 0,
+      received: esEfectivo ? monto : null,
+      change: esEfectivo ? Math.max(0, vuelto) : null,
+      payments: pagosSeleccionados,
+      mode: incluyeMercadoPago ? mercadoPagoMode : null,
+      target: mercadoPagoMode === "point" ? "point" : paymentTarget,
+      status: paymentAttempt?.status || (paymentQrImage ? "pending" : null),
+      qrData: paymentQrData,
+      qrImage: paymentQrImage,
+    });
+  }, [medio, monto, vuelto, esEfectivo, total, totalMixto, pagosMixtos, incluyeMercadoPago, montoMercadoPago, mercadoPagoMode, paymentTarget, paymentAttempt?.status, paymentQrData, paymentQrImage]);
+
+  useEffect(() => {
+    if (!businessId) return undefined;
+    let active = true;
+    loadPaymentProviders(businessId)
+      .then((payload) => {
+        if (active) setPaymentProvider(payload.providers?.find((item) => item.provider === "mercado_pago") || null);
+      })
+      .catch(() => {
+        if (active) setPaymentProvider(null);
+      });
+    return () => { active = false; };
+  }, [businessId]);
+
+  useEffect(() => {
+    let active = true;
+    if (!paymentAttempt?.qrData) return undefined;
+    QRCode.toDataURL(paymentAttempt.qrData, { width: 640, margin: 1, color: { dark: "#092f46", light: "#ffffff" } })
+      .then((image) => active && setPaymentQrImage(image))
+      .catch(() => active && setPaymentQrImage(""));
+    return () => { active = false; };
+  }, [paymentAttempt?.id, paymentAttempt?.qrData]);
+
+  useEffect(() => {
+    if (!businessId || !paymentAttempt?.id || PAYMENT_FINAL_STATES.has(paymentAttempt.status)) return undefined;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const payload = await refreshPaymentAttempt(businessId, paymentAttempt.id);
+        if (active && payload.attempt) setPaymentAttempt(payload.attempt);
+      } catch (error) {
+        if (active) setPaymentError(error?.message || "No se pudo consultar el estado del cobro.");
+      }
+    };
+    const timer = window.setInterval(refresh, 2500);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [businessId, paymentAttempt?.id, paymentAttempt?.status]);
+
+  const clearPreparedPayment = ({ cancelProvider = true } = {}) => {
+    const attempt = paymentAttempt;
+    const presentationId = paymentPresentationId;
+    setPaymentAttempt(null);
+    setPaymentPresentationId("");
+    setPaymentQrImage("");
+    setPaymentQrData("");
+    setPreparedAmount(null);
+    setPaymentError("");
+    if (presentationId && businessId) closePaymentPresentation(businessId, presentationId).catch(() => {});
+    if (cancelProvider && attempt?.id && !PAYMENT_FINAL_STATES.has(attempt.status) && businessId) cancelPaymentAttempt(businessId, attempt.id).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (preparedAmount === null || Math.abs(Number(preparedAmount) - montoMercadoPago) < 0.01) return;
+    clearPreparedPayment();
+  }, [montoMercadoPago, preparedAmount]);
+
+  const publishToMobile = async ({ mode, attempt, qrData, qrImage }) => {
+    const result = await publishPaymentPresentation(businessId, {
+      target: "mobile",
+      mode,
+      method: medio,
+      amount: montoMercadoPago,
+      payments: pagosSeleccionados,
+      attemptId: attempt?.id || null,
+      qrData: qrData || null,
+      qrImage: qrImage || null,
+      ttlSeconds: 900,
+    });
+    setPaymentPresentationId(result.presentation?.id || "");
+  };
+
+  const prepareMercadoPago = async () => {
+    setPaymentError("");
+    if (!(montoMercadoPago > 0)) {
+      setPaymentError("Indicá primero cuánto se va a cobrar con Mercado Pago.");
+      return;
+    }
+    if (paymentTarget === "customer_display" && !preferences.customerDisplayEnabled && mercadoPagoMode !== "point") {
+      setPaymentError("Primero activá la pantalla del cliente o elegí otro lugar para mostrar el QR.");
+      return;
+    }
+    setPaymentBusy(true);
+    clearPreparedPayment();
+    let createdAttempt = null;
+    try {
+      if (mercadoPagoMode === "static_qr") {
+        const image = preferences.customerDisplayQrImage || "";
+        if (!image) throw new Error("Todavía no cargaste el QR estático en Configuración > Pantalla del cliente.");
+        setPaymentQrImage(image);
+        setPreparedAmount(montoMercadoPago);
+        if (paymentTarget === "mobile") await publishToMobile({ mode: "static_qr", qrImage: image });
+        return;
+      }
+
+      if (!paymentProvider?.ready) throw new Error("El backend de Mercado Pago todavía no está habilitado en el servidor.");
+      if (!paymentProvider?.connected) throw new Error("Primero conectá la cuenta del negocio desde Configuración > Mercado Pago.");
+      const reference = `kiosco-${Date.now()}-${String(businessId || "negocio").slice(0, 18)}`.slice(0, 64);
+      const type = mercadoPagoMode === "point" ? "point" : "qr";
+      const request = {
+        type,
+        amount: montoMercadoPago,
+        externalReference: reference,
+        ticketId: reference,
+        description: `Venta de ${businessId || "Kiosco+"}`,
+      };
+      if (type === "qr") {
+        request.externalPosId = preferences.customerDisplayMercadoPagoPosId || "";
+        if (!request.externalPosId) throw new Error("Falta configurar el identificador de caja QR de Mercado Pago.");
+      } else {
+        request.terminalId = preferences.customerDisplayMercadoPagoTerminalId || "";
+        if (!request.terminalId) throw new Error("Falta configurar el número de terminal Point.");
+      }
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `payment-${Date.now()}-${Math.random()}`;
+      const result = await createPaymentAttempt(businessId, request, idempotencyKey);
+      const attempt = result.attempt;
+      createdAttempt = attempt;
+      setPaymentAttempt(attempt);
+      setPaymentQrData(attempt?.qrData || "");
+      setPreparedAmount(montoMercadoPago);
+      let image = "";
+      if (attempt?.qrData) image = await QRCode.toDataURL(attempt.qrData, { width: 640, margin: 1, color: { dark: "#092f46", light: "#ffffff" } });
+      if (image) setPaymentQrImage(image);
+      if (type === "qr" && paymentTarget === "mobile") await publishToMobile({ mode: "dynamic_qr", attempt, qrData: attempt?.qrData || "", qrImage: image });
+    } catch (error) {
+      if (createdAttempt?.id && !PAYMENT_FINAL_STATES.has(createdAttempt.status)) cancelPaymentAttempt(businessId, createdAttempt.id).catch(() => {});
+      setPaymentAttempt(null);
+      setPaymentPresentationId("");
+      setPaymentQrData("");
+      setPaymentQrImage("");
+      setPaymentError(error?.message || "No se pudo preparar el cobro con Mercado Pago.");
+      setPreparedAmount(null);
+    } finally {
+      setPaymentBusy(false);
+    }
+  };
+
+  const closeModal = () => {
+    clearPreparedPayment();
+    onClose();
+  };
 
   useEffect(() => {
     const onEnter = (event) => {
@@ -626,7 +815,10 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange }) {
               return (
                 <button
                   key={m.id}
-                  onClick={() => setMedio(m.id)}
+                  onClick={() => {
+                    if (medio !== m.id && incluyeMercadoPago) clearPreparedPayment();
+                    setMedio(m.id);
+                  }}
                   className={`flex min-w-0 items-center justify-center gap-1.5 rounded-full px-2.5 py-2 text-center text-xs font-semibold border transition-colors sm:px-3 sm:py-1.5 ${
                     active
                       ? m.activeClass
@@ -644,7 +836,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange }) {
 
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-gray-900">Cobrar venta</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
+          <button onClick={closeModal} className="text-gray-400 hover:text-gray-700">
             <X size={20} />
           </button>
         </div>
@@ -735,7 +927,35 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange }) {
 
         {esMixto && <div className="mb-4 rounded-xl border bg-gray-50 p-3"><p className="mb-2 text-xs font-semibold text-gray-600">Dividí el total entre dos o más medios</p><div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">{Object.keys(pagosMixtos).map((nombre) => <label key={nombre} className="text-xs text-gray-500">{nombre}<input type="number" min="0" value={pagosMixtos[nombre]} onChange={(event) => setPagosMixtos((current) => ({ ...current, [nombre]: event.target.value }))} className="mt-1 w-full rounded-lg border bg-white px-2 py-2 text-sm"/></label>)}</div><div className={`mt-3 flex flex-col gap-1 text-sm font-semibold min-[360px]:flex-row min-[360px]:justify-between ${Math.abs(totalMixto-total)<0.01 ? "text-green-600" : "text-amber-700"}`}><span>Cargado: {money(totalMixto)}</span><span>Falta: {money(Math.max(0,total-totalMixto))}</span></div>{totalMixto > total && <p className="mt-1 text-xs text-red-600">El reparto supera el total por {money(totalMixto-total)}.</p>}</div>}
 
-        {!esEfectivo && !esFiado && !esMixto && (
+        {incluyeMercadoPago && (
+          <section className="mb-4 overflow-hidden rounded-2xl border border-sky-200 bg-[#eaf7ff]">
+            <div className="flex items-center justify-between gap-3 bg-[#009ee3] px-4 py-3 text-white">
+              <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wide">Mercado Pago</p><p className="truncate text-sm font-bold">Cobrar {money(montoMercadoPago)}</p></div>
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/20"><QrCode size={21}/></span>
+            </div>
+            <div className="space-y-3 p-3">
+              {configuredMode === "ask" ? <label className="block text-xs font-bold text-sky-950">¿Cómo querés cobrar?<select value={mercadoPagoMode} onChange={(event) => { clearPreparedPayment(); setMercadoPagoMode(event.target.value); }} className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900">{PAYMENT_MODES.filter((option) => option.id !== "ask").map((option) => <option key={option.id} value={option.id}>{option.label.replace("Siempre ", "")}</option>)}</select></label> : <div className="rounded-xl bg-white px-3 py-2 text-xs text-sky-950"><span className="block opacity-60">Forma predeterminada</span><b>{PAYMENT_MODES.find((option) => option.id === mercadoPagoMode)?.label || mercadoPagoMode}</b></div>}
+
+              {mercadoPagoMode !== "point" && (configuredTarget === "ask" ? <label className="block text-xs font-bold text-sky-950">¿Dónde querés mostrar el QR?<select value={paymentTarget} onChange={(event) => { clearPreparedPayment(); setPaymentTarget(event.target.value); }} className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900">{PAYMENT_TARGETS.filter((option) => option.id !== "ask").map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label> : <div className="rounded-xl bg-white px-3 py-2 text-xs text-sky-950"><span className="block opacity-60">Destino predeterminado</span><b>{PAYMENT_TARGETS.find((option) => option.id === paymentTarget)?.label || paymentTarget}</b></div>)}
+
+              {mercadoPagoMode !== "static_qr" && !paymentProvider?.connected && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">{paymentProvider?.ready ? "La cuenta todavía no está conectada. Vinculala desde Configuración > Mercado Pago." : "La conexión real todavía no está habilitada en el servidor. El QR estático sí se puede usar ahora."}</p>}
+
+              {paymentError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">{paymentError}</p>}
+
+              {paymentAttempt?.status && <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${paymentAttempt.status === "approved" ? "bg-emerald-100 text-emerald-800" : paymentAttempt.status === "failed" ? "bg-red-100 text-red-700" : "bg-white text-sky-900"}`}>{paymentAttempt.status === "approved" ? <CheckCircle2 size={16}/> : <RefreshCw className={PAYMENT_FINAL_STATES.has(paymentAttempt.status) ? "" : "animate-spin"} size={15}/>}{{ creating: "Creando el cobro…", pending: "Esperando la acreditación…", approved: "Pago acreditado. Ya podés confirmar la venta.", failed: "El cobro fue rechazado.", canceled: "El cobro fue cancelado.", expired: "El cobro venció." }[paymentAttempt.status] || `Estado: ${paymentAttempt.status}`}</div>}
+
+              {paymentQrImage && paymentTarget === "cashier" && mercadoPagoMode !== "point" && <div className="rounded-2xl bg-white p-3 text-center"><img src={paymentQrImage} alt="Código QR de Mercado Pago" className="mx-auto aspect-square w-full max-w-[230px] rounded-xl object-contain"/><p className="mt-2 text-xs font-bold text-sky-950">Pedile al cliente que escanee este QR</p></div>}
+              {preparedForCurrentAmount && paymentTarget === "customer_display" && mercadoPagoMode !== "point" && <p className="flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-center text-xs font-bold text-sky-950"><MonitorUp size={17}/>El QR ya está en la pantalla del cliente.</p>}
+              {preparedForCurrentAmount && paymentTarget === "mobile" && mercadoPagoMode !== "point" && <p className="flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-center text-xs font-bold text-sky-950"><Smartphone size={17}/>El QR fue enviado a la app abierta en el celular.</p>}
+              {preparedForCurrentAmount && mercadoPagoMode === "point" && <p className="flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-center text-xs font-bold text-sky-950"><CreditCard size={17}/>El importe fue enviado al Point. Esperando el pago.</p>}
+
+              {(!preparedForCurrentAmount || paymentAttempt?.status === "failed" || paymentAttempt?.status === "expired" || paymentAttempt?.status === "canceled") && <button type="button" onClick={prepareMercadoPago} disabled={paymentBusy || !(montoMercadoPago > 0)} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#009ee3] px-4 text-sm font-black text-white disabled:opacity-50">{paymentBusy ? <RefreshCw className="animate-spin" size={18}/> : mercadoPagoMode === "point" ? <CreditCard size={18}/> : <QrCode size={18}/>} {paymentBusy ? "Preparando…" : mercadoPagoMode === "static_qr" ? "Mostrar QR estático" : mercadoPagoMode === "dynamic_qr" ? "Generar QR dinámico" : "Enviar cobro al Point"}</button>}
+              {mercadoPagoMode === "static_qr" && preparedForCurrentAmount && <p className="text-center text-[10px] leading-4 text-sky-900/70">El QR estático no informa automáticamente la acreditación. Verificá el pago y confirmá la venta manualmente.</p>}
+            </div>
+          </section>
+        )}
+
+        {!esEfectivo && !esFiado && !esMixto && medio !== "Mercado Pago" && (
           <p className="text-xs text-gray-500 mb-4">
             Se registra como pagado por {medio.toLowerCase()}, sin afectar el
             efectivo físico de la caja.
@@ -744,7 +964,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange }) {
 
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={onClose}
+            onClick={closeModal}
             className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
           >
             Cancelar
@@ -950,7 +1170,8 @@ export function VentasView({
     ],
     total,
     payment: cobrarOpen ? customerPayment : null,
-    paymentQrImage: preferences.customerDisplayQrImage || null,
+    paymentQrImage: cobrarOpen && customerPayment?.target === "customer_display" ? customerPayment.qrImage || null : null,
+    paymentQrData: cobrarOpen && customerPayment?.target === "customer_display" ? customerPayment.qrData || null : null,
     showUnitPrices: preferences.customerDisplayShowUnitPrices !== false,
     showChange: preferences.customerDisplayShowChange !== false,
     connected: true,
@@ -1096,7 +1317,7 @@ export function VentasView({
     return false;
   };
 
-  const handleCobrar = ({ medio, clienteId, pagos = [] }) => {
+  const handleCobrar = ({ medio, clienteId, pagos = [], providerPayment = null }) => {
     if (cartItems.length === 0) return;
     const selectedCustomer = medio === "Cuenta corriente" ? clientes.find((customer) => String(customer.id) === String(clienteId)) : null;
     setProducts((prev) =>
@@ -1125,6 +1346,7 @@ export function VentasView({
         fecha: fecha.toISOString(),
         medio,
         pagos: medio === "Pago combinado" ? pagos : [{ metodo: medio, monto: total }],
+        providerPayment,
         clienteId: medio === "Cuenta corriente" ? clienteId : null,
         clienteNombre: selectedCustomer?.nombre || null,
         clienteTelefono: selectedCustomer?.telefono || "",
@@ -1538,10 +1760,19 @@ export function VentasView({
         <CobrarModal
           total={total}
           clientes={clientes}
+          businessId={businessId}
+          preferences={preferences}
           onPaymentChange={setCustomerPayment}
           onClose={() => { setCobrarOpen(false); setCustomerPayment(null); }}
           onConfirm={(payload) => {
-            const payment = { method: payload.medio, received: payload.received, change: payload.change, payments: payload.pagos || [] };
+            const payment = {
+              ...(customerPayment || {}),
+              method: payload.medio,
+              received: payload.received,
+              change: payload.change,
+              payments: payload.pagos || [],
+              status: payload.providerPayment?.status === "approved" ? "approved" : payload.providerPayment?.type === "static_qr" ? "approved" : customerPayment?.status,
+            };
             setCustomerCompletion({ ...customerDisplayState, mode: "complete", payment, total, connected: true, until: Date.now() + Math.max(2, Number(preferences.customerDisplayThanksSeconds || 6)) * 1000 });
             handleCobrar(payload);
             setCobrarOpen(false);

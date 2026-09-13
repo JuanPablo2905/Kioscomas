@@ -12,7 +12,7 @@ const assert = (condition, message) => {
 };
 
 const defaultConfig = normalizeDisplayConfig(DEFAULT_DISPLAY_CONFIG);
-assert(defaultConfig.version === 3 && defaultConfig.placements.idle["promo-top"].width === 96, "el diseño nuevo usa un lienzo libre con ancho y alto independientes");
+assert(defaultConfig.version === 4 && defaultConfig.placements.idle["promo-top"].width === 96, "el diseño nuevo usa un lienzo libre con ancho y alto independientes");
 assert(["sale-items", "sale-total", "sale-payment"].every((id) => defaultConfig.placements.sale[id]), "la lista, el total y el pago son widgets editables durante la venta");
 
 const legacy = normalizeDisplayConfig({
@@ -57,5 +57,14 @@ const sanitizedSocial = sanitizePublicDisplayContent({ config: {
   placements: { idle: { "social-test": { x: 70, y: 10, width: 25, height: 30, z: 4 } } },
 } });
 assert(sanitizedSocial.config.widgets["social-test"].platform === "whatsapp" && sanitizedSocial.config.widgets["social-test"].value === "11 2233 4455", "cada pantalla remota conserva el dato de su red individual sin campos privados");
+
+const independentPromotions = normalizeDisplayConfig({
+  widgets: { "promo-propia": { id: "promo-propia", type: "promotions", promotionSource: "manual", promotionIds: ["promo-2"], motion: "vertical", direction: "reverse", intervalSeconds: 12, visibleCount: 3 } },
+  placements: { idle: { "promo-propia": { x: 4, y: 8, width: 22, height: 74, z: 8 } } },
+});
+assert(independentPromotions.widgets["promo-propia"].promotionIds[0] === "promo-2" && independentPromotions.widgets["promo-propia"].motion === "vertical" && independentPromotions.placements.idle["promo-propia"].height === 74, "cada tira conserva su selección de promociones, movimiento y tamaño independiente");
+
+const publicPromotions = sanitizePublicDisplayContent({ config: independentPromotions });
+assert(publicPromotions.config.version === 4 && publicPromotions.config.widgets["promo-propia"].promotionSource === "manual" && publicPromotions.config.widgets["promo-propia"].visibleCount === 3, "la pantalla remota recibe la configuración adaptable de cada tira");
 
 console.log("display-config-tests: lienzo libre verificado");

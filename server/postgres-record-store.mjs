@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 const RECORD_TABLE = "cloud_records_v2";
 
 const emptyState = () => ({
-  schemaVersion: 8,
+  schemaVersion: 9,
   cursor: 0,
   accepted: {},
   system: {},
@@ -27,6 +27,7 @@ const emptyState = () => ({
   paymentIntegrations: {},
   paymentOauthStates: {},
   paymentAttempts: {},
+  paymentPresentations: {},
   securityEvents: {},
 });
 
@@ -61,7 +62,7 @@ export function stateToRecords(value) {
   const { cuentas: accounts = [], ...systemWithoutAccounts } = system;
   const records = [
     record("meta", "state", {
-      schemaVersion: Number(state.schemaVersion || 8),
+      schemaVersion: Number(state.schemaVersion || 9),
       cursor: Number(state.cursor || 0),
     }),
     record("system", "state", systemWithoutAccounts),
@@ -114,6 +115,7 @@ export function stateToRecords(value) {
   addObjectRecords("payment_integration", state.paymentIntegrations);
   addObjectRecords("payment_oauth_state", state.paymentOauthStates);
   addObjectRecords("payment_attempt", state.paymentAttempts);
+  addObjectRecords("payment_presentation", state.paymentPresentations);
   addObjectRecords("security_event", state.securityEvents);
   for (const [key, cursor] of Object.entries(stateValue(state.accepted))) {
     records.push(record("accepted", key, { cursor: Number(cursor || 0) }));
@@ -134,7 +136,7 @@ export function recordsToState(rows = []) {
     const key = String(row?.record_key ?? row?.key ?? "");
     const payload = normalizePayload(row?.payload);
     if (scope === "meta" && key === "state") {
-      state.schemaVersion = Number(payload?.schemaVersion || 8);
+      state.schemaVersion = Number(payload?.schemaVersion || 9);
       state.cursor = Number(payload?.cursor || 0);
     } else if (scope === "system" && key === "state") state.system = stateValue(payload);
     else if (scope === "account") accounts.push({ position: Number(payload?.position || 0), value: stateValue(payload?.value) });
@@ -184,6 +186,7 @@ export function recordsToState(rows = []) {
     else if (scope === "payment_integration") state.paymentIntegrations[key] = stateValue(payload);
     else if (scope === "payment_oauth_state") state.paymentOauthStates[key] = stateValue(payload);
     else if (scope === "payment_attempt") state.paymentAttempts[key] = stateValue(payload);
+    else if (scope === "payment_presentation") state.paymentPresentations[key] = stateValue(payload);
     else if (scope === "security_event") state.securityEvents[key] = stateValue(payload);
     else if (scope === "accepted") state.accepted[key] = Number(payload?.cursor || 0);
     else if (scope === "change") changes.push({ key, payload: stateValue(payload) });
@@ -352,7 +355,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 1
   };
 
   const persist = async (value) => {
-    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 8 };
+    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 9 };
     const before = recordsMap(cachedState || emptyState());
     const after = recordsMap(nextState);
     const changed = [...after.entries()]
@@ -402,7 +405,7 @@ export async function createPostgresStore(databaseUrl, { backupRetentionDays = 1
   };
 
   const replace = async (value) => {
-    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 8 };
+    const nextState = { ...emptyState(), ...stateValue(value), schemaVersion: 9 };
     const run = async () => {
       await sql.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtext('kiosco-plus-cloud-records-v2'))`;

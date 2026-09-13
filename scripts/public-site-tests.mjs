@@ -29,6 +29,8 @@ test("la portada conserva su diseño base completo", landingStyles.length > 1000
 test("la portada conserva también las descargas separadas para Mac", landingStyles.includes(".mac-downloads{") && landingStyles.includes(".mac-download-card{"));
 test("la página de precios enlaza la aplicación real", prices.includes("cloudAppUrl") && prices.includes("Ingresar a Kiosco+"));
 test("la beta publica precio, duración y ausencia de tarjeta", prices.includes("betaTrialDays") && prices.includes("launchPaidMonths") && prices.includes("sin tarjeta"));
+test("el precio diferencia lanzamiento y lista con una línea de tiempo", prices.includes("launchDiscount") && prices.includes("price-timeline") && prices.includes("Desde el cuarto mes pago"));
+test("la portada destaca Mercado Pago sin anunciar como activas funciones pendientes", landing.includes('id="mercado-pago"') && landing.includes("QR estático") && landing.includes("Integración de cobros en preparación") && landing.includes("En preparación"));
 test("el sitio publica una política de privacidad completa", privacy.includes("Datos que pueden tratarse") && privacy.includes("Proveedores tecnológicos") && privacy.includes("Derechos del titular"));
 test("landing y precios enlazan la política de privacidad", landing.includes("./privacidad.html") && prices.includes("./privacidad.html"));
 test("el menú móvil incluye precios, demo e ingreso", navigation.includes('label: "Precios"') && navigation.includes("Probar demo") && navigation.includes("Ingresar a mi cuenta"));

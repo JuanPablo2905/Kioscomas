@@ -69,7 +69,7 @@ const pushDeliveryConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
 if (pushDeliveryConfigured) webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISOString();
 const refreshTokenExpiresAt = () => new Date(Date.now() + refreshTokenTtlMs).toISOString();
-const emptyDb = () => ({ schemaVersion: 8, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {}, businessDisplays: {}, displayPairingCodes: {}, displayTokens: {}, paymentIntegrations: {}, paymentOauthStates: {}, paymentAttempts: {}, securityEvents: {} });
+const emptyDb = () => ({ schemaVersion: 9, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {}, businessDisplays: {}, displayPairingCodes: {}, displayTokens: {}, paymentIntegrations: {}, paymentOauthStates: {}, paymentAttempts: {}, paymentPresentations: {}, securityEvents: {} });
 const compactChangeLog = (changes = []) => {
   let latestAccountDirectoryKept = false;
   return [...changes].reverse().filter((change) => {
@@ -457,7 +457,7 @@ const writeMirrors = async (db) => {
   await writeJson(path.join(dataDirectory, "backups", day, "database.json"), db);
 };
 const writeDb = async (db) => {
-  db.schemaVersion = 8;
+  db.schemaVersion = 9;
   ensureReferralMetadata(db);
   db.sessions = compactSessions(db.sessions);
   db.passwordResetTokens = compactPasswordResetTokens(db.passwordResetTokens);
@@ -465,6 +465,8 @@ const writeDb = async (db) => {
   const displayRetentionLimit = Date.now() - 30 * 86400000;
   db.displayPairingCodes = Object.fromEntries(Object.entries(db.displayPairingCodes || {}).filter(([, entry]) => !entry?.usedAt ? Date.parse(entry?.expiresAt || "") > Date.now() - 86400000 : Date.parse(entry.usedAt) > displayRetentionLimit));
   db.displayTokens = Object.fromEntries(Object.entries(db.displayTokens || {}).filter(([, entry]) => !entry?.revokedAt || Date.parse(entry.revokedAt) > displayRetentionLimit));
+  const paymentPresentationRetention = Date.now() - 86400000;
+  db.paymentPresentations = Object.fromEntries(Object.entries(db.paymentPresentations || {}).filter(([, entry]) => Date.parse(entry?.expiresAt || entry?.createdAt || "") > paymentPresentationRetention));
   compactNotificationData(db);
   if (postgresStore) {
     await postgresStore.write(db);
@@ -1553,6 +1555,29 @@ const paymentAttemptView = (attempt = {}) => ({
   refundedAt: attempt.refundedAt || null,
   failure: attempt.failure || null,
 });
+const paymentPresentationView = (presentation = {}, db = {}) => {
+  const linkedAttempt = presentation.attemptId ? db.paymentAttempts?.[presentation.attemptId] : null;
+  const attempt = linkedAttempt?.tenantId === presentation.tenantId ? linkedAttempt : null;
+  return {
+    id: presentation.id,
+    target: presentation.target,
+    mode: presentation.mode,
+    method: presentation.method,
+    amount: Number(presentation.amount || 0),
+    payments: Array.isArray(presentation.payments) ? presentation.payments : [],
+    qrData: attempt?.qrData || presentation.qrData || null,
+    qrImage: presentation.qrImage || null,
+    attemptId: presentation.attemptId || null,
+    status: attempt?.status || presentation.status || "active",
+    sourceDeviceId: presentation.sourceDeviceId || null,
+    createdAt: presentation.createdAt,
+    expiresAt: presentation.expiresAt,
+  };
+};
+const cleanPaymentPresentationImage = (value) => {
+  const source = String(value || "");
+  return /^data:image\/(?:png|jpeg|webp);base64,/i.test(source) && source.length <= 800_000 ? source : null;
+};
 const saveMercadoPagoCredentials = (integration, tokens) => {
   let previous = {};
   if (integration.credentialsEncrypted && (!tokens.access_token || !tokens.refresh_token)) {
@@ -1625,7 +1650,7 @@ const handleRequest = async (req, res) => {
     if (req.url === "/v1/health") return send(res, 200, {
       ok: true,
       service: "kiosco-cloud-local",
-      schemaVersion: 8,
+      schemaVersion: 9,
       localMode,
       deviceActivationRequired: requireDeviceActivation,
       emailDeliveryConfigured: emailService.configured && !emailTestMode,
@@ -2562,8 +2587,72 @@ const handleRequest = async (req, res) => {
       db.paymentIntegrations ||= {};
       db.paymentOauthStates ||= {};
       db.paymentAttempts ||= {};
+      db.paymentPresentations ||= {};
       const integration = () => mercadoPagoIntegration(db, tenantId);
       const ownerRequired = () => ["owner", "superAdmin"].includes(session?.role);
+
+      if (req.method === "GET" && req.url.startsWith("/v1/payments/presentations/active")) {
+        if (!sessionCanTakePayments(db, session, tenantId)) return send(res, 403, { error: "La cuenta no tiene permiso para ver cobros" });
+        const now = Date.now();
+        const presentations = Object.values(db.paymentPresentations)
+          .filter((entry) => entry.tenantId === tenantId && entry.target === "mobile" && entry.status !== "closed" && Date.parse(entry.expiresAt || "") > now)
+          .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")))
+          .slice(0, 5)
+          .map((entry) => paymentPresentationView(entry, db));
+        return send(res, 200, { presentations });
+      }
+
+      if (req.method === "POST" && req.url === "/v1/payments/presentations") {
+        if (!sessionCanTakePayments(db, session, tenantId)) return send(res, 403, { error: "La cuenta no tiene permiso para mostrar cobros" });
+        const payload = await body(req);
+        const target = String(payload.target || "");
+        if (target !== "mobile") return send(res, 400, { error: "El destino remoto debe ser la app de otro dispositivo" });
+        const mode = ["static_qr", "dynamic_qr", "point"].includes(payload.mode) ? payload.mode : "static_qr";
+        const qrImage = cleanPaymentPresentationImage(payload.qrImage);
+        const qrData = cleanCatalogText(payload.qrData || "", 4096) || null;
+        if (mode !== "point" && !qrImage && !qrData) return send(res, 400, { error: "Falta el código QR que se mostrará en el otro dispositivo" });
+        const amount = Math.max(0, Math.round(Number(payload.amount || 0) * 100) / 100);
+        if (!(amount > 0)) return send(res, 400, { error: "El importe del cobro debe ser mayor a cero" });
+        const attemptId = cleanCatalogText(payload.attemptId || "", 120) || null;
+        const linkedAttempt = attemptId ? db.paymentAttempts[attemptId] : null;
+        if (attemptId && (!linkedAttempt || linkedAttempt.tenantId !== tenantId)) return send(res, 400, { error: "El intento de cobro no pertenece a este negocio" });
+        const payments = Array.isArray(payload.payments) ? payload.payments.slice(0, 8).map((item) => ({
+          metodo: cleanCatalogText(item?.metodo || item?.method || "", 60),
+          monto: Math.max(0, Math.round(Number(item?.monto ?? item?.amount ?? 0) * 100) / 100),
+        })).filter((item) => item.metodo && item.monto > 0) : [];
+        const now = new Date();
+        for (const entry of Object.values(db.paymentPresentations)) {
+          if (entry.tenantId === tenantId && entry.sourceDeviceId === deviceId && entry.status !== "closed") entry.status = "closed";
+        }
+        const id = crypto.randomUUID();
+        const presentation = {
+          id, tenantId, target, mode,
+          method: cleanCatalogText(payload.method || "Mercado Pago", 60),
+          amount,
+          payments, qrData, qrImage,
+          attemptId,
+          sourceDeviceId: deviceId,
+          createdBy: session.userId,
+          status: "active",
+          createdAt: now.toISOString(),
+          expiresAt: new Date(now.getTime() + Math.max(60, Math.min(1800, Number(payload.ttlSeconds) || 900)) * 1000).toISOString(),
+        };
+        db.paymentPresentations[id] = presentation;
+        await writeDb(db);
+        return send(res, 201, { presentation: paymentPresentationView(presentation, db) });
+      }
+
+      const presentationMatch = req.url.match(/^\/v1\/payments\/presentations\/([^/?]+)$/);
+      if (req.method === "DELETE" && presentationMatch) {
+        const presentation = db.paymentPresentations[decodeURIComponent(presentationMatch[1])];
+        if (!presentation || presentation.tenantId !== tenantId) return send(res, 404, { error: "Presentación de cobro inexistente" });
+        if (!sessionCanTakePayments(db, session, tenantId)) return send(res, 403, { error: "La cuenta no tiene permiso para cerrar cobros" });
+        presentation.status = "closed";
+        presentation.closedAt = new Date().toISOString();
+        presentation.expiresAt = presentation.closedAt;
+        await writeDb(db);
+        return send(res, 200, { ok: true });
+      }
 
       if (req.method === "GET" && req.url === "/v1/payments/providers") {
         return send(res, 200, {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { cleanV2Seed, recordsToState, stateToRecords } from "../server/postgres-record-store.mjs";
 
 const state = {
-  schemaVersion: 8,
+  schemaVersion: 9,
   cursor: 7,
   accepted: { "operation-1": 7 },
   system: { cuentas: [{ id: "business-a", nombreNegocio: "Comercio A" }] },
@@ -29,6 +29,7 @@ const state = {
   paymentIntegrations: { "business-a": { mercadoPago: { status: "disconnected" } } },
   paymentOauthStates: { "oauth-a": { businessId: "business-a" } },
   paymentAttempts: { "payment-a": { businessId: "business-a", status: "pending" } },
+  paymentPresentations: { "presentation-a": { tenantId: "business-a", target: "mobile", status: "active" } },
   securityEvents: { "event-a": { tenantId: "business-a", outcome: "denied" } },
 };
 
@@ -36,7 +37,7 @@ const rows = stateToRecords(state).map(({ scope, key, payload }) => ({ scope, re
 assert.deepEqual(recordsToState(rows), state, "el estado debe sobrevivir una ida y vuelta por registros");
 
 const scopes = new Set(rows.map((entry) => entry.scope));
-for (const expected of ["meta", "system", "account", "tenant", "tenant_section", "tenant_entity", "change", "accepted", "device", "user", "session", "catalog", "activation_code", "activation", "password_reset", "password_reset_rate", "business_display", "display_pairing_code", "display_token", "payment_integration", "payment_oauth_state", "payment_attempt", "security_event"]) {
+for (const expected of ["meta", "system", "account", "tenant", "tenant_section", "tenant_entity", "change", "accepted", "device", "user", "session", "catalog", "activation_code", "activation", "password_reset", "password_reset_rate", "business_display", "display_pairing_code", "display_token", "payment_integration", "payment_oauth_state", "payment_attempt", "payment_presentation", "security_event"]) {
   assert.equal(scopes.has(expected), true, `falta separar el alcance ${expected}`);
 }
 

@@ -54,7 +54,7 @@ Antes de una restauración solicitada por el dueño se guarda además un punto d
 
 ## Diagnóstico
 
-- `/v1/health`: confirma que Node/Render está funcionando y debe informar `schemaVersion: 8`.
+- `/v1/health`: confirma que Node/Render está funcionando y debe informar `schemaVersion: 9`.
 - `/v1/ready`: comprueba PostgreSQL y debe informar `storageGeneration: 2` y `payloadType: "records"`.
 - `/v1/ready/sections`: muestra cantidad y tamaño de registros por alcance sin exponer su contenido.
 

@@ -49,6 +49,7 @@ import { getCloudWarmupState, startCloudWarmup, subscribeCloudWarmup } from "../
 import { CloudWarmupStatus } from "../features/autenticacion/CloudWarmupStatus";
 import { openAdminBusinessWindow, secondaryWindowContext } from "../shared/secondaryWindows";
 import { ReleaseNotesAnnouncement } from "../updates/ReleaseNotes";
+import { RemotePaymentReceiver } from "../features/ventas/RemotePaymentReceiver";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 const PUBLIC_DEMO_MODE = import.meta.env.VITE_PUBLIC_DEMO === "true";
@@ -1690,6 +1691,7 @@ export default function KioscoApp() {
       </div>
       {readOnlyNotice && <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/45 p-4" onMouseDown={() => setReadOnlyNotice(false)}><div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-5 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><p className="text-xs font-bold uppercase tracking-wide text-amber-700">Modo consulta</p><h2 className="mt-1 text-xl font-bold">El abono está vencido</h2><p className="mt-3 text-sm leading-6 text-gray-600">La información sigue disponible y se puede exportar, pero no se guardarán ventas, cambios de stock ni otras modificaciones hasta registrar un nuevo pago.</p><button onClick={() => setReadOnlyNotice(false)} className="mt-5 w-full rounded-lg bg-[#1C4A44] px-4 py-3 text-sm font-semibold text-white">Entendido</button></div></div>}
       <ReleaseNotesAnnouncement disabled={PUBLIC_DEMO_MODE || IS_SECONDARY_ADMIN_WINDOW}/>
+      {!PUBLIC_DEMO_MODE && !IS_SECONDARY_ADMIN_WINDOW && <RemotePaymentReceiver businessId={currentUserId} businessName={cuentaActual?.nombreNegocio || "Kiosco+"}/>}
       {settingsOpen && <SettingsModal initialSection={settingsInitialSection} preferences={currentPreferences} customerDisplayPreferences={customerDisplayPreferences} onCustomerDisplayChange={updateCustomerDisplayPreferences} promotions={data?.promociones || []} products={data?.products || []} cuenta={cuentaActual} tenantId={currentUserId} onChange={updateCurrentPreferences} onUpdateAccount={updateCurrentAccount} canEditBusiness={esDueno} onCleanOperationalHistory={cleanOperationalHistory} onExportCommercialArchive={exportCurrentCommercialArchive} archiveStats={{count:data?.comprobantes?.length||0}} syncStatus={syncStatus} notificationPreviewMode={Boolean(identidad?.adminApp && identidad?.operandoNegocio)} onReportProblem={() => abrirReporteProblema()} onClose={() => setSettingsOpen(false)}/>}
       {PUBLIC_DEMO_MODE && tutorialPrompt && <DemoTutorialPrompt view={tutorialPrompt.view} declined={tutorialPrompt.declined} onStart={startDemoTutorial} onDecline={declineDemoTutorial} onClose={() => setTutorialPrompt(null)}/>} 
       {PUBLIC_DEMO_MODE && helpSpotlightOpen && <HelpButtonSpotlight onClose={() => setHelpSpotlightOpen(false)}/>} 

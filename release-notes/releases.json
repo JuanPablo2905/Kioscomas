@@ -1,5 +1,50 @@
 [
   {
+    "version": "0.2.23",
+    "date": "2026-09-13",
+    "title": "Cobros preparados y pantallas más inteligentes",
+    "summary": "Preparamos el circuito visible de Mercado Pago, mejoramos la información del pago combinado y convertimos promociones y medios de pago en bloques que aprovechan realmente el tamaño que les des.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "Ventas incorpora un flujo de Mercado Pago con preferencia global o elección por operación para QR estático, QR dinámico y terminal Point, sin permitir que una orden conectada finalice antes de recibir el estado aprobado.",
+          "El QR puede mostrarse en la caja, en la pantalla del cliente o enviarse temporalmente a la app abierta en otro dispositivo; el servidor conserva esas presentaciones aisladas por negocio y dispositivo en el esquema 9.",
+          "Los cobros combinados publican cada medio y su importe en la segunda pantalla y en el celular receptor, además de guardar la referencia del proveedor junto al ticket.",
+          "La configuración permite conectar o desconectar la cuenta de Mercado Pago, elegir el comportamiento predeterminado y cargar los identificadores de la caja QR y la terminal Point.",
+          "Las tiras de promociones pasan al formato 4 del editor: cada widget puede usar todas las promociones o una selección propia, elegir movimiento, dirección, velocidad y cantidad visible.",
+          "Los widgets de promociones y medios de pago detectan su ancho y alto reales para cambiar entre distribución horizontal, vertical o en cuadrícula y escalar texto, iconos, imágenes y contenido.",
+          "La portada pública presenta la integración de Mercado Pago diferenciando lo ya disponible de lo que requiere habilitación, y la página de precios muestra el descuento de lanzamiento y la evolución completa del abono."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Cuando elegís Mercado Pago al cobrar, la app puede preguntarte si querés usar tu QR de siempre, crear uno por el importe exacto o mandar el total al Point.",
+          "También podés decidir si el QR aparece en la computadora, en la pantalla que mira el cliente o en el celular donde tengas abierta la app.",
+          "Si dividís una compra entre efectivo, Mercado Pago, tarjeta o transferencia, el cliente ve cuánto corresponde a cada forma de pago.",
+          "Cada franja de promociones puede mostrar contenido distinto. Si la hacés ancha se mueve de costado; si la hacés alta se mueve hacia arriba o abajo y aprovecha el lugar para enseñar más información.",
+          "El cuadro de medios de pago deja de ser un texto diminuto: ahora ocupa el espacio disponible con tarjetas claras y los colores de cada medio.",
+          "En la web queda explicado que la beta es gratis, después son 3 meses a $30.000 y recién entonces pasa al precio de lista de $50.000."
+        ]
+      },
+      {
+        "title": "Importante sobre Mercado Pago",
+        "items": [
+          "El QR estático queda utilizable desde esta versión si el negocio ya cargó su imagen.",
+          "El QR dinámico y Point quedan preparados en la interfaz y el servidor, pero no realizan cobros reales hasta habilitar las credenciales de prueba y conectar la cuenta de cada negocio."
+        ]
+      },
+      {
+        "title": "Calidad",
+        "items": [
+          "Se ampliaron las comprobaciones automáticas de configuración de pantalla, presentaciones remotas, pago combinado, flujo de Mercado Pago, precios públicos y notas de versión.",
+          "La compilación de producción verifica también que los nuevos diseños adaptables y el flujo de cobro puedan empaquetarse juntos."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.21",
     "date": "2026-09-12",
     "title": "Permisos reales, sesiones seguras y recuperación",

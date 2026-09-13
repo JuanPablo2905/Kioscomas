@@ -9,6 +9,8 @@ import {
 import { subscribeCustomerDisplay } from "./customerDisplay";
 import { AdaptiveSocialCard } from "./AdaptiveSocialCard";
 import { AdaptiveWelcomeCard } from "./AdaptiveWelcomeCard";
+import { AdaptivePromotionsWidget } from "./AdaptivePromotionsWidget";
+import { AdaptivePaymentMethodsWidget } from "./AdaptivePaymentMethodsWidget";
 
 export const fallbackCustomerDisplayState = {
   mode: "idle", businessName: "Kiosco+", welcomeMessage: "Bienvenido", thanksMessage: "¡Gracias por tu compra!",
@@ -23,21 +25,6 @@ function useClock(enabled = true) {
     return () => window.clearInterval(timer);
   }, [enabled]);
   return now;
-}
-
-function usePromotion(promotions = [], seconds = 8, rotation = "ordered") {
-  const [index, setIndex] = useState(0);
-  const signature = promotions.map((promotion) => promotion.id).join("|");
-  useEffect(() => { setIndex(0); }, [signature]);
-  useEffect(() => {
-    if (promotions.length < 2) return undefined;
-    const timer = window.setInterval(() => setIndex((current) => {
-      if (rotation !== "random") return (current + 1) % promotions.length;
-      return (current + 1 + Math.floor(Math.random() * (promotions.length - 1))) % promotions.length;
-    }), Math.max(4, Number(seconds) || 8) * 1000);
-    return () => window.clearInterval(timer);
-  }, [signature, seconds, rotation, promotions.length]);
-  return promotions[index % Math.max(1, promotions.length)] || null;
 }
 
 function useQr(value) {
@@ -98,18 +85,6 @@ function ClockWidget() {
   return <div className="flex h-full w-full flex-col items-center justify-center px-[clamp(.75rem,1.8vmin,1.5rem)] py-[clamp(.6rem,1.4vmin,1.25rem)] text-center"><p className="flex items-center justify-center gap-2 text-[clamp(1.5rem,4vmin,3.75rem)] font-black"><Clock3 className="h-[clamp(1.25rem,3vmin,2.75rem)] w-[clamp(1.25rem,3vmin,2.75rem)]"/>{now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</p><p className="text-[clamp(.7rem,1.35vmin,1.15rem)] capitalize text-emerald-100">{now.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}</p></div>;
 }
 
-function PromotionMini({ promotion }) {
-  return <article className="flex h-full min-w-0 flex-1 items-center gap-[clamp(.65rem,1.4vmin,1.25rem)] rounded-[clamp(.9rem,2vmin,1.75rem)] bg-white/10 px-[clamp(.8rem,1.8vw,1.75rem)] py-[clamp(.65rem,1.35vmin,1.2rem)] text-white"><span className="shrink-0 rounded-full bg-amber-300 px-[clamp(.55rem,1vw,1rem)] py-[clamp(.25rem,.6vmin,.55rem)] text-[clamp(.6rem,1.05vmin,.9rem)] font-black uppercase text-amber-950">{promotion.badge || "PROMO"}</span><div className="min-w-0"><p className="truncate text-[clamp(.95rem,2vmin,1.65rem)] font-bold leading-tight">{promotion.title}</p>{promotion.description && <p className="truncate text-[clamp(.68rem,1.3vmin,1.1rem)] text-emerald-100">{promotion.description}</p>}</div></article>;
-}
-
-function PromotionsWidget({ state }) {
-  const promotions = state.promotions || [];
-  const rotating = usePromotion(promotions, state.slideSeconds, state.rotation);
-  if (!promotions.length) return <div className="grid h-full w-full place-items-center rounded-2xl border border-dashed border-white/25 px-4 py-[clamp(.7rem,1.3vmin,1.2rem)] text-center text-[clamp(.7rem,1.3vmin,1.1rem)] text-white/60">Las promociones activas aparecerán acá</div>;
-  const visible = promotions.length <= 3 ? promotions : [rotating];
-  return <div className="flex h-full w-full min-w-0 gap-2 overflow-hidden">{visible.filter(Boolean).map((promotion) => <PromotionMini key={promotion.id} promotion={promotion}/>)}</div>;
-}
-
 function WeatherWidget({ widget }) {
   const weather = useWeather(widget);
   return <div className="flex h-full w-full flex-col items-center justify-center rounded-[clamp(1rem,2.2vmin,2rem)] bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)] text-center"><CloudSun className="h-[clamp(2.25rem,5vmin,4.5rem)] w-[clamp(2.25rem,5vmin,4.5rem)] text-amber-300"/><p className="mt-[clamp(.5rem,1.2vmin,1rem)] text-[clamp(.7rem,1.35vmin,1.15rem)] font-bold uppercase tracking-wide text-emerald-100">{weather?.city || widget.city || "Elegí una ciudad"}</p>{weather && <><p className="mt-1 text-[clamp(2.25rem,6vmin,5.25rem)] font-black leading-none">{Math.round(weather.temperature)}°</p><p className="mt-1 text-[clamp(.68rem,1.25vmin,1.05rem)] text-emerald-100">Máx. {Math.round(weather.max)}° · Mín. {Math.round(weather.min)}°</p></>}</div>;
@@ -143,7 +118,7 @@ function HoursWidget({ widget }) {
   </div>;
 }
 
-function BasicWidget({ widget, state }) {
+function BasicWidget({ widget, state, sequenceOffset = 0 }) {
   const type = widget.type;
   if (type === "saleItems") return <SaleItemsWidget state={state}/>;
   if (type === "saleTotal") return <SaleTotalWidget state={state}/>;
@@ -152,22 +127,25 @@ function BasicWidget({ widget, state }) {
   if (type === "weather") return <WeatherWidget widget={widget}/>;
   if (type === "social") return <SocialCard item={widget}/>;
   if (type === "hours") return <HoursWidget widget={widget}/>;
-  if (type === "payments") return <div className="flex h-full w-full flex-col items-center justify-center rounded-2xl bg-white/10 p-[clamp(1rem,2.5vmin,2.25rem)] text-center"><p className="text-[clamp(.72rem,1.35vmin,1.15rem)] font-black uppercase tracking-wide text-amber-300">Medios de pago</p><div className="mt-2 flex flex-wrap justify-center gap-[clamp(.35rem,.8vmin,.7rem)]">{(widget.items || []).map((item) => <span key={item} className="rounded-full bg-white px-[clamp(.55rem,1vw,1rem)] py-[clamp(.25rem,.55vmin,.5rem)] text-[clamp(.65rem,1.2vmin,1rem)] font-bold text-[#173F3A]">{item}</span>)}</div></div>;
+  if (type === "payments") return <AdaptivePaymentMethodsWidget widget={widget}/>;
   if (type === "notice") return <div className="flex h-full w-full flex-col items-center justify-center rounded-2xl bg-amber-300 p-[clamp(1rem,2.5vmin,2.25rem)] text-center text-amber-950"><p className="text-[clamp(1rem,2vmin,1.65rem)] font-black">{widget.title || "Aviso"}</p><p className="mt-1 text-[clamp(.8rem,1.6vmin,1.35rem)]">{widget.text || "Escribí un aviso para tus clientes"}</p></div>;
   if (type === "featuredProduct") { const product = (state.featuredProducts || []).find((item) => String(item.id) === String(widget.productId)) || state.featuredProducts?.[0]; return product ? <div className="flex h-full w-full flex-col items-center justify-center rounded-2xl bg-white p-[clamp(1rem,2.5vmin,2.25rem)] text-center text-[#173F3A]">{product.image && <img src={product.image} alt="" className="mb-2 h-[clamp(6rem,16vmin,14rem)] w-full rounded-xl object-contain"/>}<p className="text-[clamp(1rem,2vmin,1.65rem)] font-bold">{product.name}</p><p className="mt-1 text-[clamp(1.5rem,4vmin,3.5rem)] font-black">{money(product.price)}</p></div> : null; }
   if (type === "image") return widget.src ? <img src={widget.src} alt={widget.alt || "Publicidad"} className="h-full w-full rounded-2xl object-contain"/> : <div className="grid h-full w-full place-items-center rounded-2xl border border-dashed border-white/25"><ImageIcon size={26}/></div>;
   if (type === "welcome") return <AdaptiveWelcomeCard title={state.welcomeMessage || "Bienvenido"} subtitle={state.contactLine || "Gracias por elegirnos"}/>;
-  if (type === "promotions") return <PromotionsWidget state={state}/>;
+  if (type === "promotions") return <AdaptivePromotionsWidget widget={widget} promotions={state.promotions || []} seconds={state.slideSeconds} rotation={state.rotation} sequenceOffset={sequenceOffset}/>;
   return null;
 }
 
 function CanvasWidgetLayer({ state, config, mode }) {
   const placements = config.placements?.[mode] || {};
+  const promotionIds = Object.keys(placements).filter((id) => config.widgets[id]?.type === "promotions");
   return <div className="pointer-events-none absolute inset-0 overflow-hidden">{Object.entries(placements).sort(([, a], [, b]) => a.z - b.z).map(([id, rawPlacement]) => {
     const widget = config.widgets[id];
     if (!widget || widget.enabled === false) return null;
+    if (mode === "sale" && widget.type === "promotions" && state.showPromotionsDuringSale === false) return null;
     const placement = normalizeDisplayPlacement(rawPlacement);
-    return <div key={id} className="customer-display-widget-frame absolute overflow-hidden p-[clamp(.18rem,.45vmin,.4rem)] [&>*]:h-full [&>*]:w-full" style={{ left: `${placement.x}%`, top: `${placement.y}%`, width: `${placement.width}%`, height: `${placement.height}%`, zIndex: placement.z }}><BasicWidget widget={widget} state={state}/></div>;
+    const sequenceOffset = Math.max(0, promotionIds.indexOf(id)) * Math.max(1, Math.floor((state.promotions?.length || 1) / Math.max(1, promotionIds.length)));
+    return <div key={id} className="customer-display-widget-frame absolute overflow-hidden p-[clamp(.18rem,.45vmin,.4rem)] [&>*]:h-full [&>*]:w-full" style={{ left: `${placement.x}%`, top: `${placement.y}%`, width: `${placement.width}%`, height: `${placement.height}%`, zIndex: placement.z }}><BasicWidget widget={widget} state={state} sequenceOffset={sequenceOffset}/></div>;
   })}</div>;
 }
 
@@ -188,8 +166,13 @@ function SaleTotalWidget({ state }) {
 
 function SalePaymentWidget({ state }) {
   const payment = state.payment || null;
-  const showQr = ["Mercado Pago", "Transferencia"].includes(payment?.method) && state.paymentQrImage;
-  return <section className="flex h-full w-full min-h-0 flex-col items-center justify-center overflow-y-auto rounded-[clamp(.7rem,2vmin,2.5rem)] bg-white p-[clamp(.5rem,1.2vmin,1.25rem)] text-center text-[#173F3A] shadow-2xl">{payment ? <><p className="text-[clamp(.5rem,.9vmin,1rem)] font-semibold text-gray-500">Medio elegido</p><p className="text-[clamp(.8rem,2vmin,2.5rem)] font-bold">{payment.method}</p>{payment.method === "Efectivo" && state.showChange !== false && <div className="mt-1 grid w-full grid-cols-2 gap-2 border-t pt-1 text-left"><div><span className="text-[clamp(.5rem,.85vmin,.95rem)] text-gray-500">Recibido</span><b className="block text-[clamp(.65rem,1.25vmin,1.4rem)]">{money(payment.received || 0)}</b></div><div><span className="text-[clamp(.5rem,.85vmin,.95rem)] text-gray-500">Vuelto</span><b className="block text-[clamp(.65rem,1.25vmin,1.4rem)] text-emerald-700">{money(Math.max(0, payment.change || 0))}</b></div></div>}{showQr && <div className="mt-1 min-h-0"><img src={state.paymentQrImage} alt="Código QR para pagar" className="mx-auto aspect-square max-h-[min(20vh,12rem)] max-w-full rounded-xl border object-contain p-1"/><p className="text-[clamp(.48rem,.8vmin,.9rem)] font-semibold text-gray-500">Escaneá el QR y mostrá el comprobante.</p></div>}</> : <p className="text-[clamp(.6rem,1.1vmin,1rem)] font-semibold text-gray-500">Esperando el medio de pago</p>}<p className="mt-auto flex-none pt-1 text-[clamp(.48rem,.8vmin,.85rem)] text-[#173F3A]/60">El pago se confirma en la caja.</p></section>;
+  const generatedQr = useQr(state.paymentQrData || payment?.qrData || "");
+  const qrImage = state.paymentQrImage || generatedQr;
+  const payments = payment?.method === "Pago combinado" ? (payment.payments || []).filter((item) => Number(item.monto ?? item.amount) > 0) : [];
+  const showQr = Boolean(qrImage) && payment?.target === "customer_display" && (payment?.method === "Mercado Pago" || payments.some((item) => item.metodo === "Mercado Pago"));
+  const targetLabel = { cashier: "El QR se muestra en la caja", customer_display: "Escaneá el QR de esta pantalla", mobile: "El QR se envió al celular", point: "Cobro enviado al Point" }[payment?.target];
+  const statusLabel = { creating: "Preparando cobro", pending: "Esperando el pago", approved: "Pago acreditado", failed: "No se pudo cobrar", canceled: "Cobro cancelado", expired: "El QR venció" }[payment?.status];
+  return <section className="flex h-full w-full min-h-0 flex-col items-center justify-center overflow-hidden rounded-[clamp(.7rem,2vmin,2.5rem)] bg-white p-[clamp(.5rem,1.2vmin,1.25rem)] text-center text-[#173F3A] shadow-2xl">{payment ? <div className={`grid h-full min-h-0 w-full items-center gap-[clamp(.35rem,1vmin,1rem)] ${showQr ? "grid-cols-[minmax(0,1fr)_minmax(3.5rem,.72fr)]" : "grid-cols-1"}`}><div className="min-w-0 overflow-y-auto"><p className="text-[clamp(.5rem,.9vmin,1rem)] font-semibold text-gray-500">Medio elegido</p><p className="text-[clamp(.8rem,2vmin,2.5rem)] font-bold leading-tight">{payment.method}</p>{payments.length > 0 && <div className="mt-1 grid gap-1 rounded-lg bg-gray-50 p-2 text-left">{payments.map((item) => <div key={item.metodo} className="flex items-center justify-between gap-2 text-[clamp(.5rem,.9vmin,1rem)]"><span className="min-w-0 truncate">{item.metodo}</span><b className="shrink-0">{money(item.monto ?? item.amount)}</b></div>)}</div>}{payment.method === "Efectivo" && state.showChange !== false && <div className="mt-1 grid w-full grid-cols-2 gap-2 border-t pt-1 text-left"><div><span className="text-[clamp(.5rem,.85vmin,.95rem)] text-gray-500">Recibido</span><b className="block text-[clamp(.65rem,1.25vmin,1.4rem)]">{money(payment.received || 0)}</b></div><div><span className="text-[clamp(.5rem,.85vmin,.95rem)] text-gray-500">Vuelto</span><b className="block text-[clamp(.65rem,1.25vmin,1.4rem)] text-emerald-700">{money(Math.max(0, payment.change || 0))}</b></div></div>}{statusLabel && <p className={`mt-1 rounded-full px-2 py-1 text-[clamp(.48rem,.8vmin,.85rem)] font-black ${payment.status === "approved" ? "bg-emerald-100 text-emerald-800" : payment.status === "failed" ? "bg-red-100 text-red-700" : "bg-sky-100 text-sky-800"}`}>{statusLabel}</p>}{targetLabel && <p className="mt-1 text-[clamp(.48rem,.8vmin,.85rem)] font-semibold text-gray-500">{targetLabel}</p>}</div>{showQr && <div className="min-h-0"><img src={qrImage} alt="Código QR para pagar" className="mx-auto aspect-square max-h-full max-w-full rounded-xl border object-contain p-1"/></div>}</div> : <p className="text-[clamp(.6rem,1.1vmin,1rem)] font-semibold text-gray-500">Esperando el medio de pago</p>}<p className="flex-none pt-1 text-[clamp(.48rem,.8vmin,.85rem)] text-[#173F3A]/60">El pago se confirma en la caja.</p></section>;
 }
 
 function Sale({ state, config }) { return <div className="relative min-h-0 flex-1 overflow-hidden"><CanvasWidgetLayer state={state} config={config} mode="sale"/></div>; }

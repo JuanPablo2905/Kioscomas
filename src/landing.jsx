@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import {
   ArrowRight, BarChart3, Check, ChevronDown, Clock3, Cloud, CreditCard,
   Download, HardDrive, Package, RefreshCw, ShieldCheck, ShoppingCart,
-  Smartphone, Sparkles, Store, Users, WifiOff,
+  Smartphone, Sparkles, Store, Users, WifiOff, QrCode, MonitorUp,
 } from "lucide-react";
 import "./landing.css";
 import "./landing-animations.css";
@@ -105,6 +105,26 @@ function App() {
     <section className="hero" id="inicio"><div className="hero-copy hero-enter"><div className="eyebrow"><Sparkles size={15}/> Hecha para comercios reales</div><h1>Tu negocio, <i>más claro</i> todos los días.</h1><p>Stock, ventas, caja, compras y clientes en una sola herramienta simple de usar. Pensada para kioscos y comercios de barrio.</p><div className="hero-actions" style={{flexWrap:"wrap"}}><a className="button primary" href={cloudAppUrl}>Ingresar a mi cuenta <ArrowRight size={18}/></a><a className="button ghost" href={demoUrl}>Probar demo <ArrowRight size={18}/></a><a className="button ghost" href={windowsDownloadUrl}><Download size={18}/> Windows</a><a className="button ghost" href="#descargas-mac"><Download size={18}/> Mac</a></div><div className="hero-trust"><span><Check size={15}/> Windows 10 y 11</span><span><Check size={15}/> Mac Intel y Apple Silicon</span><span><Check size={15}/> Celular y computadora</span><span><Check size={15}/> Hecha en Argentina</span></div></div><div className="hero-visual hero-device-enter"><div className="glow"/><DemoPanel/><div className="demo-hint"><span><Sparkles size={14}/> Tocá las secciones para recorrer la app</span><a href={demoUrl}>Abrir la demo completa <ArrowRight size={15}/></a></div></div></section>
 
     <section className="strip"><p>Menos planillas, menos cuentas de memoria, <b>más control.</b></p><div><Store/> Kioscos <span/> Almacenes <span/> Minimarkets <span/> Comercios de barrio</div></section>
+
+    <section className="section mercado-pago-showcase" id="mercado-pago">
+      <div className="mp-showcase-copy reveal">
+        <span className="mp-status"><i/> Integración de cobros en preparación</span>
+        <div className="mp-brand"><span>mercado</span><b>pago</b></div>
+        <h2>Cobrá sin salir de la venta.</h2>
+        <p>Estamos integrando Mercado Pago para que Kiosco+ pueda preparar el importe exacto, mostrar el QR donde elijas y enviar la operación a un Point.</p>
+        <div className="mp-capabilities">
+          <article className="available"><QrCode size={22}/><div><b>QR estático</b><span>Disponible: cargás tu QR y lo mostrás al cobrar.</span></div><em>Disponible</em></article>
+          <article><RefreshCw size={22}/><div><b>QR dinámico</b><span>Un código nuevo con el total exacto de cada venta.</span></div><em>En preparación</em></article>
+          <article><CreditCard size={22}/><div><b>Mercado Pago Point</b><span>El importe viaja directo a la terminal configurada.</span></div><em>En preparación</em></article>
+        </div>
+        <p className="mp-location-note"><MonitorUp size={18}/> Elegí una vez si querés verlo en la caja, en la pantalla del cliente o en la app abierta en tu celular.</p>
+      </div>
+      <div className="mp-device-scene reveal" aria-label="Ejemplo de cobro con QR y Point desde Kiosco Plus">
+        <div className="mp-checkout-card"><small>Total a cobrar</small><strong>$13.000</strong><span><Check size={15}/> Venta lista</span><div className="mp-fake-qr"><i/><i/><i/><i/><i/><i/><i/><i/><i/></div><b>Escaneá para pagar</b></div>
+        <div className="mp-point"><div className="mp-point-screen"><span>kiosco+</span><small>Total</small><strong>$13.000</strong><em>Acercá o insertá</em></div><div className="mp-point-pad"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></div></div>
+        <div className="mp-phone"><Smartphone size={28}/><div><b>También en el celular</b><span>El QR aparece en la app cuando cobrás desde la computadora.</span></div></div>
+      </div>
+    </section>
 
     <section className="consumer-actions" aria-label="Gestiones de contratación"><span>Gestiones directas, sin iniciar sesión</span><div><a href="./terminos.html">Términos y condiciones</a><a href="./privacidad.html">Privacidad</a><a href={wa("Hola Kiosco+, solicito la baja de mi servicio. Necesito el código de identificación de la solicitud.")} target="_blank" rel="noopener noreferrer">BOTÓN DE BAJA DE SERVICIO</a><a href={wa("Hola Kiosco+, quiero ejercer el derecho de arrepentimiento respecto de la contratación del servicio. Necesito el código de identificación de la solicitud.")} target="_blank" rel="noopener noreferrer">BOTÓN DE ARREPENTIMIENTO</a></div></section>
 

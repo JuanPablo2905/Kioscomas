@@ -5,6 +5,7 @@ import { CustomerDisplayLayoutEditor } from "./CustomerDisplayLayoutEditor";
 import { normalizeDisplayConfig } from "./displayConfig";
 import { RemoteDisplayManager } from "./RemoteDisplayManager";
 import { promocionesParaPantalla } from "./salesRules";
+import { MercadoPagoSettings } from "./MercadoPagoSettings";
 
 const Switch = ({ checked, onChange }) => <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className={`flex w-14 shrink-0 rounded-full p-1 ${checked ? "justify-end bg-emerald-600" : "justify-start bg-gray-300"}`}><span className="h-5 w-5 rounded-full bg-white shadow"/></button>;
 
@@ -26,7 +27,7 @@ const resizeImage = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
-export function CustomerDisplaySettings({ preferences, onChange, account, businessId, promotions = [], products = [] }) {
+export function CustomerDisplaySettings({ preferences, onChange, account, businessId, promotions = [], products = [], canConnectPayments = true }) {
   const [displays, setDisplays] = useState([]);
   const [runtimeMode, setRuntimeMode] = useState("browser");
   const [message, setMessage] = useState("");
@@ -77,6 +78,12 @@ export function CustomerDisplaySettings({ preferences, onChange, account, busine
     catch (error) { setMessage(error?.message || "No se pudo guardar el QR."); }
   };
 
+  const mercadoPagoSection = <details className="rounded-xl border bg-white p-3"><summary className="cursor-pointer text-sm font-black">Mercado Pago: forma de cobro y QR</summary><div className="mt-4 grid gap-4">
+    <div className="rounded-xl border border-violet-200 bg-violet-50/70 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="flex items-center gap-2 text-sm font-bold text-violet-950"><BadgePercent size={16}/>Promociones disponibles</h4><p className="mt-1 text-xs leading-5 text-violet-800">Se administran en <b>Gestión → Promociones</b>. Cada tira puede mostrar todas o una selección propia y adapta su cantidad y movimiento al tamaño que le des.</p></div><span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-violet-800">{displayPromotions.length} visible(s)</span></div></div>
+    <MercadoPagoSettings businessId={businessId} preferences={preferences} onChange={onChange} canConnect={canConnectPayments}/>
+    <div className="rounded-xl border bg-white p-4"><h4 className="text-sm font-bold">QR estático para cobrar</h4><p className="mt-1 text-xs leading-5 text-gray-500">Podés usarlo en la caja, enviarlo al celular o mostrarlo en la segunda pantalla. Kiosco+ no confirma el pago automáticamente: el vendedor debe revisar el comprobante.</p><div className="mt-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center">{preferences.customerDisplayQrImage ? <img src={preferences.customerDisplayQrImage} alt="QR configurado" className="h-28 w-28 rounded-xl border object-contain p-1"/> : <span className="grid h-28 w-28 place-items-center rounded-xl border border-dashed text-center text-xs text-gray-400">Sin QR</span>}<div className="grid w-full gap-2 sm:w-auto"><label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1C4A44] px-4 text-xs font-bold text-white"><ImagePlus size={15}/>{preferences.customerDisplayQrImage ? "Reemplazar QR" : "Subir QR"}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadQr} className="hidden"/></label>{preferences.customerDisplayQrImage && <button type="button" onClick={() => set({ customerDisplayQrImage: null })} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 px-4 text-xs font-semibold text-red-700"><Trash2 size={15}/>Quitar QR</button>}</div></div></div>
+  </div></details>;
+
   return <section className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 sm:p-5">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#1C4A44] text-white"><Monitor size={21}/></span><div><h3 className="font-bold">Pantallas del negocio</h3><p className="mt-1 text-xs leading-5 text-gray-600">Pantalla de venta, TV sólo publicitaria o pantalla remota. Los datos privados nunca se muestran.</p></div></div><Switch checked={preferences.customerDisplayEnabled === true} onChange={(customerDisplayEnabled) => set({ customerDisplayEnabled })}/></div>
     {preferences.customerDisplayEnabled && <div className="mt-5 grid gap-5">
@@ -93,16 +100,13 @@ export function CustomerDisplaySettings({ preferences, onChange, account, busine
 
       <details className="rounded-xl border bg-white p-3"><summary className="cursor-pointer text-sm font-black">2. Diseño visual, bloques y redes</summary><div className="mt-4"><CustomerDisplayLayoutEditor value={displayConfig} previewState={basePreviewState()} products={products} slideSeconds={Math.max(4, Number(preferences.customerDisplaySlideSeconds || 8))} thanksSeconds={Math.max(2, Number(preferences.customerDisplayThanksSeconds || 6))} onChange={(customerDisplayConfig) => set({ customerDisplayConfig })} onSlideSeconds={(customerDisplaySlideSeconds) => set({ customerDisplaySlideSeconds })} onThanksSeconds={(customerDisplayThanksSeconds) => set({ customerDisplayThanksSeconds })}/></div></details>
 
-      <details className="rounded-xl border bg-white p-3"><summary className="cursor-pointer text-sm font-black">3. Promociones y QR de cobro</summary><div className="mt-4 grid gap-4">
-      <div className="rounded-xl border border-violet-200 bg-violet-50/70 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="flex items-center gap-2 text-sm font-bold text-violet-950"><BadgePercent size={16}/>Promociones disponibles</h4><p className="mt-1 text-xs leading-5 text-violet-800">Se administran en <b>Gestión → Promociones</b>. Hasta 3 se ven juntas; con 4 o más comienza el slider.</p></div><span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-violet-800">{displayPromotions.length} visible(s)</span></div></div>
-
-      <div className="rounded-xl border bg-white p-4"><h4 className="text-sm font-bold">QR estático para cobrar</h4><p className="mt-1 text-xs leading-5 text-gray-500">Aparece dentro del área fija de pago y nunca empuja la pantalla hacia abajo. Kiosco+ no confirma el pago automáticamente: el vendedor debe revisar el comprobante.</p><div className="mt-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center">{preferences.customerDisplayQrImage ? <img src={preferences.customerDisplayQrImage} alt="QR configurado" className="h-28 w-28 rounded-xl border object-contain p-1"/> : <span className="grid h-28 w-28 place-items-center rounded-xl border border-dashed text-center text-xs text-gray-400">Sin QR</span>}<div className="grid w-full gap-2 sm:w-auto"><label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1C4A44] px-4 text-xs font-bold text-white"><ImagePlus size={15}/>{preferences.customerDisplayQrImage ? "Reemplazar QR" : "Subir QR"}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadQr} className="hidden"/></label>{preferences.customerDisplayQrImage && <button type="button" onClick={() => set({ customerDisplayQrImage: null })} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 px-4 text-xs font-semibold text-red-700"><Trash2 size={15}/>Quitar QR</button>}</div></div></div>
-      </div></details>
+      {mercadoPagoSection}
 
       <details defaultOpen={Boolean(new URLSearchParams(window.location.search).get("displayPair"))} className="rounded-xl border bg-white p-3"><summary className="cursor-pointer text-sm font-black">4. TVs y pantallas remotas</summary><div className="mt-4"><RemoteDisplayManager businessId={businessId} content={basePreviewState()}/></div></details>
 
       <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><button type="button" onClick={() => openPreview("idle")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 text-sm font-bold text-white"><Play size={16}/>Probar publicidad</button><button type="button" onClick={() => openPreview("sale")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-white px-4 text-sm font-bold text-emerald-900"><Monitor size={16}/>Simular venta</button><button type="button" onClick={() => closeCustomerDisplay({ businessId }).then(() => setMessage("Pantalla cerrada.")).catch(() => {})} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border bg-white px-4 text-sm font-semibold"><Power size={16}/>Cerrar</button></div>
       {runtimeMode === "browser" && <p className="text-xs text-gray-500">En navegador se abre una ventana que tenés que mover manualmente. La app instalada puede elegir el monitor automáticamente.</p>}{message && <p className="rounded-lg bg-white px-3 py-2 text-xs text-gray-700">{message}</p>}
     </div>}
+    {!preferences.customerDisplayEnabled && <div className="mt-5">{mercadoPagoSection}<p className="mt-2 text-xs leading-5 text-gray-500">Podés dejar apagada la segunda pantalla y seguir usando Mercado Pago desde la caja o el celular.</p></div>}
   </section>;
 }

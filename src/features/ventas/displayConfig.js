@@ -60,7 +60,7 @@ export const DISPLAY_WIDGET_CATALOG = {
   saleItems: { label: "Lista de la compra", description: "Productos, cantidades y promoción aplicada.", modes: ["sale"] },
   saleTotal: { label: "Total y descuentos", description: "Subtotal, descuentos, ahorro y total a pagar.", modes: ["sale"] },
   salePayment: { label: "Pago y QR", description: "Medio de pago, efectivo, vuelto y código QR.", modes: ["sale"] },
-  promotions: { label: "Promociones", description: "Hasta 3 quedan fijas; desde 4 rotan automáticamente." },
+  promotions: { label: "Promociones", description: "Se adapta al espacio y permite elegir qué promociones muestra." },
   welcome: { label: "Bienvenida", description: "Mensaje principal del negocio." },
   clock: { label: "Hora y fecha", description: "Reloj actualizado en pantalla." },
   weather: { label: "Clima", description: "Temperatura actual de la ciudad elegida." },
@@ -86,7 +86,7 @@ export const SOCIAL_PLATFORMS = {
 const widget = (id, type, extra = {}) => ({ id, type, enabled: true, ...extra });
 
 export const DEFAULT_DISPLAY_CONFIG = {
-  version: 3,
+  version: 4,
   operationMode: DISPLAY_MODES.saleAndAds,
   preset: "classic",
   layouts: {
@@ -119,9 +119,9 @@ export const DEFAULT_DISPLAY_CONFIG = {
     },
   },
   widgets: {
-    "promo-top": widget("promo-top", "promotions", { style: "strip" }),
-    "promo-bottom": widget("promo-bottom", "promotions", { style: "strip" }),
-    "promo-sale": widget("promo-sale", "promotions", { style: "strip" }),
+    "promo-top": widget("promo-top", "promotions", { style: "strip", promotionSource: "auto", promotionIds: [], motion: "auto", direction: "forward", intervalSeconds: 0, visibleCount: 0 }),
+    "promo-bottom": widget("promo-bottom", "promotions", { style: "strip", promotionSource: "auto", promotionIds: [], motion: "auto", direction: "forward", intervalSeconds: 0, visibleCount: 0 }),
+    "promo-sale": widget("promo-sale", "promotions", { style: "strip", promotionSource: "auto", promotionIds: [], motion: "auto", direction: "forward", intervalSeconds: 0, visibleCount: 0 }),
     "sale-items": widget("sale-items", "saleItems"),
     "sale-total": widget("sale-total", "saleTotal"),
     "sale-payment": widget("sale-payment", "salePayment"),
@@ -262,7 +262,7 @@ function splitLegacySocialPlacement(value, ids) {
 export function normalizeDisplayConfig(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   const normalized = clone(DEFAULT_DISPLAY_CONFIG);
-  normalized.version = 3;
+  normalized.version = 4;
   normalized.operationMode = Object.values(DISPLAY_MODES).includes(source.operationMode) ? source.operationMode : normalized.operationMode;
   normalized.preset = source.preset === "custom" || DISPLAY_PRESETS[source.preset] ? source.preset : normalized.preset;
   for (const [id, item] of Object.entries(source.widgets || {})) {
@@ -270,6 +270,9 @@ export function normalizeDisplayConfig(value = {}) {
     if (item.type === "social") {
       normalized.widgets[id] = normalizeSocialWidget(id, item);
       continue;
+    }
+    if (item.type === "promotions" && !normalized.widgets[id]) {
+      normalized.widgets[id] = widget(id, "promotions", { style: "strip", promotionSource: "auto", promotionIds: [], motion: "auto", direction: "forward", intervalSeconds: 0, visibleCount: 0 });
     }
     if (!normalized.widgets[id]) continue;
     normalized.widgets[id] = { ...normalized.widgets[id], ...item, id, type: normalized.widgets[id].type };
@@ -363,6 +366,12 @@ export function sanitizePublicDisplayContent(value = {}) {
       platform: type === "social" && SOCIAL_PLATFORMS[raw?.platform] ? raw.platform : "",
       value: type === "social" ? cleanText(raw?.value, 180) : "",
       label: type === "social" ? cleanText(raw?.label, 80) : "",
+      promotionSource: type === "promotions" && raw?.promotionSource === "manual" ? "manual" : "auto",
+      promotionIds: type === "promotions" && Array.isArray(raw?.promotionIds) ? raw.promotionIds.slice(0, 30).map((id) => cleanText(id, 100)).filter(Boolean) : [],
+      motion: type === "promotions" && ["auto", "horizontal", "vertical", "fade", "none"].includes(raw?.motion) ? raw.motion : "auto",
+      direction: type === "promotions" && raw?.direction === "reverse" ? "reverse" : "forward",
+      intervalSeconds: type === "promotions" ? Math.max(0, Math.min(60, Number(raw?.intervalSeconds) || 0)) : 0,
+      visibleCount: type === "promotions" ? Math.max(0, Math.min(6, Math.round(Number(raw?.visibleCount) || 0))) : 0,
       schedule: type === "hours" ? normalizeDisplaySchedule(raw?.schedule) : [],
       items: Array.isArray(raw?.items) ? raw.items.slice(0, 12).map((item) => typeof item === "string"
         ? cleanText(item, 80)
@@ -371,7 +380,7 @@ export function sanitizePublicDisplayContent(value = {}) {
   }
   config.widgets = widgets;
   return {
-    version: 3,
+    version: 4,
     config,
     businessName: cleanText(value.businessName, 100),
     businessImage: safeImage(value.businessImage),
