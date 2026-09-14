@@ -24,7 +24,9 @@ import {
   mercadoPagoAvailability,
   mercadoPagoConfig,
   mercadoPagoConfigFor,
+  mercadoPagoProviderMessage,
   mercadoPagoQrData,
+  isMercadoPagoSandboxSeller,
   normalizedPaymentStatus,
   verifyMercadoPagoWebhookSignature,
 } from "./mercado-pago.mjs";
@@ -1772,7 +1774,7 @@ const updatePaymentAttemptFromOrder = (attempt, order) => {
 };
 const paymentFailure = (error) => ({
   code: String(error?.providerCode || "provider_error").slice(0, 80),
-  message: String(error?.message || "No se pudo procesar el cobro").slice(0, 240),
+  message: mercadoPagoProviderMessage(error).slice(0, 300),
 });
 const paymentSetupExternalIds = (tenantId) => {
   const suffix = crypto.createHash("sha256").update(String(tenantId || "negocio")).digest("hex").slice(0, 16).toUpperCase();
@@ -1896,6 +1898,11 @@ const handleRequest = async (req, res) => {
         const codeVerifier = decryptPaymentSecret(pending.codeVerifierEncrypted, mercadoPago.tokenEncryptionKey)?.value;
         const tokens = await client.exchangeAuthorizationCode({ code: url.searchParams.get("code"), codeVerifier });
         const profile = await client.currentUser(tokens.access_token);
+        if (solutionConfig.testMode && !isMercadoPagoSandboxSeller({ tokens, profile })) {
+          const unsafeSeller = new Error("El modo de prueba sólo permite conectar un usuario vendedor de prueba de Mercado Pago");
+          unsafeSeller.providerCode = "production_seller_in_test_mode";
+          throw unsafeSeller;
+        }
         const now = new Date().toISOString();
         db.paymentIntegrations ||= {};
         db.paymentIntegrations[pending.tenantId] ||= {};

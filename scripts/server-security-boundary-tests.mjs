@@ -39,7 +39,7 @@ try {
   test("un cuerpo JSON inválido se rechaza como petición incorrecta", malformed.response.status === 400);
   const oversized = await request("/v1/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ padding: "x".repeat(1280 * 1024 + 10) }) });
   test("una petición excesiva se corta antes de procesarse", oversized.response.status === 413);
-  await request("/v1/activation/admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ deviceId: "boundary-device", deviceKey: administratorSecret, appVersion: "0.2.27" }) });
+  await request("/v1/activation/admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ deviceId: "boundary-device", deviceKey: administratorSecret, appVersion: "0.2.28" }) });
   await request("/v1/auth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ deviceId: "boundary-device", name: "Dueño", email: "boundary-owner@example.com", businessName: "Negocio seguro", username: "boundary-owner", password: "boundary-secret", termsAccepted: true, termsVersion: TERMS_VERSION }) });
   const login = await request("/v1/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "boundary-owner", password: "boundary-secret", deviceId: "boundary-device" }) });
   const ttlHours = (Date.parse(login.value.expiresAt || "") - Date.now()) / 3600000;

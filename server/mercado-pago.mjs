@@ -63,6 +63,22 @@ export const mercadoPagoQrData = (order = {}) => (
   || null
 );
 
+export const mercadoPagoProviderMessage = (error) => {
+  const message = String(error?.message || "").trim();
+  if (/test credentials are not supported/i.test(message)) {
+    return "La autorización guardada de Mercado Pago no es compatible con la API de cobros. Desconectá esta integración y volvé a conectarla con un usuario vendedor de prueba.";
+  }
+  return message || "No se pudo procesar el cobro con Mercado Pago";
+};
+
+export const isMercadoPagoSandboxSeller = ({ tokens = {}, profile = {} } = {}) => (
+  tokens.live_mode === false
+  || profile.live_mode === false
+  || profile.test_user === true
+  || /@testuser\.com$/i.test(String(profile.email || "").trim())
+  || /^TESTUSER/i.test(String(profile.nickname || profile.username || "").trim())
+);
+
 const keyFromSecret = (secret) => crypto.createHash("sha256").update(String(secret || "")).digest();
 
 export const encryptPaymentSecret = (value, secret) => {
@@ -339,7 +355,9 @@ export const createMercadoPagoClient = ({ config = mercadoPagoConfig(), fetchImp
       code: requiredText(code, "code", 512),
       redirect_uri: config.redirectUri,
       code_verifier: requiredText(codeVerifier, "code_verifier", 256),
-      ...(config.testMode ? { test_token: "true" } : {}),
+      // Orders rechaza los tokens OAuth de tipo TEST. El entorno seguro se
+      // obtiene autorizando un vendedor de prueba con la aplicación real.
+      test_token: "false",
     }),
     refreshAccessToken: (refreshToken) => tokenRequest({
       grant_type: "refresh_token",

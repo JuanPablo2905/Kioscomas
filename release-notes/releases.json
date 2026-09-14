@@ -1,5 +1,41 @@
 [
   {
+    "version": "0.2.28",
+    "date": "2026-09-14",
+    "title": "Mercado Pago de prueba y teclado móvil corregidos",
+    "summary": "Corregimos el acceso que impedía generar órdenes de Mercado Pago aun con credenciales válidas y eliminamos la franja que cubría parte de la aplicación al escribir desde un iPhone.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "El intercambio OAuth deja de solicitar un token de tipo TEST, incompatible con Orders, y utiliza la autorización de un vendedor de prueba sobre la aplicación OAuth productiva, como requiere el entorno sandbox actual.",
+          "Mientras el servidor está en modo de prueba, la conexión valida señales de cuenta sandbox y rechaza una cuenta vendedora real antes de guardar sus credenciales, evitando generar por accidente una operación productiva.",
+          "El rechazo invalid_credentials de Mercado Pago se traduce a una explicación en castellano que indica reconectar la integración, sin mostrar tokens, secretos ni información interna.",
+          "La adaptación al teclado móvil separa el alto visible informado por Visual Viewport del alto estable de la aplicación, conserva el lienzo completo y contempla el desplazamiento vertical particular de Safari en iPhone.",
+          "Los campos enfocados se llevan al sector visible más cercano sin una animación de centrado adicional; al cerrar el teclado se recuperan las medidas en dos etapas para absorber la demora de Safari.",
+          "Configuración mantiene un fondo sólido de extremo a extremo cuando aparece el teclado, sin dejar expuesto el velo gris del modal debajo del panel."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "El QR dinámico fallaba aunque las claves estuvieran bien porque Kiosco+ le pedía a Mercado Pago una clase de acceso que su sistema nuevo ya no acepta. Ahora usa el modo correcto.",
+          "Para volver a probar hay que desconectar y reconectar Mercado Pago una vez, entrando con el vendedor de prueba; el acceso anterior quedó creado con el modo equivocado.",
+          "Si el servidor está en pruebas y alguien intenta conectar una cuenta real, Kiosco+ la frena para que una prueba no termine convirtiéndose en un cobro verdadero.",
+          "En iPhone, abrir el teclado ya no achica toda la aplicación ni deja una franja gris tapando media pantalla. Sólo se acomoda el campo en el que estás escribiendo.",
+          "Los errores de Mercado Pago que antes aparecían en inglés ahora explican en castellano qué debe hacer el dueño."
+        ]
+      },
+      {
+        "title": "Comprobaciones",
+        "items": [
+          "Se agregaron pruebas específicas para evitar que OAuth vuelva a solicitar tokens TEST, distinguir vendedores sandbox de cuentas reales y conservar la traducción del error del proveedor.",
+          "La batería móvil comprueba que los campos no se centren dos veces, que Safari conserve medidas separadas y que Configuración mantenga cubierto todo el fondo al abrir el teclado."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.27",
     "date": "2026-09-14",
     "title": "Mercado Pago listo para probar de punta a punta",
@@ -15,7 +51,7 @@
           "Las anulaciones y devoluciones de ventas conectadas solicitan primero el reintegro a Mercado Pago; la operación local sólo cambia cuando el proveedor confirma el resultado.",
           "El envío del QR a otro dispositivo del negocio incluye importe, forma de pago y detalle combinado, confirmación de apertura en el celular y cierre remoto cuando termina o se cancela el cobro.",
           "La entrada pública kioscomas.ar/pantalla recibe ahora la dirección del servidor también en la compilación de la landing, para poder generar siempre el QR y el código de vinculación.",
-          "Se incorporó un modo de pruebas explícito que solicita credenciales de prueba durante OAuth y mantiene todo el backend detrás de una habilitación independiente para evitar cobros accidentales."
+          "Se incorporó un modo de pruebas explícito y se mantuvo todo el backend detrás de una habilitación independiente para evitar cobros accidentales; la compatibilidad del token OAuth con Orders fue corregida posteriormente en 0.2.28."
         ]
       },
       {
@@ -32,7 +68,7 @@
       {
         "title": "Activación segura y calidad",
         "items": [
-          "Esta versión sale preparada para pruebas controladas: KIOSCO_MERCADOPAGO_TEST_MODE debe permanecer en 1 mientras se usan usuarios y credenciales de prueba.",
+          "Esta versión sale preparada para pruebas controladas: KIOSCO_MERCADOPAGO_TEST_MODE debe permanecer en 1 mientras se autoriza un vendedor de prueba; desde 0.2.28 OAuth utiliza el tipo de token aceptado por Orders.",
           "KIOSCO_MERCADOPAGO_BACKEND_ENABLED continúa siendo el interruptor general. Debe activarse recién después de desplegar 0.2.27 y comprobar en el diagnóstico que QR y Point aparecen configurados.",
           "Las pruebas cubren autorización separada, sucursales y cajas QR, terminales Point, creación y conciliación de órdenes, webhooks firmados, devoluciones, envío al celular, pagos combinados, aislamiento entre negocios y la dirección pública de la segunda pantalla.",
           "Ninguna clave, token o secreto de Mercado Pago se incorpora al instalador ni al repositorio; permanecen sólo en las variables protegidas del servidor."

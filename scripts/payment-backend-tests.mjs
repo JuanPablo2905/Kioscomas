@@ -11,7 +11,9 @@ import {
   mercadoPagoAvailability,
   mercadoPagoConfig,
   mercadoPagoConfigFor,
+  mercadoPagoProviderMessage,
   mercadoPagoQrData,
+  isMercadoPagoSandboxSeller,
   normalizeExpirationDuration,
   normalizeExternalReference,
   normalizedPaymentStatus,
@@ -73,7 +75,10 @@ const sandboxClient = createMercadoPagoClient({
   },
 });
 await sandboxClient.exchangeAuthorizationCode({ code: "sandbox-code", codeVerifier: "sandbox-verifier-abcdefghijklmnopqrstuvwxyz-123456" });
-test("el modo de pruebas solicita un token sandbox sin afectar producción", new URLSearchParams(sandboxTokenBody).get("test_token") === "true");
+test("OAuth no solicita un token TEST que Orders rechaza", new URLSearchParams(sandboxTokenBody).get("test_token") === "false");
+test("el modo de prueba reconoce al vendedor sandbox sin aceptar una cuenta real", isMercadoPagoSandboxSeller({ tokens: { live_mode: false } })
+  && isMercadoPagoSandboxSeller({ profile: { email: "vendedor@testuser.com" } })
+  && !isMercadoPagoSandboxSeller({ tokens: { live_mode: true }, profile: { email: "venta@negocio.com" } }));
 
 const encrypted = encryptPaymentSecret({ accessToken: "APP_USR-token", refreshToken: "refresh" }, config.tokenEncryptionKey);
 test("los tokens se cifran antes de persistirse", !encrypted.includes("APP_USR-token") && decryptPaymentSecret(encrypted, config.tokenEncryptionKey).refreshToken === "refresh");
@@ -88,6 +93,9 @@ const qr = buildQrOrderPayload({ amount: 13000, externalReference: "V-ABC123", e
 test("QR dinámico conserva importe, referencia y caja", qr.type === "qr" && qr.config.qr.mode === "dynamic" && qr.config.qr.external_pos_id === "CAJA-1" && qr.transactions.payments[0].amount === "13000.00");
 test("el QR se lee desde la respuesta vigente de Orders v1", mercadoPagoQrData({ type_response: { qr_data: "000201-test" } }) === "000201-test");
 test("el lector de QR conserva compatibilidad con respuestas anteriores", mercadoPagoQrData({ config: { qr: { qr_data: "legacy-test" } } }) === "legacy-test");
+test("el rechazo de credenciales de prueba explica en castellano cómo corregir la configuración", mercadoPagoProviderMessage({
+  message: "Test credentials are not supported, use test users with production credentials to sandbox environment and your production credentials to production environment.",
+}).includes("Desconectá esta integración"));
 test("las órdenes usan una duración y no una fecha absoluta", qr.expiration_time === "PT15M" && normalizeExpirationDuration(30) === "PT30S");
 let absoluteExpirationRejected = false;
 try { normalizeExpirationDuration("2026-09-13T12:00:00.000Z"); } catch { absoluteExpirationRejected = true; }

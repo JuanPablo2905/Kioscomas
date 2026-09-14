@@ -22,6 +22,7 @@ const salesSupport = fs.readFileSync("src/features/ventas/SalesSupportTools.jsx"
 const adminNotifications = fs.readFileSync("src/features/administracion/AdminNotificationCenter.jsx", "utf8");
 const adminPanel = fs.readFileSync("src/features/administracion/AdminAppPanel.jsx", "utf8");
 const styles = fs.readFileSync("src/styles.css", "utf8");
+const keyboardViewport = fs.readFileSync("src/shared/useMobileKeyboardViewport.js", "utf8");
 const desktopMain = fs.readFileSync("desktop/main.cjs", "utf8");
 
 const checks = [
@@ -46,6 +47,8 @@ const checks = [
   [settings.includes("VITE_APP_VERSION") && settings.includes("Versión actual:") && settings.includes("Aplicación web instalada"), "Configuración debe mostrar claramente la versión y el tipo de aplicación."],
   [settings.includes("Buscar actualizaciones") && settings.includes("Reiniciar e instalar actualización") && desktopMain.includes("quitAndInstall(true, true)"), "Ayuda debe permitir buscar una versión y reiniciar la aplicación para instalarla."],
   [settings.includes("settings-mobile-safe-header") && styles.includes("(display-mode: standalone)") && styles.includes("env(safe-area-inset-top) + .75rem") && styles.includes("backdrop-filter: none"), "Las pestañas de Configuración deben quedar debajo del área segura de iPhone sin arrastrar el degradado."],
+  [keyboardViewport.includes('block: "nearest"') && keyboardViewport.includes('--app-visible-height') && keyboardViewport.includes('--app-viewport-offset-top') && !keyboardViewport.includes('behavior: "smooth"'), "El teclado móvil no debe centrar dos veces el campo ni achicar el fondo completo de la app."],
+  [styles.includes('html[data-mobile-keyboard="open"] .settings-overlay') && styles.includes('background: var(--app-menu, #fff) !important'), "Configuración debe conservar un fondo completo al abrir el teclado del iPhone."],
   [settings.includes('id: "notificaciones"') && settings.includes("NotificationSettingsPanel") && settings.includes("Ayuda y versión"), "Configuración debe agrupar los avisos y la ayuda sin volver a mostrar una lista extensa de menús."],
   [main.includes('mode === "customer-display"') && customerDisplay.includes("Tu compra") && customerDisplay.includes("Total a pagar"), "La pantalla para clientes debe tener una entrada aislada y mostrar sólo la información de la venta."],
   [customerDisplaySettings.includes("QR estático") && customerDisplaySettings.includes("no confirma el pago automáticamente"), "La configuración debe explicar que el QR estático requiere confirmación del vendedor."],

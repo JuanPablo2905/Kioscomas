@@ -16,7 +16,10 @@ export function useMobileKeyboardViewport() {
     const root = document.documentElement;
     const viewport = window.visualViewport;
     const timers = new Set();
-    let baselineHeight = Math.round(viewport?.height || window.innerHeight);
+    let baselineHeight = Math.max(
+      Math.round(window.innerHeight || 0),
+      Math.round((viewport?.height || 0) + (viewport?.offsetTop || 0)),
+    );
     let viewportRevealTimer = null;
 
     const later = (callback, delay) => {
@@ -30,39 +33,59 @@ export function useMobileKeyboardViewport() {
     const reveal = (element, delay = 0) => {
       later(() => {
         if (document.activeElement !== element || !isEditable(element)) return;
-        element.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        // Safari ya desplaza la ventana visual cuando abre el teclado. Centrar con
+        // una animación agregaba un segundo desplazamiento y dejaba media pantalla
+        // cubierta por el fondo del modal.
+        element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
       }, delay);
     };
 
     const updateViewport = () => {
       const visibleHeight = Math.round(viewport?.height || window.innerHeight);
-      root.style.setProperty("--app-viewport-height", `${visibleHeight}px`);
+      const viewportOffsetTop = Math.max(0, Math.round(viewport?.offsetTop || 0));
+      root.style.setProperty("--app-visible-height", `${visibleHeight}px`);
+      root.style.setProperty("--app-viewport-offset-top", `${viewportOffsetTop}px`);
 
       const active = document.activeElement;
       if (!isEditable(active)) {
-        baselineHeight = visibleHeight;
+        // Al perder el foco iOS tarda unas décimas en devolver el alto completo.
+        // Conservar el último alto estable durante ese lapso evita la franja vacía.
+        if (baselineHeight - visibleHeight <= 80 && viewportOffsetTop <= 40) {
+          baselineHeight = Math.max(visibleHeight, Math.round(window.innerHeight || 0));
+        }
+        root.style.setProperty("--app-viewport-height", `${baselineHeight}px`);
         root.dataset.mobileKeyboard = "closed";
         return;
       }
 
-      const keyboardReducedViewport = baselineHeight - visibleHeight > 80;
+      const keyboardReducedViewport = baselineHeight - visibleHeight > 80 || viewportOffsetTop > 40;
       if (keyboardReducedViewport || root.dataset.mobileKeyboard === "open") {
         root.dataset.mobileKeyboard = "open";
+        // El alto principal representa la superficie de la app, no el recorte que
+        // informa el teclado. El alto visible queda disponible por separado.
+        root.style.setProperty("--app-viewport-height", `${baselineHeight}px`);
         if (viewportRevealTimer) window.clearTimeout(viewportRevealTimer);
         viewportRevealTimer = window.setTimeout(() => {
           viewportRevealTimer = null;
-          if (document.activeElement === active) active.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+          if (document.activeElement === active) active.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
         }, 70);
+      } else {
+        baselineHeight = Math.max(baselineHeight, visibleHeight, Math.round(window.innerHeight || 0));
+        root.style.setProperty("--app-viewport-height", `${baselineHeight}px`);
       }
     };
 
     const handleFocus = (event) => {
       if (!isEditable(event.target)) return;
-      baselineHeight = Math.max(baselineHeight, Math.round(viewport?.height || window.innerHeight));
+      baselineHeight = Math.max(
+        baselineHeight,
+        Math.round(window.innerHeight || 0),
+        Math.round((viewport?.height || 0) + (viewport?.offsetTop || 0)),
+      );
       root.dataset.mobileKeyboard = "open";
       updateViewport();
-      reveal(event.target, 100);
-      reveal(event.target, 360);
+      reveal(event.target, 80);
+      reveal(event.target, 280);
     };
 
     const handleBlur = () => {
@@ -71,6 +94,7 @@ export function useMobileKeyboardViewport() {
         root.dataset.mobileKeyboard = "closed";
         updateViewport();
       }, 140);
+      later(updateViewport, 420);
     };
 
     updateViewport();
@@ -89,6 +113,8 @@ export function useMobileKeyboardViewport() {
       timers.forEach((timer) => window.clearTimeout(timer));
       if (viewportRevealTimer) window.clearTimeout(viewportRevealTimer);
       root.style.removeProperty("--app-viewport-height");
+      root.style.removeProperty("--app-visible-height");
+      root.style.removeProperty("--app-viewport-offset-top");
       delete root.dataset.mobileKeyboard;
     };
   }, []);

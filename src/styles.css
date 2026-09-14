@@ -1152,7 +1152,12 @@ body[data-tutorial-active="true"] .app-date-menu {
   .view-stage .border-b.bg-gray-50::-webkit-scrollbar { display: none; }
   .view-stage .border-b.bg-gray-50 > button { flex: 0 0 auto; white-space: nowrap; }
 
-  .settings-overlay { z-index: 100 !important; align-items: stretch !important; padding: 0 !important; }
+  .settings-overlay {
+    z-index: 100 !important;
+    align-items: stretch !important;
+    padding: 0 !important;
+    background: var(--app-menu, #fff) !important;
+  }
   .settings-panel {
     display: flex !important;
     flex-direction: column;
@@ -1162,6 +1167,10 @@ body[data-tutorial-active="true"] .app-date-menu {
     max-height: var(--app-viewport-height, 100dvh) !important;
     border: 0 !important;
     border-radius: 0 !important;
+  }
+  html[data-mobile-keyboard="open"] .settings-overlay {
+    min-height: var(--app-viewport-height, 100dvh) !important;
+    backdrop-filter: none !important;
   }
   .settings-panel > aside {
     width: 100% !important;
