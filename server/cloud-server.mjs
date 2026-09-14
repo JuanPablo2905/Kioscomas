@@ -26,6 +26,7 @@ import {
   mercadoPagoConfigFor,
   mercadoPagoProviderMessage,
   mercadoPagoQrData,
+  isMercadoPagoMissingPosError,
   isMercadoPagoSandboxSeller,
   normalizedPaymentStatus,
   verifyMercadoPagoWebhookSignature,
@@ -1794,6 +1795,80 @@ const paymentTerminalView = (terminal = {}) => ({
   externalPosId: cleanCatalogText(terminal.external_pos_id || "", 60) || null,
   operatingMode: cleanCatalogText(terminal.operating_mode || "UNDEFINED", 40),
 });
+const reconcileMercadoPagoQrSetup = async ({ integration, tenantId, connection, accessToken, payload = {}, createStoreIfMissing = false }) => {
+  integration.qr ||= {};
+  const ids = paymentSetupExternalIds(tenantId);
+  const client = mercadoPagoClientFor("qr");
+  const storeExternalId = ids.storeExternalId;
+  const posExternalId = ids.posExternalId;
+  const storeSearch = await client.searchStores({ accessToken, userId: connection.sellerId, externalId: storeExternalId }).catch((error) => {
+    if (Number(error?.status) === 404) return { results: [] };
+    throw error;
+  });
+  let store = providerResultList(storeSearch, "results")[0] || null;
+  if (!store && createStoreIfMissing) {
+    const storePayload = buildMercadoPagoStorePayload({
+      name: payload.storeName || integration.qr.storeName || "Kiosco+",
+      externalId: storeExternalId,
+      streetName: payload.streetName,
+      streetNumber: payload.streetNumber,
+      cityName: payload.cityName,
+      stateName: payload.stateName,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      reference: payload.reference,
+    });
+    store = await client.createStore({ accessToken, userId: connection.sellerId, payload: storePayload });
+  }
+  if (!store?.id) return { repaired: false, reason: "store_missing" };
+
+  const posSearch = await client.searchPos({ accessToken, externalId: posExternalId }).catch((error) => {
+    if (Number(error?.status) === 404) return { data: [] };
+    throw error;
+  });
+  let pos = providerResultList(posSearch, "data")[0] || null;
+  if (!pos) {
+    const posPayload = buildMercadoPagoPosPayload({
+      name: payload.posName || integration.qr.posName || "Caja principal",
+      storeId: String(store.id),
+      externalId: posExternalId,
+    });
+    pos = await client.createPos({ accessToken, payload: posPayload, idempotencyKey: crypto.randomUUID() });
+  } else if (String(pos?.config?.qr?.operating_mode || "").toLowerCase() !== "pdv") {
+    pos = await client.updatePos({
+      accessToken,
+      posId: pos.id,
+      payload: { config: { qr: { operating_mode: "pdv" } } },
+      idempotencyKey: crypto.randomUUID(),
+    });
+  }
+  if (!pos?.id) throw new Error("Mercado Pago no devolvió el identificador de la caja creada");
+  const now = new Date().toISOString();
+  integration.qr = {
+    ...integration.qr,
+    storeId: String(store.id),
+    storeName: cleanCatalogText(payload.storeName || integration.qr.storeName || store.name || "Kiosco+", 60),
+    storeExternalId,
+    posId: String(pos.id),
+    posName: cleanCatalogText(payload.posName || integration.qr.posName || pos.name || "Caja principal", 60),
+    posExternalId: String(pos.external_id || posExternalId),
+    configuredAt: integration.qr.configuredAt || now,
+    verifiedAt: now,
+  };
+  delete integration.qr.setupFailure;
+  integration.updatedAt = now;
+  return { repaired: true, createdPos: !providerResultList(posSearch, "data")[0] };
+};
+const invalidateMercadoPagoQrSetup = (integration, error) => {
+  if (!integration?.qr) return;
+  integration.qr = {
+    storeName: integration.qr.storeName || "Kiosco+",
+    posName: integration.qr.posName || "Caja principal",
+    setupFailure: paymentFailure(error),
+    invalidatedAt: new Date().toISOString(),
+  };
+  integration.updatedAt = new Date().toISOString();
+};
 const paymentReturnUrl = (status, reason = "", solution = "qr") => {
   try {
     const url = new URL(mercadoPago.returnUri);
@@ -3000,71 +3075,33 @@ const handleRequest = async (req, res) => {
         if (!connection || connection.status !== "connected" || !connection.sellerId) return send(res, 409, { error: "Primero conectá Mercado Pago para Código QR" });
         const payload = await body(req);
         const account = tenantAccount(db, tenantId);
-        const ids = paymentSetupExternalIds(tenantId);
         const storeName = cleanCatalogText(payload.storeName || account?.nombreNegocio || "Kiosco+", 60);
         const posName = cleanCatalogText(payload.posName || "Caja principal", 60);
         if (!storeName || !posName) return send(res, 400, { error: "Indicá el nombre del local y de la caja" });
         current.qr ||= {};
         try {
           const accessToken = await mercadoPagoAccessToken(db, current, "qr");
-          if (!current.qr.storeId) {
-            const storePayload = buildMercadoPagoStorePayload({
-              name: storeName,
-              externalId: current.qr.storeExternalId || ids.storeExternalId,
-              streetName: payload.streetName,
-              streetNumber: payload.streetNumber,
-              cityName: payload.cityName,
-              stateName: payload.stateName,
-              latitude: payload.latitude,
-              longitude: payload.longitude,
-              reference: payload.reference,
-            });
-              const storeSearch = await mercadoPagoClientFor("qr").searchStores({ accessToken, userId: connection.sellerId, externalId: storePayload.external_id }).catch((error) => {
-              if (Number(error?.status) === 404) return { results: [] };
-              throw error;
-            });
-            const store = providerResultList(storeSearch, "results")[0]
-              || await mercadoPagoClientFor("qr").createStore({ accessToken, userId: connection.sellerId, payload: storePayload });
-            if (!store?.id) throw new Error("Mercado Pago no devolvió el identificador del local creado");
-            current.qr = {
-              ...current.qr,
-              storeId: String(store.id),
-              storeName,
-              storeExternalId: storePayload.external_id,
-              storeCreatedAt: new Date().toISOString(),
-            };
-            current.updatedAt = new Date().toISOString();
+          const setupResult = await reconcileMercadoPagoQrSetup({
+            integration: current,
+            tenantId,
+            connection,
+            accessToken,
+            payload: { ...payload, storeName, posName },
+            createStoreIfMissing: payload.repairOnly !== true,
+          });
+          if (!setupResult.repaired) {
+            const missing = new Error("La caja anterior no pertenece al acceso actual. Completá nuevamente la dirección para crearla en la cuenta de Mercado Pago conectada.");
+            missing.providerCode = "qr_setup_requires_address";
+            invalidateMercadoPagoQrSetup(current, missing);
             await writeDb(db);
+            return send(res, 409, { error: missing.message, integration: paymentIntegrationView(current, mercadoPago), needsAddress: true });
           }
-          if (!current.qr.posExternalId || !current.qr.posId) {
-            const posPayload = buildMercadoPagoPosPayload({
-              name: posName,
-              storeId: current.qr.storeId,
-              externalId: ids.posExternalId,
-            });
-            current.qr.posIdempotencyKey ||= crypto.randomUUID();
-            const posSearch = await mercadoPagoClientFor("qr").searchPos({ accessToken, externalId: posPayload.external_id }).catch((error) => {
-              if (Number(error?.status) === 404) return { data: [] };
-              throw error;
-            });
-            const pos = providerResultList(posSearch, "data")[0]
-              || await mercadoPagoClientFor("qr").createPos({ accessToken, payload: posPayload, idempotencyKey: current.qr.posIdempotencyKey });
-            if (!pos?.id) throw new Error("Mercado Pago no devolvió el identificador de la caja creada");
-            current.qr = {
-              ...current.qr,
-              posId: String(pos.id),
-              posName,
-              posExternalId: String(pos?.external_id || posPayload.external_id),
-              configuredAt: new Date().toISOString(),
-            };
-          }
-          current.updatedAt = new Date().toISOString();
           recordSecurityEvent(db, session, tenantId, deviceId, {
-            type: "mercado_pago_qr_configured", outcome: "accepted",
+            type: payload.repairOnly === true ? "mercado_pago_qr_repaired" : "mercado_pago_qr_configured", outcome: "accepted",
             storeId: current.qr.storeId, posExternalId: current.qr.posExternalId,
           });
           await writeDb(db);
-          return send(res, 201, { ok: true, integration: paymentIntegrationView(current, mercadoPago) });
+          return send(res, payload.repairOnly === true ? 200 : 201, { ok: true, repaired: payload.repairOnly === true, integration: paymentIntegrationView(current, mercadoPago) });
         } catch (error) {
           current.updatedAt = new Date().toISOString();
           current.qrSetupFailure = paymentFailure(error);
@@ -3159,13 +3196,19 @@ const handleRequest = async (req, res) => {
         const currentIntegration = integration();
         const connection = mercadoPagoConnection(currentIntegration, type);
         if (!connection || connection.status !== "connected") return send(res, 409, { error: `Primero conectá Mercado Pago para ${type === "point" ? "Point" : "Código QR"}` });
+        const providerTargetId = type === "qr" ? currentIntegration?.qr?.posExternalId : currentIntegration?.point?.terminalId;
+        if (!providerTargetId) {
+          return send(res, 409, { error: type === "qr"
+            ? "Primero creá y vinculá la caja QR desde Configuración > Mercado Pago"
+            : "Primero elegí y vinculá el Point desde Configuración > Mercado Pago" });
+        }
         const idempotencyKey = cleanCatalogText(req.headers["x-idempotency-key"] || payload.idempotencyKey || "", 120);
         if (idempotencyKey.length < 8) return send(res, 400, { error: "El cobro requiere una clave de idempotencia estable" });
         let amount, orderPayload;
         try {
           orderPayload = type === "qr"
-            ? buildQrOrderPayload({ ...payload, externalReference: payload.externalReference || payload.ticketId }, solutionConfig)
-            : buildPointOrderPayload({ ...payload, externalReference: payload.externalReference || payload.ticketId }, solutionConfig);
+            ? buildQrOrderPayload({ ...payload, externalPosId: providerTargetId, externalReference: payload.externalReference || payload.ticketId }, solutionConfig)
+            : buildPointOrderPayload({ ...payload, terminalId: providerTargetId, externalReference: payload.externalReference || payload.ticketId }, solutionConfig);
           amount = Number(orderPayload.total_amount || orderPayload.transactions?.payments?.[0]?.amount);
         }
         catch (error) { return send(res, 400, { error: error.message }); }
@@ -3213,7 +3256,36 @@ const handleRequest = async (req, res) => {
         await writeDb(db);
         try {
           const accessToken = await mercadoPagoAccessToken(db, currentIntegration, type);
-          const order = await mercadoPagoClientFor(type).createOrder({ accessToken, payload: orderPayload, idempotencyKey });
+          let order;
+          try {
+            order = await mercadoPagoClientFor(type).createOrder({ accessToken, payload: orderPayload, idempotencyKey });
+          } catch (error) {
+            if (type !== "qr" || !isMercadoPagoMissingPosError(error)) throw error;
+            const repair = await reconcileMercadoPagoQrSetup({
+              integration: currentIntegration,
+              tenantId,
+              connection,
+              accessToken,
+              createStoreIfMissing: false,
+            });
+            if (!repair.repaired) {
+              invalidateMercadoPagoQrSetup(currentIntegration, error);
+              throw error;
+            }
+            recordSecurityEvent(db, session, tenantId, deviceId, {
+              type: "mercado_pago_qr_auto_repaired", outcome: "accepted",
+              storeId: currentIntegration.qr.storeId, posExternalId: currentIntegration.qr.posExternalId,
+            });
+            await writeDb(db);
+            if (currentIntegration.qr.posExternalId !== orderPayload.config.qr.external_pos_id) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            try {
+              order = await mercadoPagoClientFor(type).createOrder({ accessToken, payload: orderPayload, idempotencyKey });
+            } catch (retryError) {
+              if (isMercadoPagoMissingPosError(retryError)) invalidateMercadoPagoQrSetup(currentIntegration, retryError);
+              throw retryError;
+            }
+          }
           updatePaymentAttemptFromOrder(attempt, order);
           attempt.history.push({ status: attempt.status, providerStatus: attempt.providerStatus, at: attempt.updatedAt });
           await writeDb(db);
@@ -3224,7 +3296,7 @@ const handleRequest = async (req, res) => {
           attempt.updatedAt = new Date().toISOString();
           attempt.history.push({ status: "failed", code: attempt.failure.code, at: attempt.updatedAt });
           await writeDb(db);
-          return send(res, 502, { error: attempt.failure.message, attempt: paymentAttemptView(attempt) });
+          return send(res, 502, { error: attempt.failure.message, attempt: paymentAttemptView(attempt), integration: paymentIntegrationView(currentIntegration, mercadoPago) });
         }
       }
 

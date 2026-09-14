@@ -1,5 +1,41 @@
 [
   {
+    "version": "0.2.29",
+    "date": "2026-09-14",
+    "title": "Caja QR de Mercado Pago reparable",
+    "summary": "Corregimos el aviso “External POS id not found”: Kiosco+ ahora usa la caja confirmada por el servidor, la prepara en el modo integrado correcto y puede reparar una vinculación anterior sin dejar identificadores viejos.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "Los intentos de QR dinámico y Point dejan de confiar en identificadores editables enviados por la interfaz: el servidor reemplaza esos datos por la caja QR y la terminal que él mismo verificó para el negocio.",
+          "La creación de cajas declara `config.qr.operating_mode: pdv`, requerido por el flujo integrado de Orders, y la comprobación actualiza a ese modo las cajas creadas por versiones anteriores.",
+          "Ante `External POS id not found`, el servidor busca nuevamente la sucursal y la caja con el token vigente, recrea la caja cuando la sucursal todavía existe y repite la orden una sola vez con la misma clave de idempotencia.",
+          "Si la sucursal tampoco pertenece al acceso actual, Kiosco+ invalida solamente la configuración QR obsoleta y solicita cargar de nuevo la dirección; la cuenta conectada, el historial y los cobros anteriores no se eliminan.",
+          "Configuración incorpora una acción explícita para comprobar y reparar la caja. El identificador QR pasa a ser de sólo lectura para impedir que un valor escrito a mano vuelva a desviar un cobro.",
+          "Los mensajes de caja inexistente que Mercado Pago devuelve en inglés se reconocen por código y contenido y se muestran en castellano con una indicación concreta para resolverlos."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Mercado Pago decía que la caja no existía porque Kiosco+ podía conservar un número viejo o haber creado la caja sin marcarla como caja integrada. Ahora usa siempre la caja correcta y el modo correcto.",
+          "Si la caja quedó del acceso anterior, Kiosco+ intenta acomodarla solo. También agregamos el botón “Comprobar y reparar” en Configuración > Mercado Pago.",
+          "El número interno de la caja ya no se puede cambiar a mano. Así un dato viejo no puede mandar el cobro a una caja que Mercado Pago no reconoce.",
+          "Si cambió toda la cuenta de prueba y también desapareció la sucursal, la app va a pedir la dirección otra vez para crearla en la cuenta nueva, sin borrar ventas ni desconectar Mercado Pago.",
+          "En vez de mostrar “External POS id not found”, la app explica el problema en español y dice dónde resolverlo."
+        ]
+      },
+      {
+        "title": "Comprobaciones",
+        "items": [
+          "Se agregaron pruebas para reconocer el error del proveedor, generar cajas en modo PDV, consultar y actualizar una caja existente, bloquear identificadores QR manuales y descartar claves de reintento después de una falla.",
+          "La batería completa vuelve a comprobar pagos, pantalla de cobro, seguridad, sincronización, notificaciones, pantallas remotas, sitio público, compilación web e instaladores antes de publicar."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.28",
     "date": "2026-09-14",
     "title": "Mercado Pago de prueba y teclado móvil corregidos",

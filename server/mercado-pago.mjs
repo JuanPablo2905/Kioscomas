@@ -63,10 +63,24 @@ export const mercadoPagoQrData = (order = {}) => (
   || null
 );
 
+export const isMercadoPagoMissingPosError = (error = {}) => {
+  const evidence = [
+    error?.providerCode,
+    error?.message,
+    ...(Array.isArray(error?.providerDetails) ? error.providerDetails.map((detail) => (
+      [detail?.code, detail?.message, detail?.description].filter(Boolean).join(" ")
+    )) : []),
+  ].filter(Boolean).join(" ");
+  return /external[ _-]*pos[ _-]*(?:id[ _-]*)?not[ _-]*found|pos_obtainment_by_external_id_error/i.test(evidence);
+};
+
 export const mercadoPagoProviderMessage = (error) => {
   const message = String(error?.message || "").trim();
   if (/test credentials are not supported/i.test(message)) {
     return "La autorización guardada de Mercado Pago no es compatible con la API de cobros. Desconectá esta integración y volvé a conectarla con un usuario vendedor de prueba.";
+  }
+  if (isMercadoPagoMissingPosError(error)) {
+    return "Mercado Pago no encontró la caja QR vinculada. Kiosco+ intentó repararla; si el aviso vuelve a aparecer, entrá en Configuración > Mercado Pago y volvé a crear la caja QR.";
   }
   return message || "No se pudo procesar el cobro con Mercado Pago";
 };
@@ -281,6 +295,7 @@ export const buildMercadoPagoPosPayload = ({ name, storeId, externalId }) => ({
   name: requiredText(name, "pos_name", 60),
   store_id: requiredText(storeId, "store_id", 80),
   external_id: normalizeProviderExternalId(externalId, "pos_external_id", { alphanumericOnly: true, max: 40 }),
+  config: { qr: { operating_mode: "pdv" } },
 });
 
 export const verifyMercadoPagoWebhookSignature = ({ signature, requestId, dataId, secret, now = Date.now(), toleranceMs = 5 * 60 * 1000 }) => {
@@ -370,6 +385,7 @@ export const createMercadoPagoClient = ({ config = mercadoPagoConfig(), fetchImp
     searchStores: ({ accessToken, userId, externalId }) => request(`/users/${encodeURIComponent(requiredText(userId, "user_id", 80))}/stores/search?external_id=${encodeURIComponent(normalizeProviderExternalId(externalId, "store_external_id", { alphanumericOnly: true }))}`, { accessToken }),
     createPos: ({ accessToken, payload, idempotencyKey }) => request("/v2/pos", { method: "POST", accessToken, body: payload, idempotencyKey }),
     searchPos: ({ accessToken, externalId }) => request(`/v2/pos?external_id=${encodeURIComponent(normalizeProviderExternalId(externalId, "pos_external_id", { alphanumericOnly: true, max: 40 }))}`, { accessToken }),
+    updatePos: ({ accessToken, posId, payload, idempotencyKey }) => request(`/v2/pos/${encodeURIComponent(requiredText(posId, "pos_id", 80))}`, { method: "PATCH", accessToken, body: payload, idempotencyKey }),
     listTerminals: ({ accessToken, storeId, posId }) => {
       const search = new URLSearchParams({ limit: "50", offset: "0" });
       if (storeId) search.set("store_id", requiredText(storeId, "store_id", 80));

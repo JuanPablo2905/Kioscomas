@@ -12,6 +12,7 @@ Mercado Pago requiere una aplicación diferente por cada solución: una para **C
 
 - Conectar QR y Point por separado con OAuth, `state` de un solo uso y PKCE S256, sin permitir que queden vinculados a vendedores distintos.
 - Crear o recuperar una sucursal y una caja de Mercado Pago sin duplicarlas si se reintenta el asistente.
+- Comprobar que la caja pertenezca a la cuenta actualmente conectada, convertirla a modo QR integrado `pdv` y repararla automáticamente si quedó desactualizada tras cambiar la autorización.
 - Validar la dirección física completa exigida por Mercado Pago: calle, número, ciudad, provincia y coordenadas.
 - Crear una order QR dinámica por el importe exacto, leer la trama vigente desde `type_response.qr_data` y mostrarla en la caja, la pantalla del cliente u otro celular del mismo negocio.
 - Mostrar el QR estático cargado por el negocio, con confirmación manual.

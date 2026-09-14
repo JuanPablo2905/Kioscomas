@@ -13,6 +13,7 @@ import {
   mercadoPagoConfigFor,
   mercadoPagoProviderMessage,
   mercadoPagoQrData,
+  isMercadoPagoMissingPosError,
   isMercadoPagoSandboxSeller,
   normalizeExpirationDuration,
   normalizeExternalReference,
@@ -96,6 +97,9 @@ test("el lector de QR conserva compatibilidad con respuestas anteriores", mercad
 test("el rechazo de credenciales de prueba explica en castellano cómo corregir la configuración", mercadoPagoProviderMessage({
   message: "Test credentials are not supported, use test users with production credentials to sandbox environment and your production credentials to production environment.",
 }).includes("Desconectá esta integración"));
+const missingPosError = { message: "External POS id not found", providerCode: "pos_obtainment_by_external_id_error" };
+test("la caja QR inexistente se reconoce aunque Mercado Pago la informe en inglés", isMercadoPagoMissingPosError(missingPosError)
+  && mercadoPagoProviderMessage(missingPosError).includes("no encontró la caja QR"));
 test("las órdenes usan una duración y no una fecha absoluta", qr.expiration_time === "PT15M" && normalizeExpirationDuration(30) === "PT30S");
 let absoluteExpirationRejected = false;
 try { normalizeExpirationDuration("2026-09-13T12:00:00.000Z"); } catch { absoluteExpirationRejected = true; }
@@ -112,7 +116,7 @@ test("Point ubica el medio de pago en config.payment_method", point.config.payme
 
 const storePayload = buildMercadoPagoStorePayload({ name: "Kiosco Centro", externalId: "KIOSCOTEST", streetName: "Av. Siempre Viva", streetNumber: "123", cityName: "Buenos Aires", stateName: "Buenos Aires", latitude: -34.6, longitude: -58.4 });
 const posPayload = buildMercadoPagoPosPayload({ name: "Caja principal", storeId: "998877", externalId: "CAJATEST" });
-test("el alta QR prepara una dirección fiscal completa y una caja válida", storePayload.location.street_name === "Av. Siempre Viva" && storePayload.location.city_name === "Buenos Aires" && storePayload.location.latitude === -34.6 && posPayload.store_id === "998877" && !("config" in posPayload));
+test("el alta QR prepara una dirección fiscal completa y una caja integrada en modo PDV", storePayload.location.street_name === "Av. Siempre Viva" && storePayload.location.city_name === "Buenos Aires" && storePayload.location.latitude === -34.6 && posPayload.store_id === "998877" && posPayload.config.qr.operating_mode === "pdv");
 let incompleteLocationRejected = false;
 try { buildMercadoPagoStorePayload({ name: "Kiosco", externalId: "KIOSCO2", streetName: "Caseros", latitude: -34.6, longitude: -58.4 }); } catch { incompleteLocationRejected = true; }
 test("una sucursal sin dirección completa se rechaza antes de llamar al proveedor", incompleteLocationRejected);
@@ -142,9 +146,10 @@ await client.createPos({ accessToken: "token-privado", payload: posPayload, idem
 test("el cliente oficial crea local y POS por las rutas correctas", requests[1].url.endsWith("/users/123/stores") && requests[2].url.endsWith("/v2/pos") && requests[2].options.headers["x-idempotency-key"] === "pos-idempotente");
 await client.searchStores({ accessToken: "token-privado", userId: "123", externalId: "KIOSCOTEST" });
 await client.searchPos({ accessToken: "token-privado", externalId: "CAJATEST" });
+await client.updatePos({ accessToken: "token-privado", posId: "112233", payload: { config: { qr: { operating_mode: "pdv" } } }, idempotencyKey: "pos-update-idempotente" });
 await client.listTerminals({ accessToken: "token-privado", storeId: "998877", posId: "112233" });
 await client.setupTerminals({ accessToken: "token-privado", terminalIds: ["NEWLAND_N950__SBX0000001"] });
-test("la recuperación del alta y la configuración Point usan los endpoints vigentes", requests[3].url.includes("/stores/search?external_id=KIOSCOTEST") && requests[4].url.includes("/v2/pos?external_id=CAJATEST") && requests[5].url.includes("/terminals/v1/list?") && requests[6].options.method === "PATCH");
+test("la recuperación del alta y la configuración Point usan los endpoints vigentes", requests[3].url.includes("/stores/search?external_id=KIOSCOTEST") && requests[4].url.includes("/v2/pos?external_id=CAJATEST") && requests[5].url.endsWith("/v2/pos/112233") && requests[5].options.method === "PATCH" && requests[6].url.includes("/terminals/v1/list?") && requests[7].options.method === "PATCH");
 let transientCalls = 0;
 const retryClient = createMercadoPagoClient({
   config,

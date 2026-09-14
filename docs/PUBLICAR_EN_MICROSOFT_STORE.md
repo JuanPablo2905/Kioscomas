@@ -70,7 +70,7 @@ pnpm run desktop:build:store
 El resultado quedará en `release-store/` con un nombre parecido a:
 
 ```text
-KioscoPlus-Store-0.2.28-x64.appx
+KioscoPlus-Store-0.2.29-x64.appx
 ```
 
 El paquete se genera sin certificado comercial propio. Partner Center valida el paquete y Microsoft lo vuelve a firmar cuando supera la certificación.

@@ -773,8 +773,8 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
       if (!connection?.ready) throw new Error(`Mercado Pago para ${type === "point" ? "Point" : "Código QR"} todavía no está habilitado en el servidor.`);
       if (!connection?.connected) throw new Error(`Primero conectá Mercado Pago para ${type === "point" ? "Point" : "Código QR"} desde Configuración.`);
       const providerTargetId = type === "qr"
-        ? preferences.customerDisplayMercadoPagoPosId || paymentProvider?.qr?.posExternalId || ""
-        : preferences.customerDisplayMercadoPagoTerminalId || paymentProvider?.point?.terminalId || "";
+        ? paymentProvider?.qr?.posExternalId || ""
+        : paymentProvider?.point?.terminalId || "";
       const requestSignature = `${type}:${Number(montoMercadoPago).toFixed(2)}:${providerTargetId}`;
       if (paymentRequestRef.current?.signature !== requestSignature) {
         const operationId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -810,6 +810,8 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
       if (type === "qr" && paymentTarget === "mobile") await publishToMobile({ mode: "dynamic_qr", attempt, qrData: attempt?.qrData || "", qrImage: image });
     } catch (error) {
       if (createdAttempt?.id && !PAYMENT_FINAL_STATES.has(createdAttempt.status)) cancelPaymentAttempt(businessId, createdAttempt.id).catch(() => {});
+      if (error?.payload?.integration) setPaymentProvider((current) => ({ ...current, ...error.payload.integration }));
+      paymentRequestRef.current = null;
       setPaymentAttempt(null);
       setPaymentPresentationId("");
       setPaymentQrData("");

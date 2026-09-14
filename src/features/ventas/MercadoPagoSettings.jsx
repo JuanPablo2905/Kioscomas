@@ -153,7 +153,29 @@ export function MercadoPagoSettings({ businessId, preferences, onChange, canConn
       setMessage("Caja QR creada y vinculada con este negocio.");
       await load({ quiet: true });
     } catch (error) {
+      if (error?.payload?.integration) setProvider((current) => ({ ...current, ...error.payload.integration }));
       setMessage(error?.message || "No se pudo crear la caja QR.");
+    } finally {
+      setWorkingId("");
+    }
+  };
+
+  const repairQr = async () => {
+    setWorkingId("repair-qr");
+    try {
+      const payload = await setupMercadoPagoQr(businessId, {
+        storeName: provider?.qr?.storeName || setup.storeName,
+        posName: provider?.qr?.posName || setup.posName,
+        repairOnly: true,
+      });
+      const next = payload.integration;
+      setProvider((current) => ({ ...current, ...next }));
+      if (next?.qr?.posExternalId) set({ customerDisplayMercadoPagoPosId: next.qr.posExternalId });
+      setMessage("Caja QR comprobada y vinculada con la cuenta actual de Mercado Pago.");
+      await load({ quiet: true });
+    } catch (error) {
+      if (error?.payload?.integration) setProvider((current) => ({ ...current, ...error.payload.integration }));
+      setMessage(error?.message || "No se pudo comprobar la caja QR.");
     } finally {
       setWorkingId("");
     }
@@ -243,7 +265,7 @@ export function MercadoPagoSettings({ businessId, preferences, onChange, canConn
 
     {qrConnection.connected && canConnect && <div className="mt-4 rounded-xl border border-sky-200 bg-white p-4">
       <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#009ee3] text-white"><Store size={19}/></span><div><h5 className="text-sm font-black text-sky-950">Caja para QR dinámico</h5><p className="mt-1 text-xs leading-5 text-gray-600">Kiosco+ crea el local y el puesto de cobro en la cuenta conectada. Se hace una sola vez.</p></div></div>
-      {qrConfigured ? <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900"><b className="block">Configurada correctamente</b><span>{provider.qr.storeName} · {provider.qr.posName}</span><code className="mt-1 block break-all text-[10px]">{provider.qr.posExternalId}</code></div> : <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      {qrConfigured ? <div className="mt-3 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 sm:flex-row sm:items-center sm:justify-between"><span className="min-w-0"><b className="block">Configurada correctamente</b><span>{provider.qr.storeName} · {provider.qr.posName}</span><code className="mt-1 block break-all text-[10px]">{provider.qr.posExternalId}</code></span><button type="button" onClick={repairQr} disabled={Boolean(workingId)} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-white px-3 text-xs font-bold text-emerald-900 disabled:opacity-50"><RefreshCw className={workingId === "repair-qr" ? "animate-spin" : ""} size={14}/>{workingId === "repair-qr" ? "Comprobando…" : "Comprobar y reparar"}</button></div> : <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-bold text-sky-950">Nombre del local<input value={setup.storeName} onChange={(event) => setSetup((current) => ({ ...current, storeName: event.target.value.slice(0, 60) }))} placeholder="Ej.: Kiosco Centro" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
         <label className="text-xs font-bold text-sky-950">Nombre de esta caja<input value={setup.posName} onChange={(event) => setSetup((current) => ({ ...current, posName: event.target.value.slice(0, 60) }))} placeholder="Ej.: Caja principal" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
         <label className="text-xs font-bold text-sky-950">Calle<input value={setup.streetName} onChange={(event) => setSetup((current) => ({ ...current, streetName: event.target.value.slice(0, 100) }))} placeholder="Ej.: Av. Caseros" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
@@ -268,7 +290,7 @@ export function MercadoPagoSettings({ businessId, preferences, onChange, canConn
     <div className="mt-4 grid gap-3 sm:grid-cols-2">
       <label className="text-xs font-bold text-sky-950">Cómo cobrar con Mercado Pago<select value={preferences.customerDisplayMercadoPagoMode || "ask"} onChange={(event) => set({ customerDisplayMercadoPagoMode: event.target.value })} className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900">{PAYMENT_MODES.map((mode) => <option key={mode.id} value={mode.id}>{mode.label}</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-sky-900/70">{PAYMENT_MODES.find((mode) => mode.id === (preferences.customerDisplayMercadoPagoMode || "ask"))?.detail}</span></label>
       <label className="text-xs font-bold text-sky-950">Dónde mostrar el QR<select value={preferences.customerDisplayMercadoPagoTarget || "ask"} onChange={(event) => set({ customerDisplayMercadoPagoTarget: event.target.value })} className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900">{PAYMENT_TARGETS.map((target) => <option key={target.id} value={target.id}>{target.label}</option>)}</select><span className="mt-1 block text-[10px] font-normal leading-4 text-sky-900/70">La opción del celular envía sólo el importe y el QR, nunca información privada del negocio.</span></label>
-      <label className="text-xs font-bold text-sky-950">Identificador de caja QR<input value={preferences.customerDisplayMercadoPagoPosId || provider?.qr?.posExternalId || ""} onChange={(event) => set({ customerDisplayMercadoPagoPosId: event.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 40) })} placeholder="Ej.: CAJAPRINCIPAL" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/><span className="mt-1 block text-[10px] font-normal text-sky-900/70">Se completa solo con el asistente; Mercado Pago admite hasta 40 letras y números.</span></label>
+      <label className="text-xs font-bold text-sky-950">Identificador de caja QR<input value={provider?.qr?.posExternalId || ""} readOnly placeholder="Se completa al vincular la caja" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-sky-50 px-3 text-sm font-normal text-gray-700"/><span className="mt-1 block text-[10px] font-normal text-sky-900/70">Lo administra Kiosco+ para evitar que una caja vieja o escrita a mano impida cobrar.</span></label>
       <label className="text-xs font-bold text-sky-950">Identificador de terminal Point<input value={preferences.customerDisplayMercadoPagoTerminalId || ""} onChange={(event) => set({ customerDisplayMercadoPagoTerminalId: event.target.value.trim().slice(0, 80) })} placeholder="Ej.: NEWLAND_N950__SBX0000001" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/><span className="mt-1 block text-[10px] font-normal text-sky-900/70">Figura en el Point: modelo, doble guion bajo y número de serie.</span></label>
     </div>
 
