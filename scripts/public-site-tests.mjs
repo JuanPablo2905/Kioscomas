@@ -47,6 +47,7 @@ test("editar y eliminar tienen etiquetas visibles", adminPanel.includes("<Pencil
 test("la app real exige activación y la demo puede omitirla", cloudApp.includes("REQUIRE_DEVICE_ACTIVATION") && cloudApp.includes("PUBLIC_DEMO_MODE"));
 test("el servidor verifica la activación al iniciar y renovar sesión", cloudServer.includes("requireDeviceActivation") && cloudServer.includes("Este dispositivo todavía no fue autorizado") && cloudServer.includes("Este dispositivo ya no está autorizado"));
 test("el sitio público conoce la URL de la aplicación real", publicEnv.includes("VITE_CLOUD_APP_URL=https://app.kioscomas.ar"));
+test("la pantalla pública conoce el servidor que genera su QR y código", publicEnv.includes("VITE_PUBLIC_API_URL=https://kiosco-plus-api.onrender.com"));
 test("la portada quedó limpia y lleva al centro de descargas", landing.includes('./descargas.html') && !landing.includes('id="descargas-mac"'));
 test("las funciones diferenciadoras tienen una página detallada", functionsPage.includes('{ id: "pantallas"') && functionsPage.includes('{ id: "mercado-pago"') && functionsPage.includes('{ id: "offline"'));
 test("la pantalla remota tiene una entrada pública independiente y fácil de recordar", screenPage.includes("RemoteDisplayScreen") && redirects.includes("/pantalla") && renderConfig.includes("source: /pantalla"));

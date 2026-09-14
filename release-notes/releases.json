@@ -1,5 +1,46 @@
 [
   {
+    "version": "0.2.27",
+    "date": "2026-09-14",
+    "title": "Mercado Pago listo para probar de punta a punta",
+    "summary": "Completamos la base de cobros con QR dinámico y Point, separamos correctamente las dos aplicaciones de Mercado Pago y reforzamos el seguimiento del pago desde que se inicia hasta su aprobación, vinculación con la venta o devolución.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "Mercado Pago administra por separado las credenciales OAuth, conexiones, renovaciones de token y firmas de webhook de Código QR y Point, manteniendo compatibilidad limitada con las variables anteriores sólo para QR.",
+          "Los cobros presenciales usan Orders v1 con referencias e idempotencia estables, reintentos controlados y lectura actualizada de QR; QR dinámico y Point no permiten finalizar la venta hasta recibir una aprobación real del proveedor.",
+          "La preparación de QR crea o reutiliza la sucursal y la caja con domicilio y ubicación, mientras Point descubre terminales, comprueba su asociación y permite elegir el dispositivo correcto desde la configuración.",
+          "Cada intento conserva su historial, concilia estados pendientes, se vincula una sola vez con el ticket local y señala por separado cualquier pago aprobado que todavía no tenga una venta asociada.",
+          "Las anulaciones y devoluciones de ventas conectadas solicitan primero el reintegro a Mercado Pago; la operación local sólo cambia cuando el proveedor confirma el resultado.",
+          "El envío del QR a otro dispositivo del negocio incluye importe, forma de pago y detalle combinado, confirmación de apertura en el celular y cierre remoto cuando termina o se cancela el cobro.",
+          "La entrada pública kioscomas.ar/pantalla recibe ahora la dirección del servidor también en la compilación de la landing, para poder generar siempre el QR y el código de vinculación.",
+          "Se incorporó un modo de pruebas explícito que solicita credenciales de prueba durante OAuth y mantiene todo el backend detrás de una habilitación independiente para evitar cobros accidentales."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "QR y Point ya no se mezclan por debajo: cada uno usa su propia aplicación de Mercado Pago, pero el dueño los maneja desde la misma pantalla de Kiosco+.",
+          "Al cobrar con QR dinámico, la app arma el QR por el total exacto; con Point, manda ese total al aparato elegido. La venta espera hasta que Mercado Pago confirme que realmente se pagó.",
+          "Si mandás el QR al celular, la caja puede saber si llegó y si el otro dispositivo lo abrió. Los pagos combinados muestran cuánto corresponde a cada medio.",
+          "Si un cobro queda aprobado pero la venta no llega a guardarse, no desaparece: queda marcado para revisarlo y vincularlo sin cobrar otra vez.",
+          "Si anulás o devolvés una venta de Mercado Pago, Kiosco+ intenta devolver el dinero primero y no borra la venta como si nada cuando Mercado Pago rechaza el reintegro.",
+          "También corregimos la pantalla de vinculación que podía quedarse cargando sin mostrar ni QR ni código porque la página no sabía a qué servidor conectarse."
+        ]
+      },
+      {
+        "title": "Activación segura y calidad",
+        "items": [
+          "Esta versión sale preparada para pruebas controladas: KIOSCO_MERCADOPAGO_TEST_MODE debe permanecer en 1 mientras se usan usuarios y credenciales de prueba.",
+          "KIOSCO_MERCADOPAGO_BACKEND_ENABLED continúa siendo el interruptor general. Debe activarse recién después de desplegar 0.2.27 y comprobar en el diagnóstico que QR y Point aparecen configurados.",
+          "Las pruebas cubren autorización separada, sucursales y cajas QR, terminales Point, creación y conciliación de órdenes, webhooks firmados, devoluciones, envío al celular, pagos combinados, aislamiento entre negocios y la dirección pública de la segunda pantalla.",
+          "Ninguna clave, token o secreto de Mercado Pago se incorpora al instalador ni al repositorio; permanecen sólo en las variables protegidas del servidor."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.26",
     "date": "2026-09-13",
     "title": "Cobros que llegan, avisos ordenados y sitio más claro",

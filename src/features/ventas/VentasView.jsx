@@ -20,7 +20,7 @@ import { openCustomerDisplay, publishCustomerDisplay } from "./customerDisplay";
 import QRCode from "qrcode";
 import {
   PAYMENT_MODES, PAYMENT_TARGETS, cancelPaymentAttempt, closePaymentPresentation,
-  createPaymentAttempt, loadPaymentPresentation, loadPaymentProviders, publishPaymentPresentation, refreshPaymentAttempt,
+  completePaymentAttempt, createPaymentAttempt, loadPaymentPresentation, loadPaymentProviders, publishPaymentPresentation, refreshPaymentAttempt,
 } from "./paymentService";
 
 const DENOMINACIONES = [20000, 10000, 2000, 1000, 500, 200, 100, 50, 20, 10];
@@ -600,6 +600,8 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [preparedAmount, setPreparedAmount] = useState(null);
+  const activeMercadoPagoSolution = mercadoPagoMode === "point" ? "point" : "qr";
+  const activePaymentConnection = paymentProvider?.solutions?.[activeMercadoPagoSolution] || (activeMercadoPagoSolution === "qr" ? paymentProvider : null);
   const monto = Number(recibido) || 0;
   const vuelto = monto - total;
   const combinacion = vuelto > 0 ? calcularVuelto(vuelto) : [];
@@ -621,6 +623,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
     : true;
   const puedeConfirmar = puedeConfirmarBase && mercadoPagoPreparado && !paymentBusy;
   const confirmingRef = useRef(false);
+  const paymentRequestRef = useRef(null);
   const confirmSale = () => {
     if (!puedeConfirmar || confirmingRef.current) return;
     confirmingRef.current = true;
@@ -702,6 +705,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
     setPaymentQrData("");
     setPreparedAmount(null);
     setPaymentError("");
+    if (attempt?.id && cancelProvider) paymentRequestRef.current = null;
     if (presentationId && businessId) closePaymentPresentation(businessId, presentationId).catch(() => {});
     if (cancelProvider && attempt?.id && !PAYMENT_FINAL_STATES.has(attempt.status) && businessId) cancelPaymentAttempt(businessId, attempt.id).catch(() => {});
   };
@@ -764,26 +768,37 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
         return;
       }
 
-      if (!paymentProvider?.ready) throw new Error("El backend de Mercado Pago todavía no está habilitado en el servidor.");
-      if (!paymentProvider?.connected) throw new Error("Primero conectá la cuenta del negocio desde Configuración > Mercado Pago.");
-      const reference = `kiosco-${Date.now()}-${String(businessId || "negocio").slice(0, 18)}`.slice(0, 64);
       const type = mercadoPagoMode === "point" ? "point" : "qr";
+      const connection = paymentProvider?.solutions?.[type] || (type === "qr" ? paymentProvider : null);
+      if (!connection?.ready) throw new Error(`Mercado Pago para ${type === "point" ? "Point" : "Código QR"} todavía no está habilitado en el servidor.`);
+      if (!connection?.connected) throw new Error(`Primero conectá Mercado Pago para ${type === "point" ? "Point" : "Código QR"} desde Configuración.`);
+      const providerTargetId = type === "qr"
+        ? preferences.customerDisplayMercadoPagoPosId || paymentProvider?.qr?.posExternalId || ""
+        : preferences.customerDisplayMercadoPagoTerminalId || paymentProvider?.point?.terminalId || "";
+      const requestSignature = `${type}:${Number(montoMercadoPago).toFixed(2)}:${providerTargetId}`;
+      if (paymentRequestRef.current?.signature !== requestSignature) {
+        const operationId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        paymentRequestRef.current = {
+          signature: requestSignature,
+          idempotencyKey: globalThis.crypto?.randomUUID?.() || `payment-${Date.now()}-${Math.random()}`,
+          reference: `KIOSCO-${Date.now()}-${operationId}`.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64),
+        };
+      }
       const request = {
         type,
         amount: montoMercadoPago,
-        externalReference: reference,
-        ticketId: reference,
-        description: `Venta de ${businessId || "Kiosco+"}`,
+        externalReference: paymentRequestRef.current.reference,
+        expirationSeconds: 900,
+        description: "Venta presencial Kiosco+",
       };
       if (type === "qr") {
-        request.externalPosId = preferences.customerDisplayMercadoPagoPosId || "";
+        request.externalPosId = providerTargetId;
         if (!request.externalPosId) throw new Error("Falta configurar el identificador de caja QR de Mercado Pago.");
       } else {
-        request.terminalId = preferences.customerDisplayMercadoPagoTerminalId || "";
+        request.terminalId = providerTargetId;
         if (!request.terminalId) throw new Error("Falta configurar el número de terminal Point.");
       }
-      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `payment-${Date.now()}-${Math.random()}`;
-      const result = await createPaymentAttempt(businessId, request, idempotencyKey);
+      const result = await createPaymentAttempt(businessId, request, paymentRequestRef.current.idempotencyKey);
       const attempt = result.attempt;
       createdAttempt = attempt;
       setPaymentAttempt(attempt);
@@ -807,6 +822,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
   };
 
   const closeModal = () => {
+    paymentRequestRef.current = null;
     clearPreparedPayment();
     onClose();
   };
@@ -971,7 +987,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
 
               {mercadoPagoMode !== "point" && (configuredTarget === "ask" ? <div><p className="mb-2 text-xs font-bold text-sky-950">¿Dónde querés mostrar el QR?</p><div className="grid gap-2 sm:grid-cols-3">{PAYMENT_TARGETS.filter((option) => option.id !== "ask").map((option) => <button type="button" key={option.id} onClick={() => { clearPreparedPayment(); setPaymentTarget(option.id); }} className={`min-h-12 rounded-xl border px-3 py-2 text-left text-xs font-bold ${paymentTarget === option.id ? "border-sky-600 bg-sky-100 text-sky-950 ring-2 ring-sky-200" : "border-sky-100 bg-white text-gray-700"}`}>{option.label}</button>)}</div></div> : <div className="rounded-xl bg-white px-3 py-2 text-xs text-sky-950"><span className="block opacity-60">Destino predeterminado</span><b>{PAYMENT_TARGETS.find((option) => option.id === paymentTarget)?.label || paymentTarget}</b></div>)}
 
-              {mercadoPagoMode !== "static_qr" && !paymentProvider?.connected && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">{paymentProvider?.ready ? "La cuenta todavía no está conectada. Vinculala desde Configuración > Mercado Pago." : "La conexión real todavía no está habilitada en el servidor. El QR estático sí se puede usar ahora."}</p>}
+              {mercadoPagoMode !== "static_qr" && !activePaymentConnection?.connected && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">{activePaymentConnection?.ready ? `Todavía no conectaste Mercado Pago para ${activeMercadoPagoSolution === "point" ? "Point" : "Código QR"}. Hacelo desde Configuración.` : `La conexión para ${activeMercadoPagoSolution === "point" ? "Point" : "Código QR"} todavía no está habilitada en el servidor. El QR estático sí se puede usar ahora.`}</p>}
 
               {paymentError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">{paymentError}</p>}
 
@@ -1093,6 +1109,7 @@ export function VentasView({
   const lastEnterRef = useRef(0);
   const lastAutoPrintedRef = useRef(null);
   const customerDisplayOpenedRef = useRef(false);
+  const paymentReconciliationRef = useRef(new Set());
   const salesTabs = [["venta","Venta"],["pedidos","Pedidos de clientes"],["presupuestos","Presupuestos"],["cambio","Cambio"],["turnos","Turnos"],["resumen","Resumen diario"]].filter(([id]) => hasEmployees || id !== "turnos");
   const salesNavigation = <><div data-tour="sales-tabs" className="desktop-section-tabs mb-5 flex flex-wrap gap-2">{salesTabs.map(([id,label]) => <button data-tour={`sales-tab-${id}`} key={id} type="button" onClick={() => setSalesArea(id)} className={`rounded-lg border px-3 py-2 text-sm font-medium ${salesArea === id ? "bg-gray-900 text-white" : "bg-white"}`}>{label}</button>)}</div><div data-tour="sales-tabs" className="mobile-section-select mobile-section-select--content sales-mobile-navigation"><span>Área de Ventas</span><AppSelect value={salesArea} onChange={setSalesArea} options={salesTabs.map(([value,label])=>({value,label}))}/></div></>;
   useEffect(() => {
@@ -1114,6 +1131,46 @@ export function VentasView({
       queueMicrotask(() => setTicketParaImprimir(null));
     }
   }, [ticketParaImprimir, clientes, preferences, ticketConfig, businessName]);
+
+  const pendingPaymentLinksKey = useMemo(() => tickets
+    .filter((ticket) => ticket?.providerPayment?.id && ticket.providerPayment.status === "approved" && !ticket.providerPayment.saleLinkedAt)
+    .map((ticket) => `${ticket.id}:${ticket.providerPayment.id}`)
+    .join("|"), [tickets]);
+
+  useEffect(() => {
+    if (!businessId || !pendingPaymentLinksKey) return undefined;
+    let active = true;
+    const reconcile = async () => {
+      const pendingTickets = tickets.filter((ticket) => ticket?.providerPayment?.id && ticket.providerPayment.status === "approved" && !ticket.providerPayment.saleLinkedAt);
+      for (const ticket of pendingTickets) {
+        const attemptId = ticket.providerPayment.id;
+        if (paymentReconciliationRef.current.has(attemptId)) continue;
+        paymentReconciliationRef.current.add(attemptId);
+        try {
+          const result = await completePaymentAttempt(businessId, attemptId, {
+            ticketId: ticket.id,
+            ticketNumber: numeroTicket(ticket),
+            saleTotal: ticket.total,
+            mercadoPagoAmount: ticket.providerPayment.amount,
+          });
+          if (active && result.attempt?.ticketId === ticket.id) {
+            setTickets((current) => current.map((item) => item.id === ticket.id ? {
+              ...item,
+              providerPayment: { ...item.providerPayment, saleLinkStatus: "linked", saleLinkedAt: result.attempt.saleRecordedAt || new Date().toISOString() },
+            } : item));
+          }
+        } catch {
+          // El ticket queda marcado como pendiente y se reintenta al recuperar conexión.
+        } finally {
+          paymentReconciliationRef.current.delete(attemptId);
+        }
+      }
+    };
+    reconcile();
+    const timer = window.setInterval(reconcile, 30_000);
+    window.addEventListener("online", reconcile);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("online", reconcile); };
+  }, [businessId, pendingPaymentLinksKey, setTickets]);
 
   const ventaRapida = useMemo(() => {
     const cantidades = new Map();
@@ -1384,7 +1441,7 @@ export function VentasView({
         },
         medio,
         pagos: medio === "Pago combinado" ? pagos : [{ metodo: medio, monto: total }],
-        providerPayment,
+        providerPayment: providerPayment?.id ? { ...providerPayment, saleLinkStatus: "pending", saleLinkedAt: null } : providerPayment,
         clienteId: medio === "Cuenta corriente" ? clienteId : null,
         clienteNombre: selectedCustomer?.nombre || null,
         clienteTelefono: selectedCustomer?.telefono || "",
@@ -1463,6 +1520,7 @@ export function VentasView({
     }
     setCart([]);
     setDescuentoValor(0);
+    return ticket;
   };
 
   const handleMovimiento = ({ tipo, monto, nota }) => {

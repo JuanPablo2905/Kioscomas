@@ -9,6 +9,42 @@ const requiredText = (value, field, max = 180) => {
   return result;
 };
 
+export const normalizeExternalReference = (value) => {
+  const reference = requiredText(value, "external_reference", 64);
+  if (!/^[A-Za-z0-9_-]+$/.test(reference)) {
+    throw new Error("external_reference sólo admite letras, números, guiones y guiones bajos");
+  }
+  return reference;
+};
+
+export const normalizeExpirationDuration = (value, defaultSeconds = 15 * 60) => {
+  if (value === undefined || value === null || value === "") {
+    const seconds = Math.max(30, Math.min(3 * 60 * 60, Math.round(Number(defaultSeconds) || 900)));
+    return seconds % 60 === 0 ? `PT${seconds / 60}M` : `PT${seconds}S`;
+  }
+  if (typeof value === "number" || /^\d+$/.test(String(value).trim())) {
+    const seconds = Math.round(Number(value));
+    if (!Number.isFinite(seconds) || seconds < 30 || seconds > 3 * 60 * 60) {
+      throw new Error("La orden debe vencer entre 30 segundos y 3 horas");
+    }
+    return seconds % 60 === 0 ? `PT${seconds / 60}M` : `PT${seconds}S`;
+  }
+  const duration = String(value).trim().toUpperCase();
+  const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!match || !match.slice(1).some(Boolean)) throw new Error("expiration_time debe ser una duración ISO 8601, por ejemplo PT15M");
+  const seconds = Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
+  if (seconds < 30 || seconds > 3 * 60 * 60) throw new Error("La orden debe vencer entre 30 segundos y 3 horas");
+  return duration;
+};
+
+const integrationData = (config = {}) => {
+  const result = {};
+  if (config.platformId) result.platform_id = config.platformId;
+  if (config.integratorId) result.integrator_id = config.integratorId;
+  if (config.sponsorId) result.sponsor = { id: String(config.sponsorId) };
+  return Object.keys(result).length ? result : undefined;
+};
+
 export const normalizePaymentAmount = (value) => {
   const amount = Math.round(Number(value) * 100) / 100;
   if (!Number.isFinite(amount) || amount <= 0 || amount > 99_999_999.99) {
@@ -16,6 +52,16 @@ export const normalizePaymentAmount = (value) => {
   }
   return amount;
 };
+
+// Orders v1 returns the dynamic QR under type_response.qr_data. The two
+// fallbacks keep compatibility with older/test responses without coupling the
+// rest of the server to a single provider response shape.
+export const mercadoPagoQrData = (order = {}) => (
+  order?.type_response?.qr_data
+  || order?.config?.qr?.qr_data
+  || order?.qr_data
+  || null
+);
 
 const keyFromSecret = (secret) => crypto.createHash("sha256").update(String(secret || "")).digest();
 
@@ -43,20 +89,59 @@ export const createPkcePair = () => {
   return { verifier, challenge };
 };
 
-export const mercadoPagoConfig = (env = process.env) => {
+const mercadoPagoSolutionConfig = (env, shared, solution) => {
+  const prefix = `KIOSCO_MERCADOPAGO_${solution.toUpperCase()}`;
+  // The generic variables shipped before v0.2.27 remain a QR-only fallback.
+  // Mercado Pago requires a different application for each in-person solution,
+  // so Point never silently reuses QR credentials in production.
+  const legacyQr = solution === "qr";
   const config = {
-    enabled: String(env.KIOSCO_MERCADOPAGO_BACKEND_ENABLED || "") === "1",
-    clientId: String(env.KIOSCO_MERCADOPAGO_CLIENT_ID || "").trim(),
-    clientSecret: String(env.KIOSCO_MERCADOPAGO_CLIENT_SECRET || "").trim(),
-    redirectUri: String(env.KIOSCO_MERCADOPAGO_REDIRECT_URI || "").trim(),
-    returnUri: String(env.KIOSCO_MERCADOPAGO_RETURN_URI || env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar").trim(),
-    tokenEncryptionKey: String(env.KIOSCO_MERCADOPAGO_TOKEN_ENCRYPTION_KEY || ""),
-    webhookSecret: String(env.KIOSCO_MERCADOPAGO_WEBHOOK_SECRET || "").trim(),
+    ...shared,
+    solution,
+    clientId: String(env[`${prefix}_CLIENT_ID`] || (legacyQr ? env.KIOSCO_MERCADOPAGO_CLIENT_ID : "") || "").trim(),
+    clientSecret: String(env[`${prefix}_CLIENT_SECRET`] || (legacyQr ? env.KIOSCO_MERCADOPAGO_CLIENT_SECRET : "") || "").trim(),
+    redirectUri: String(env[`${prefix}_REDIRECT_URI`] || env.KIOSCO_MERCADOPAGO_REDIRECT_URI || "").trim(),
+    webhookSecret: String(env[`${prefix}_WEBHOOK_SECRET`] || (legacyQr ? env.KIOSCO_MERCADOPAGO_WEBHOOK_SECRET : "") || "").trim(),
   };
   config.oauthConfigured = Boolean(config.clientId && config.clientSecret && config.redirectUri && config.tokenEncryptionKey.length >= 32);
   config.webhookConfigured = Boolean(config.webhookSecret);
   config.ready = config.enabled && config.oauthConfigured;
   return config;
+};
+
+export const mercadoPagoConfig = (env = process.env) => {
+  const shared = {
+    enabled: String(env.KIOSCO_MERCADOPAGO_BACKEND_ENABLED || "") === "1",
+    testMode: String(env.KIOSCO_MERCADOPAGO_TEST_MODE || "") === "1",
+    returnUri: String(env.KIOSCO_MERCADOPAGO_RETURN_URI || env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar").trim(),
+    tokenEncryptionKey: String(env.KIOSCO_MERCADOPAGO_TOKEN_ENCRYPTION_KEY || ""),
+    platformId: String(env.KIOSCO_MERCADOPAGO_PLATFORM_ID || "").trim(),
+    integratorId: String(env.KIOSCO_MERCADOPAGO_INTEGRATOR_ID || "").trim(),
+    sponsorId: String(env.KIOSCO_MERCADOPAGO_SPONSOR_ID || "").trim(),
+  };
+  const solutions = {
+    qr: mercadoPagoSolutionConfig(env, shared, "qr"),
+    point: mercadoPagoSolutionConfig(env, shared, "point"),
+  };
+  const config = {
+    ...shared,
+    solutions,
+    // Compatibility aliases represent the QR application only.
+    clientId: solutions.qr.clientId,
+    clientSecret: solutions.qr.clientSecret,
+    redirectUri: solutions.qr.redirectUri,
+    webhookSecret: solutions.qr.webhookSecret,
+    oauthConfigured: solutions.qr.oauthConfigured || solutions.point.oauthConfigured,
+    webhookConfigured: solutions.qr.webhookConfigured || solutions.point.webhookConfigured,
+    ready: solutions.qr.ready || solutions.point.ready,
+    allSolutionsReady: solutions.qr.ready && solutions.point.ready,
+  };
+  return config;
+};
+
+export const mercadoPagoConfigFor = (config, solution) => {
+  const normalized = solution === "point" ? "point" : "qr";
+  return config?.solutions?.[normalized] || config;
 };
 
 export const mercadoPagoAvailability = (config) => ({
@@ -65,6 +150,23 @@ export const mercadoPagoAvailability = (config) => ({
   oauthConfigured: Boolean(config.oauthConfigured),
   webhookConfigured: Boolean(config.webhookConfigured),
   ready: Boolean(config.ready),
+  allSolutionsReady: Boolean(config.allSolutionsReady),
+  solutions: {
+    qr: {
+      backendEnabled: Boolean(mercadoPagoConfigFor(config, "qr")?.enabled),
+      oauthConfigured: Boolean(mercadoPagoConfigFor(config, "qr")?.oauthConfigured),
+      webhookConfigured: Boolean(mercadoPagoConfigFor(config, "qr")?.webhookConfigured),
+      ready: Boolean(mercadoPagoConfigFor(config, "qr")?.ready),
+      testMode: Boolean(mercadoPagoConfigFor(config, "qr")?.testMode),
+    },
+    point: {
+      backendEnabled: Boolean(mercadoPagoConfigFor(config, "point")?.enabled),
+      oauthConfigured: Boolean(mercadoPagoConfigFor(config, "point")?.oauthConfigured),
+      webhookConfigured: Boolean(mercadoPagoConfigFor(config, "point")?.webhookConfigured),
+      ready: Boolean(mercadoPagoConfigFor(config, "point")?.ready),
+      testMode: Boolean(mercadoPagoConfigFor(config, "point")?.testMode),
+    },
+  },
 });
 
 export const buildMercadoPagoAuthorizationUrl = (config, { state, codeChallenge }) => {
@@ -79,39 +181,91 @@ export const buildMercadoPagoAuthorizationUrl = (config, { state, codeChallenge 
   return url.toString();
 };
 
-export const buildQrOrderPayload = ({ amount, externalReference, externalPosId, expirationTime, description }) => ({
-  type: "qr",
-  total_amount: String(normalizePaymentAmount(amount)),
-  external_reference: requiredText(externalReference, "external_reference", 64),
-  expiration_time: expirationTime || new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-  description: String(description || "Cobro de Kiosco+").trim().slice(0, 120),
-  config: {
-    qr: {
-      external_pos_id: requiredText(externalPosId, "external_pos_id", 64),
-      mode: "dynamic",
+export const buildQrOrderPayload = ({ amount, externalReference, externalPosId, expirationTime, expirationSeconds, description }, config = {}) => {
+  const normalizedAmount = normalizePaymentAmount(amount).toFixed(2);
+  const payload = {
+    type: "qr",
+    total_amount: normalizedAmount,
+    external_reference: normalizeExternalReference(externalReference),
+    expiration_time: normalizeExpirationDuration(expirationTime ?? expirationSeconds, 15 * 60),
+    description: String(description || "Cobro de Kiosco+").trim().slice(0, 120),
+    config: {
+      qr: {
+        external_pos_id: requiredText(externalPosId, "external_pos_id", 64),
+        mode: "dynamic",
+      },
     },
-  },
-  transactions: { payments: [{ amount: String(normalizePaymentAmount(amount)) }] },
-});
+    transactions: { payments: [{ amount: normalizedAmount }] },
+  };
+  const attribution = integrationData(config);
+  if (attribution) payload.integration_data = attribution;
+  return payload;
+};
 
-export const buildPointOrderPayload = ({ amount, externalReference, terminalId, description, paymentMethodId }) => {
-  const payment = { amount: String(normalizePaymentAmount(amount)) };
-  if (paymentMethodId) payment.payment_method = { id: String(paymentMethodId).trim().slice(0, 40) };
-  return {
+export const buildPointOrderPayload = ({ amount, externalReference, terminalId, expirationTime, expirationSeconds, description, paymentMethodType, paymentMethodId }, config = {}) => {
+  const reference = normalizeExternalReference(externalReference);
+  const normalizedAmount = normalizePaymentAmount(amount).toFixed(2);
+  const payload = {
     type: "point",
-    total_amount: String(normalizePaymentAmount(amount)),
-    external_reference: requiredText(externalReference, "external_reference", 64),
+    external_reference: reference,
+    expiration_time: normalizeExpirationDuration(expirationTime ?? expirationSeconds, 15 * 60),
     description: String(description || "Cobro de Kiosco+").trim().slice(0, 120),
     config: {
       point: {
         terminal_id: requiredText(terminalId, "terminal_id", 80),
         print_on_terminal: "no_ticket",
-        ticket_number: requiredText(externalReference, "ticket_number", 40),
+        ticket_number: reference.slice(0, 40),
       },
     },
-    transactions: { payments: [payment] },
+    transactions: { payments: [{ amount: normalizedAmount }] },
   };
+  const defaultType = String(paymentMethodType || paymentMethodId || "").trim().slice(0, 40);
+  if (defaultType) payload.config.payment_method = { default_type: defaultType };
+  const attribution = integrationData(config);
+  if (attribution) payload.integration_data = attribution;
+  return payload;
 };
+
+const normalizeProviderExternalId = (value, field, { alphanumericOnly = false, max = 60 } = {}) => {
+  const result = requiredText(value, field, max);
+  const valid = alphanumericOnly ? /^[A-Za-z0-9]+$/.test(result) : /^[A-Za-z0-9_-]+$/.test(result);
+  if (!valid) throw new Error(alphanumericOnly ? `${field} sólo admite letras y números` : `${field} sólo admite letras, números, guiones y guiones bajos`);
+  return result;
+};
+
+export const buildMercadoPagoStorePayload = ({
+  name, externalId, streetName, streetNumber, cityName, stateName, latitude, longitude, reference,
+}) => {
+  const payload = {
+    name: requiredText(name, "store_name", 60),
+    external_id: normalizeProviderExternalId(externalId, "store_external_id", { alphanumericOnly: true }),
+  };
+  const street = String(streetName || "").trim().slice(0, 100);
+  const number = String(streetNumber || "").trim().slice(0, 20);
+  const city = String(cityName || "").trim().slice(0, 100);
+  const state = String(stateName || "").trim().slice(0, 100);
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+  if (!street || !number || !city || !state || !Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+    throw new Error("Para ubicar el local completá calle, número, ciudad, provincia, latitud y longitud válidas");
+  }
+  payload.location = {
+    street_name: street,
+    street_number: number,
+    city_name: city,
+    state_name: state,
+    latitude: lat,
+    longitude: lon,
+    reference: String(reference || "Local comercial").trim().slice(0, 80),
+  };
+  return payload;
+};
+
+export const buildMercadoPagoPosPayload = ({ name, storeId, externalId }) => ({
+  name: requiredText(name, "pos_name", 60),
+  store_id: requiredText(storeId, "store_id", 80),
+  external_id: normalizeProviderExternalId(externalId, "pos_external_id", { alphanumericOnly: true, max: 40 }),
+});
 
 export const verifyMercadoPagoWebhookSignature = ({ signature, requestId, dataId, secret, now = Date.now(), toleranceMs = 5 * 60 * 1000 }) => {
   if (!signature || !requestId || !dataId || !secret) return false;
@@ -128,9 +282,11 @@ export const verifyMercadoPagoWebhookSignature = ({ signature, requestId, dataId
 const providerError = async (response) => {
   let detail = null;
   try { detail = await response.json(); } catch { /* respuesta sin JSON */ }
-  const error = new Error(detail?.message || detail?.error || `Mercado Pago respondió HTTP ${response.status}`);
+  const firstDetail = (Array.isArray(detail?.errors) ? detail.errors[0] : null)
+    || (Array.isArray(detail?.cause) ? detail.cause[0] : null);
+  const error = new Error(detail?.message || firstDetail?.message || firstDetail?.description || detail?.error || `Mercado Pago respondió HTTP ${response.status}`);
   error.status = response.status;
-  error.providerCode = detail?.code || detail?.error || null;
+  error.providerCode = detail?.code || firstDetail?.code || detail?.error || null;
   error.providerDetails = detail?.errors || detail?.cause || null;
   throw error;
 };
@@ -141,14 +297,26 @@ export const createMercadoPagoClient = ({ config = mercadoPagoConfig(), fetchImp
     if (accessToken) headers.authorization = `Bearer ${accessToken}`;
     if (body !== undefined) headers["content-type"] = "application/json";
     if (idempotencyKey) headers["x-idempotency-key"] = idempotencyKey;
-    const response = await fetchImpl(`${API_URL}${pathname}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) return providerError(response);
-    return response.status === 204 ? {} : response.json();
+    const attempts = idempotencyKey || method === "GET" ? 3 : 1;
+    for (let index = 0; index < attempts; index += 1) {
+      let response;
+      try {
+        response = await fetchImpl(`${API_URL}${pathname}`, {
+          method,
+          headers,
+          body: body === undefined ? undefined : JSON.stringify(body),
+          signal: AbortSignal.timeout(15_000),
+        });
+      } catch (error) {
+        if (index + 1 >= attempts) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** index) + Math.floor(Math.random() * 100)));
+        continue;
+      }
+      if (response.ok) return response.status === 204 ? {} : response.json();
+      if (![425, 429, 500, 502, 503, 504].includes(Number(response.status)) || index + 1 >= attempts) return providerError(response);
+      await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** index) + Math.floor(Math.random() * 100)));
+    }
+    throw new Error("Mercado Pago no respondió después de varios intentos");
   };
 
   const tokenRequest = async (payload) => {
@@ -171,6 +339,7 @@ export const createMercadoPagoClient = ({ config = mercadoPagoConfig(), fetchImp
       code: requiredText(code, "code", 512),
       redirect_uri: config.redirectUri,
       code_verifier: requiredText(codeVerifier, "code_verifier", 256),
+      ...(config.testMode ? { test_token: "true" } : {}),
     }),
     refreshAccessToken: (refreshToken) => tokenRequest({
       grant_type: "refresh_token",
@@ -179,6 +348,21 @@ export const createMercadoPagoClient = ({ config = mercadoPagoConfig(), fetchImp
       refresh_token: requiredText(refreshToken, "refresh_token", 1024),
     }),
     currentUser: (accessToken) => request("/users/me", { accessToken }),
+    createStore: ({ accessToken, userId, payload }) => request(`/users/${encodeURIComponent(requiredText(userId, "user_id", 80))}/stores`, { method: "POST", accessToken, body: payload }),
+    searchStores: ({ accessToken, userId, externalId }) => request(`/users/${encodeURIComponent(requiredText(userId, "user_id", 80))}/stores/search?external_id=${encodeURIComponent(normalizeProviderExternalId(externalId, "store_external_id", { alphanumericOnly: true }))}`, { accessToken }),
+    createPos: ({ accessToken, payload, idempotencyKey }) => request("/v2/pos", { method: "POST", accessToken, body: payload, idempotencyKey }),
+    searchPos: ({ accessToken, externalId }) => request(`/v2/pos?external_id=${encodeURIComponent(normalizeProviderExternalId(externalId, "pos_external_id", { alphanumericOnly: true, max: 40 }))}`, { accessToken }),
+    listTerminals: ({ accessToken, storeId, posId }) => {
+      const search = new URLSearchParams({ limit: "50", offset: "0" });
+      if (storeId) search.set("store_id", requiredText(storeId, "store_id", 80));
+      if (posId) search.set("pos_id", requiredText(posId, "pos_id", 80));
+      return request(`/terminals/v1/list?${search}`, { accessToken });
+    },
+    setupTerminals: ({ accessToken, terminalIds }) => request("/terminals/v1/setup", {
+      method: "PATCH",
+      accessToken,
+      body: { terminals: terminalIds.map((id) => ({ id: requiredText(id, "terminal_id", 80), operating_mode: "PDV" })) },
+    }),
     createOrder: ({ accessToken, payload, idempotencyKey }) => request("/v1/orders", { method: "POST", accessToken, body: payload, idempotencyKey }),
     getOrder: ({ accessToken, orderId }) => request(`/v1/orders/${encodeURIComponent(requiredText(orderId, "order_id", 120))}`, { accessToken }),
     cancelOrder: ({ accessToken, orderId, idempotencyKey }) => request(`/v1/orders/${encodeURIComponent(requiredText(orderId, "order_id", 120))}/cancel`, { method: "POST", accessToken, idempotencyKey }),

@@ -29,8 +29,11 @@ const request = async (businessId, path, options = {}) => {
 export const paymentDeviceId = () => loadCloudConfig().deviceId || "";
 
 export const loadPaymentProviders = (businessId) => request(businessId, "/v1/payments/providers");
-export const startMercadoPagoConnection = (businessId) => request(businessId, "/v1/payments/mercado-pago/oauth/start", { method: "POST", body: "{}" });
-export const disconnectMercadoPago = (businessId) => request(businessId, "/v1/payments/mercado-pago/connection", { method: "DELETE" });
+export const startMercadoPagoConnection = (businessId, solution = "qr") => request(businessId, "/v1/payments/mercado-pago/oauth/start", { method: "POST", body: JSON.stringify({ solution }) });
+export const disconnectMercadoPago = (businessId, solution) => request(businessId, `/v1/payments/mercado-pago/connection${solution ? `?solution=${encodeURIComponent(solution)}` : ""}`, { method: "DELETE" });
+export const setupMercadoPagoQr = (businessId, payload) => request(businessId, "/v1/payments/mercado-pago/qr/setup", { method: "POST", body: JSON.stringify(payload) });
+export const listMercadoPagoTerminals = (businessId) => request(businessId, "/v1/payments/mercado-pago/terminals");
+export const setupMercadoPagoPoint = (businessId, terminalId) => request(businessId, "/v1/payments/mercado-pago/point/setup", { method: "POST", body: JSON.stringify({ terminalId }) });
 
 export const createPaymentAttempt = (businessId, payload, idempotencyKey) => request(businessId, "/v1/payments/attempts", {
   method: "POST",
@@ -40,6 +43,8 @@ export const createPaymentAttempt = (businessId, payload, idempotencyKey) => req
 
 export const refreshPaymentAttempt = (businessId, attemptId) => request(businessId, `/v1/payments/attempts/${encodeURIComponent(attemptId)}/refresh`, { method: "POST", body: "{}" });
 export const cancelPaymentAttempt = (businessId, attemptId) => request(businessId, `/v1/payments/attempts/${encodeURIComponent(attemptId)}/cancel`, { method: "POST", body: "{}" });
+export const refundPaymentAttempt = (businessId, attemptId) => request(businessId, `/v1/payments/attempts/${encodeURIComponent(attemptId)}/refund`, { method: "POST", body: "{}" });
+export const completePaymentAttempt = (businessId, attemptId, payload) => request(businessId, `/v1/payments/attempts/${encodeURIComponent(attemptId)}/complete`, { method: "POST", body: JSON.stringify(payload) });
 export const listPaymentAttempts = (businessId) => request(businessId, "/v1/payments/attempts");
 
 export const publishPaymentPresentation = (businessId, payload) => request(businessId, "/v1/payments/presentations", { method: "POST", body: JSON.stringify(payload) });

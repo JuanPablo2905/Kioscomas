@@ -12,6 +12,7 @@ import { calcularRentabilidadHistorica, detectarTicketsDuplicados } from "./repo
 import { isWithinRange, isWithinPreviousRange } from "../../shared/dateRanges";
 import { anularTicket, crearIdOperacion, efectivoDeTicket, numeroTicket, restaurarStock, ticketActivo, ticketAnulado, ticketDevuelto } from "../ventas/salesRules";
 import { printTicket } from "../../shared/ticketPrint";
+import { refundPaymentAttempt } from "../ventas/paymentService";
 
 function StatCard({ label, value, sub, sensitive = false }) {
   return (
@@ -23,7 +24,7 @@ function StatCard({ label, value, sub, sensitive = false }) {
   );
 }
 
-function MotivoBorradoModal({ ticket, onClose, onConfirm, requireReason = true }) {
+function MotivoBorradoModal({ ticket, onClose, onConfirm, requireReason = true, busy = false, error = "" }) {
   const [motivo, setMotivo] = useState(ticket.motivoSugerido || "");
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-2 sm:p-4">
@@ -32,7 +33,7 @@ function MotivoBorradoModal({ ticket, onClose, onConfirm, requireReason = true }
           <h2 className="text-lg font-bold text-gray-900">
             Anular Ticket #{numeroTicket(ticket)}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
+          <button disabled={busy} onClick={onClose} className="text-gray-400 hover:text-gray-700 disabled:opacity-40">
             <X size={20} />
           </button>
         </div>
@@ -45,21 +46,24 @@ function MotivoBorradoModal({ ticket, onClose, onConfirm, requireReason = true }
           value={motivo}
           onChange={(e) => setMotivo(e.target.value)}
           placeholder="Ej: ticket duplicado, error de carga..."
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-5"
+          readOnly={busy}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
         />
+        {error && <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold leading-5 text-red-700">{error}</p>}
         <div className="grid grid-cols-2 gap-2">
           <button
+            disabled={busy}
             onClick={onClose}
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
+            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-40"
           >
             Cancelar
           </button>
           <button
             onClick={() => onConfirm(motivo.trim() || "Sin motivo informado")}
-            disabled={requireReason && !motivo.trim()}
+            disabled={busy || (requireReason && !motivo.trim())}
             className="flex-1 bg-red-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-40"
           >
-            Anular y revertir
+            {busy ? "Procesando…" : "Anular y revertir"}
           </button>
         </div>
       </div>
@@ -67,10 +71,12 @@ function MotivoBorradoModal({ ticket, onClose, onConfirm, requireReason = true }
   );
 }
 
-export function ReportesView({ tickets, products, setTickets, setCaja, setProducts, clientes = [], setClientes, identidad, puedeEliminarTickets = true, perdidas = [], gastos = [], preferences = {}, ticketConfig = {}, businessName = "Mi negocio", hasEmployees = true }) {
+export function ReportesView({ tickets, products, setTickets, setCaja, setProducts, clientes = [], setClientes, identidad, puedeEliminarTickets = true, perdidas = [], gastos = [], preferences = {}, ticketConfig = {}, businessName = "Mi negocio", businessId = "", hasEmployees = true }) {
   const [range, setRange] = useState("Hoy");
   const [expanded, setExpanded] = useState(null);
   const [borrandoTicket, setBorrandoTicket] = useState(null);
+  const [voidBusy, setVoidBusy] = useState(false);
+  const [voidError, setVoidError] = useState("");
   const [openReports, setOpenReports] = useState(() => new Set(["categorias", "personas", "ranking"]));
   const toggleReport = (id) => setOpenReports((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
 
@@ -178,13 +184,39 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
     });
   };
 
-  const handleBorrarTicket = (motivo, explicitTicket = null) => {
+  const handleBorrarTicket = async (motivo, explicitTicket = null) => {
     const target = explicitTicket || borrandoTicket;
-    if (!ticketActivo(target)) return;
+    if (!ticketActivo(target) || voidBusy) return;
+    setVoidBusy(true);
+    setVoidError("");
+    let mercadoPagoRefund = null;
+    try {
+      if (target.providerPayment?.provider === "mercado_pago" && target.providerPayment?.id && target.providerPayment?.status === "approved") {
+        const result = await refundPaymentAttempt(businessId, target.providerPayment.id);
+        if (result.attempt?.status !== "refunded") throw new Error("Mercado Pago todavía no confirmó la devolución. El ticket no fue anulado.");
+        mercadoPagoRefund = result.attempt;
+      }
+    } catch (error) {
+      setBorrandoTicket(target);
+      setVoidError(error?.message || "No se pudo devolver el cobro de Mercado Pago.");
+      setVoidBusy(false);
+      return;
+    }
     const responsable = identidad?.nombre || identidad?.rol || "Sin identificar";
     const fecha = new Date();
+    const pagosOriginales = target.pagos || [{ metodo: target.medio, monto: target.total }];
+    const reintegrosPendientes = pagosOriginales.filter((pago) => (
+      !["Efectivo", "Cuenta corriente", ...(mercadoPagoRefund ? ["Mercado Pago"] : [])].includes(pago?.metodo)
+      && Number(pago?.monto || 0) > 0
+    ));
     setTickets((prev) => prev.map((t) => t.id === target.id ? anularTicket({
       ...t,
+      providerPayment: mercadoPagoRefund ? { ...t.providerPayment, status: "refunded", providerStatus: mercadoPagoRefund.providerStatus, refundedAt: mercadoPagoRefund.refundedAt } : t.providerPayment,
+      ...(reintegrosPendientes.length
+        ? { reintegro: { estado: "pendiente_manual", fecha: fecha.toISOString(), medios: reintegrosPendientes } }
+        : mercadoPagoRefund
+          ? { reintegro: { estado: "completado", fecha: mercadoPagoRefund.refundedAt || fecha.toISOString(), medios: [{ metodo: "Mercado Pago", monto: mercadoPagoRefund.amount }], referencia: mercadoPagoRefund.providerOrderId } }
+          : {}),
       ...(target.duplicatePairId ? {
         revisionDuplicado: {
           estado: "duplicado_confirmado",
@@ -218,6 +250,7 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
       ],
     }));
     setBorrandoTicket(null);
+    setVoidBusy(false);
   };
 
   return (
@@ -415,7 +448,7 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
                             onClick={(e) => {
                               e.stopPropagation();
                               if (preferences.confirmDangerousActions === false && preferences.requireCorrectionReason === false) handleBorrarTicket("Anulación directa desde Reportes", t);
-                              else setBorrandoTicket(t);
+                              else { setVoidError(""); setBorrandoTicket(t); }
                             }}
                             className="text-gray-300 hover:text-red-600"
                           >
@@ -460,7 +493,9 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
         <MotivoBorradoModal
           ticket={borrandoTicket}
           requireReason={preferences.requireCorrectionReason !== false}
-          onClose={() => setBorrandoTicket(null)}
+          busy={voidBusy}
+          error={voidError}
+          onClose={() => { if (voidBusy) return; setBorrandoTicket(null); setVoidError(""); }}
           onConfirm={handleBorrarTicket}
         />
       )}

@@ -26,7 +26,7 @@ services:
         value: strict-origin-when-cross-origin
       - path: /*
         name: Permissions-Policy
-        value: camera=(self), microphone=(), geolocation=()
+        value: camera=(self), microphone=(), geolocation=(self)
       - path: /*
         name: X-Frame-Options
         value: SAMEORIGIN
@@ -74,7 +74,22 @@ services:
       - key: KIOSCO_VAPID_SUBJECT
         value: mailto:soporte@kioscomas.ar
       - key: KIOSCO_MERCADOPAGO_BACKEND_ENABLED
-        value: "0"
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_TEST_MODE
+        value: "1"
+      - key: KIOSCO_MERCADOPAGO_QR_CLIENT_ID
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_QR_CLIENT_SECRET
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_QR_WEBHOOK_SECRET
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_POINT_CLIENT_ID
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_POINT_CLIENT_SECRET
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_POINT_WEBHOOK_SECRET
+        sync: false
+      # Variables anteriores: el servidor las interpreta sólo como QR.
       - key: KIOSCO_MERCADOPAGO_CLIENT_ID
         sync: false
       - key: KIOSCO_MERCADOPAGO_CLIENT_SECRET
@@ -86,6 +101,12 @@ services:
       - key: KIOSCO_MERCADOPAGO_TOKEN_ENCRYPTION_KEY
         sync: false
       - key: KIOSCO_MERCADOPAGO_WEBHOOK_SECRET
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_PLATFORM_ID
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_INTEGRATOR_ID
+        sync: false
+      - key: KIOSCO_MERCADOPAGO_SPONSOR_ID
         sync: false
       - key: DATABASE_URL
         sync: false

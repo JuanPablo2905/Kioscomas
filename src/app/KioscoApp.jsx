@@ -33,6 +33,7 @@ import { getCloudWarmupState, startCloudWarmup, subscribeCloudWarmup } from "../
 import { CloudWarmupStatus } from "../features/autenticacion/CloudWarmupStatus";
 import { openAdminBusinessWindow, secondaryWindowContext } from "../shared/secondaryWindows";
 import { ReleaseNotesAnnouncement } from "../updates/ReleaseNotes";
+import { refundPaymentAttempt } from "../features/ventas/paymentService";
 import { RemotePaymentReceiver } from "../features/ventas/RemotePaymentReceiver";
 import { useAccessibleDialogs } from "../shared/useAccessibleDialogs";
 
@@ -303,6 +304,7 @@ export default function KioscoApp() {
   const scannerLastKeyRef = useRef(0);
   const autoTutorialRef = useRef(false);
   const displayPairingOpenedRef = useRef(false);
+  const paymentConnectionOpenedRef = useRef(false);
   const lastActivityAtRef = useRef(Date.now());
 
   const warmCloud = ({ force = false } = {}) => {
@@ -494,6 +496,13 @@ export default function KioscoApp() {
     const canAuthorize = identidad.rol === "Dueño" || Boolean(identidad.adminApp && identidad.operandoNegocio);
     if (!canAuthorize) return;
     displayPairingOpenedRef.current = true;
+    setSettingsInitialSection("operacion");
+    setSettingsOpen(true);
+  }, [cargando, currentUserId, identidad]);
+  useEffect(() => {
+    const paymentConnection = new URLSearchParams(window.location.search).get("payment_connection");
+    if (!paymentConnection || paymentConnectionOpenedRef.current || cargando || !currentUserId || !identidad) return;
+    paymentConnectionOpenedRef.current = true;
     setSettingsInitialSection("operacion");
     setSettingsOpen(true);
   }, [cargando, currentUserId, identidad]);
@@ -1011,13 +1020,39 @@ export default function KioscoApp() {
     }
   };
 
-  const confirmVoidScannedTicket = (explicitTicket = null, explicitReason = "") => {
+  const confirmVoidScannedTicket = async (explicitTicket = null, explicitReason = "") => {
     const ticket = explicitTicket?.items ? explicitTicket : voidTicketPrompt.ticket;
     const motivo = String(explicitReason || voidTicketPrompt.reason || "").trim() || "Sin motivo informado";
-    if (!ticketActivo(ticket) || (currentPreferences.requireCorrectionReason !== false && motivo === "Sin motivo informado")) return;
+    if (!ticketActivo(ticket) || voidTicketPrompt.busy || (currentPreferences.requireCorrectionReason !== false && motivo === "Sin motivo informado")) return;
+    setVoidTicketPrompt((current) => ({ ...current, busy: true, error: "" }));
+    let mercadoPagoRefund = null;
+    try {
+      if (ticket.providerPayment?.provider === "mercado_pago" && ticket.providerPayment?.id && ticket.providerPayment?.status === "approved") {
+        const result = await refundPaymentAttempt(currentUserId, ticket.providerPayment.id);
+        if (result.attempt?.status !== "refunded") throw new Error("Mercado Pago todavía no confirmó la devolución. El ticket no fue anulado.");
+        mercadoPagoRefund = result.attempt;
+      }
+    } catch (error) {
+      setVoidTicketPrompt((current) => ({ ...current, ticket, reason: current.reason || motivo, busy: false, error: error?.message || "No se pudo devolver el cobro de Mercado Pago." }));
+      return;
+    }
     const fecha = new Date();
     const responsable = identidad?.nombre || identidad?.rol || "Sin identificar";
-    setTickets((previous = []) => previous.map((item) => item.id === ticket.id ? anularTicket(item, motivo.trim(), responsable, fecha.toISOString()) : item));
+    const pagosOriginales = ticket.pagos || [{ metodo: ticket.medio, monto: ticket.total }];
+    const reintegrosPendientes = pagosOriginales.filter((pago) => (
+      !["Efectivo", "Cuenta corriente", ...(mercadoPagoRefund ? ["Mercado Pago"] : [])].includes(pago?.metodo)
+      && Number(pago?.monto || 0) > 0
+    ));
+    const ticketRevertido = anularTicket({
+      ...ticket,
+      providerPayment: mercadoPagoRefund ? { ...ticket.providerPayment, status: "refunded", providerStatus: mercadoPagoRefund.providerStatus, refundedAt: mercadoPagoRefund.refundedAt } : ticket.providerPayment,
+      ...(reintegrosPendientes.length
+        ? { reintegro: { estado: "pendiente_manual", fecha: fecha.toISOString(), medios: reintegrosPendientes } }
+        : mercadoPagoRefund
+          ? { reintegro: { estado: "completado", fecha: mercadoPagoRefund.refundedAt || fecha.toISOString(), medios: [{ metodo: "Mercado Pago", monto: mercadoPagoRefund.amount }], referencia: mercadoPagoRefund.providerOrderId } }
+          : {}),
+    }, motivo.trim(), responsable, fecha.toISOString());
+    setTickets((previous = []) => previous.map((item) => item.id === ticket.id ? ticketRevertido : item));
     setProducts((previous = []) => restaurarStock(previous, ticket));
     if (ticket.medio === "Cuenta corriente" && ticket.clienteId) {
       setClientes((previous = []) => previous.map((cliente) => cliente.id === ticket.clienteId ? {
@@ -1034,7 +1069,7 @@ export default function KioscoApp() {
         movimientos: [...(previous.movimientos || []), { id: crearIdOperacion("caja-anulacion"), tipo: "retiro", monto: cashAmount, nota: `Devolución ticket #${numeroTicket(ticket)}`, fecha: fecha.toLocaleString("es-AR") }],
       }));
     }
-    setGlobalScanResult((current) => current?.ticket?.id === ticket.id ? { ...current, ticket: anularTicket(ticket, motivo.trim(), responsable, fecha.toISOString()) } : current);
+    setGlobalScanResult((current) => current?.ticket?.id === ticket.id ? { ...current, ticket: ticketRevertido } : current);
     setVoidTicketPrompt({ ticket: null, reason: "" });
   };
 
@@ -1611,20 +1646,37 @@ export default function KioscoApp() {
             preferences={currentPreferences}
             ticketConfig={data.configuracionFiscal || {}}
             businessName={cuentaActual?.nombreNegocio || "Mi negocio"}
+            businessId={currentUserId}
             hasEmployees={hasEmployees}
           />
         );
       case "gestion":
-        return <GestionView data={data} identidad={identidad} preferences={currentPreferences} hasEmployees={hasEmployees} setters={{ setTareas, setMetas, setPromociones, setReservas, setPresupuestos, setArqueos, setConfiguracionFiscal, setComprobantes, setListaCompras, setRetornables, setCambioCaja, setAutoconsumos, setTurnos, setRecordatoriosProveedor, setProducts, setLabelTemplates, devolverTicket: (ticket, motivo = "Devolución completa") => {
+        return <GestionView data={data} identidad={identidad} preferences={currentPreferences} hasEmployees={hasEmployees} setters={{ setTareas, setMetas, setPromociones, setReservas, setPresupuestos, setArqueos, setConfiguracionFiscal, setComprobantes, setListaCompras, setRetornables, setCambioCaja, setAutoconsumos, setTurnos, setRecordatoriosProveedor, setProducts, setLabelTemplates, devolverTicket: async (ticket, motivo = "Devolución completa") => {
           if (!ticketActivo(ticket)) return;
           const fecha = new Date();
           const responsable = identidad?.nombre || identidad?.rol || "Sin identificar";
           const numero = numeroTicket(ticket);
-          const tieneReintegroExterno = (ticket.pagos || [{ metodo: ticket.medio, monto: ticket.total }]).some((pago) => !["Efectivo", "Cuenta corriente"].includes(pago?.metodo) && Number(pago?.monto || 0) > 0);
+          const pagosOriginales = ticket.pagos || [{ metodo: ticket.medio, monto: ticket.total }];
+          const cobroMercadoPago = ticket.providerPayment?.provider === "mercado_pago" && ticket.providerPayment?.id && ticket.providerPayment?.status === "approved";
+          let mercadoPagoRefund = null;
+          if (cobroMercadoPago) {
+            const result = await refundPaymentAttempt(currentUserId, ticket.providerPayment.id);
+            if (result.attempt?.status !== "refunded") throw new Error("Mercado Pago todavía no confirmó la devolución. No se modificó la venta.");
+            mercadoPagoRefund = result.attempt;
+          }
+          const reintegrosPendientes = pagosOriginales.filter((pago) => (
+            !["Efectivo", "Cuenta corriente", ...(mercadoPagoRefund ? ["Mercado Pago"] : [])].includes(pago?.metodo)
+            && Number(pago?.monto || 0) > 0
+          ));
           setProducts((prev) => restaurarStock(prev, ticket));
           setTickets((prev) => prev.map((item) => item.id === ticket.id ? {
             ...marcarTicketDevuelto(item, motivo, responsable, fecha.toISOString()),
-            ...(tieneReintegroExterno ? { reintegro: { estado: "pendiente_manual", fecha: fecha.toISOString(), medios: (ticket.pagos || [{ metodo: ticket.medio, monto: ticket.total }]).filter((pago) => !["Efectivo", "Cuenta corriente"].includes(pago?.metodo)) } } : {}),
+            providerPayment: mercadoPagoRefund ? { ...item.providerPayment, status: "refunded", providerStatus: mercadoPagoRefund.providerStatus, refundedAt: mercadoPagoRefund.refundedAt } : item.providerPayment,
+            ...(reintegrosPendientes.length
+              ? { reintegro: { estado: "pendiente_manual", fecha: fecha.toISOString(), medios: reintegrosPendientes } }
+              : mercadoPagoRefund
+                ? { reintegro: { estado: "completado", fecha: mercadoPagoRefund.refundedAt || fecha.toISOString(), medios: [{ metodo: "Mercado Pago", monto: mercadoPagoRefund.amount }], referencia: mercadoPagoRefund.providerOrderId } }
+                : {}),
           } : item));
           if (ticket.medio === "Cuenta corriente" && ticket.clienteId) {
             setClientes((prev) => prev.map((cliente) => String(cliente.id) === String(ticket.clienteId) ? {
@@ -1739,7 +1791,7 @@ export default function KioscoApp() {
         onVoid={() => voidScannedTicket(globalScanResult?.ticket)}
         onVerifyPending={submitPendingVerification}
       />
-      <PromptDialog open={Boolean(voidTicketPrompt.ticket)} title="Anular o devolver ticket" message={`Ticket #${numeroTicket(voidTicketPrompt.ticket)}. ${currentPreferences.requireCorrectionReason === false ? "El motivo es opcional." : "Indicá el motivo; quedará registrado en el historial."}`} value={voidTicketPrompt.reason} onChange={(reason)=>setVoidTicketPrompt((current)=>({...current,reason}))} placeholder={currentPreferences.requireCorrectionReason === false ? "Motivo opcional" : "Ej.: devolución del cliente"} confirmLabel="Confirmar anulación" onCancel={()=>setVoidTicketPrompt({ticket:null,reason:""})} onConfirm={confirmVoidScannedTicket}/>
+      <PromptDialog open={Boolean(voidTicketPrompt.ticket)} title="Anular o devolver ticket" message={`Ticket #${numeroTicket(voidTicketPrompt.ticket)}. ${currentPreferences.requireCorrectionReason === false ? "El motivo es opcional." : "Indicá el motivo; quedará registrado en el historial."}${voidTicketPrompt.ticket?.providerPayment?.provider === "mercado_pago" && voidTicketPrompt.ticket?.providerPayment?.id ? " Primero se confirmará el reintegro real con Mercado Pago." : ""}`} value={voidTicketPrompt.reason} onChange={(reason)=>setVoidTicketPrompt((current)=>({...current,reason}))} placeholder={currentPreferences.requireCorrectionReason === false ? "Motivo opcional" : "Ej.: devolución del cliente"} confirmLabel="Confirmar anulación" busy={Boolean(voidTicketPrompt.busy)} error={voidTicketPrompt.error || ""} onCancel={()=>{if(voidTicketPrompt.busy)return;setVoidTicketPrompt({ticket:null,reason:""});}} onConfirm={confirmVoidScannedTicket}/>
     </div>
   );
 }
