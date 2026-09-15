@@ -302,9 +302,21 @@ export function MercadoPagoSettings({ businessId, preferences, onChange, canConn
         {recentAttempts.map((attempt) => <div key={attempt.id} className={`rounded-xl border p-3 ${attempt.reconciliationStatus === "sale_pending" ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-gray-50"}`}>
           <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><b className="block text-sm text-gray-900">{money(attempt.amount)} · {attempt.type === "point" ? "Point" : "QR dinámico"}</b><span className="block break-all text-[10px] text-gray-500">{attempt.ticketNumber ? `Ticket ${attempt.ticketNumber}` : attempt.externalReference}</span></div><span className={`rounded-full px-2 py-1 text-[10px] font-black ${statusStyle[attempt.status] || "bg-gray-200 text-gray-700"}`}>{statusLabel[attempt.status] || attempt.status}</span></div>
           <p className="mt-2 text-[10px] text-gray-500">{attempt.createdAt ? new Date(attempt.createdAt).toLocaleString("es-AR") : ""}{attempt.providerOrderId ? ` · Orden ${attempt.providerOrderId}` : ""}</p>
+          {attempt.failure && <div className="mt-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[11px] leading-4 text-red-800">
+            <p className="font-bold">{attempt.failure.message || "Mercado Pago rechazó el intento."}</p>
+            <details className="mt-1">
+              <summary className="cursor-pointer select-none font-semibold">Ver diagnóstico técnico</summary>
+              <p className="mt-1 break-all font-mono text-[10px]">{[
+                attempt.failure.code ? `código ${attempt.failure.code}` : "",
+                attempt.failure.httpStatus ? `HTTP ${attempt.failure.httpStatus}` : "",
+                attempt.failure.requestId ? `solicitud ${attempt.failure.requestId}` : "",
+              ].filter(Boolean).join(" · ")}</p>
+              {(attempt.failure.details || []).map((detail, index) => <p key={`${attempt.id}-failure-${index}`} className="mt-1 break-words text-[10px]">{[detail.field, detail.code, detail.message].filter(Boolean).join(" · ")}</p>)}
+            </details>
+          </div>}
           {attempt.reconciliationStatus === "sale_pending" && <p className="mt-2 flex items-start gap-1 text-xs font-bold text-amber-800"><AlertTriangle className="mt-0.5 shrink-0" size={13}/>El dinero figura acreditado, pero todavía falta vincular el ticket local.</p>}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => runAttemptAction(attempt, "refresh")} disabled={Boolean(workingId)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border bg-white px-3 text-[11px] font-bold disabled:opacity-50"><RefreshCw className={workingId === `refresh:${attempt.id}` ? "animate-spin" : ""} size={13}/>Consultar</button>
+            {attempt.providerOrderId && <button type="button" onClick={() => runAttemptAction(attempt, "refresh")} disabled={Boolean(workingId)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border bg-white px-3 text-[11px] font-bold disabled:opacity-50"><RefreshCw className={workingId === `refresh:${attempt.id}` ? "animate-spin" : ""} size={13}/>Consultar</button>}
             {["creating", "pending"].includes(attempt.status) && <button type="button" onClick={() => runAttemptAction(attempt, "cancel")} disabled={Boolean(workingId)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-red-200 bg-white px-3 text-[11px] font-bold text-red-700 disabled:opacity-50"><XCircle size={13}/>Cancelar</button>}
             {canConnect && attempt.status === "approved" && <button type="button" onClick={() => runAttemptAction(attempt, "refund")} disabled={Boolean(workingId)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-violet-200 bg-white px-3 text-[11px] font-bold text-violet-700 disabled:opacity-50"><RotateCcw size={13}/>Devolver</button>}
           </div>

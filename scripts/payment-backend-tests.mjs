@@ -42,7 +42,7 @@ const config = mercadoPagoConfig({
   KIOSCO_MERCADOPAGO_POINT_WEBHOOK_SECRET: "webhook-point-secret",
   KIOSCO_MERCADOPAGO_REDIRECT_URI: "https://api.example.com/v1/payments/mercado-pago/oauth/callback",
   KIOSCO_MERCADOPAGO_TOKEN_ENCRYPTION_KEY: "clave-de-prueba-de-por-lo-menos-32-caracteres",
-  KIOSCO_MERCADOPAGO_PLATFORM_ID: "DEV_PLATFORM_TEST",
+  KIOSCO_MERCADOPAGO_PLATFORM_ID: "dev_platform_test",
   KIOSCO_MERCADOPAGO_INTEGRATOR_ID: "dev-integrator-test",
   KIOSCO_MERCADOPAGO_SPONSOR_ID: "123456",
 });
@@ -92,6 +92,7 @@ test("OAuth usa state, callback exacto y PKCE", authorizationUrl.searchParams.ge
 
 const qr = buildQrOrderPayload({ amount: 13000, externalReference: "V-ABC123", externalPosId: "CAJA-1", description: "Venta" });
 test("QR dinámico conserva importe, referencia y caja", qr.type === "qr" && qr.config.qr.mode === "dynamic" && qr.config.qr.external_pos_id === "CAJA-1" && qr.transactions.payments[0].amount === "13000.00");
+test("QR incluye un renglón resumen compatible con Merchant Orders", qr.items?.length === 1 && qr.items[0].unit_price === "13000.00" && qr.items[0].quantity === 1 && qr.items[0].unit_measure === "unit");
 test("el QR se lee desde la respuesta vigente de Orders v1", mercadoPagoQrData({ type_response: { qr_data: "000201-test" } }) === "000201-test");
 test("el lector de QR conserva compatibilidad con respuestas anteriores", mercadoPagoQrData({ config: { qr: { qr_data: "legacy-test" } } }) === "legacy-test");
 test("el rechazo de credenciales de prueba explica en castellano cómo corregir la configuración", mercadoPagoProviderMessage({
@@ -108,7 +109,9 @@ let unsafeReferenceRejected = false;
 try { normalizeExternalReference("venta con espacios"); } catch { unsafeReferenceRejected = true; }
 test("la referencia no admite datos o caracteres inseguros", unsafeReferenceRejected);
 const attributedQr = buildQrOrderPayload({ amount: 10, externalReference: "V-ATTR", externalPosId: "CAJA-1" }, config);
-test("la atribución de plataforma se agrega sólo desde el servidor", attributedQr.integration_data.platform_id === "DEV_PLATFORM_TEST" && attributedQr.integration_data.sponsor.id === "123456");
+test("la atribución de plataforma se agrega sólo desde el servidor", attributedQr.integration_data.platform_id === "dev_platform_test" && attributedQr.integration_data.sponsor.id === "123456");
+const invalidAttributionQr = buildQrOrderPayload({ amount: 10, externalReference: "V-NOATTR", externalPosId: "CAJA-1" }, { platformId: "7595655096885201", integratorId: "7595655096885201", sponsorId: "no-es-un-user-id" });
+test("IDs de aplicación o valores inventados no se envían como atribución", !invalidAttributionQr.integration_data);
 
 const point = buildPointOrderPayload({ amount: 1250.5, externalReference: "V-POINT", terminalId: "NEWLAND_N950__SBX0000001", paymentMethodType: "credit_card" });
 test("Point envía la orden a una terminal concreta sin campos que esa API no admite", point.type === "point" && point.config.point.terminal_id === "NEWLAND_N950__SBX0000001" && point.transactions.payments[0].amount === "1250.50" && !("total_amount" in point));
@@ -162,6 +165,23 @@ const retryClient = createMercadoPagoClient({
 });
 const recoveredOrder = await retryClient.createOrder({ accessToken: "token-privado", payload: qr, idempotencyKey: "reintento-idempotente" });
 test("una falla transitoria repite la misma operación sin duplicar el cobro", transientCalls === 2 && recoveredOrder.id === "order-recovered");
+let diagnosticError = null;
+const diagnosticClient = createMercadoPagoClient({
+  config,
+  fetchImpl: async () => ({
+    ok: false,
+    status: 400,
+    headers: { get: (name) => name === "x-request-id" ? "mp-request-123" : null },
+    json: async () => ({
+      code: "property_value",
+      message: "invalid order",
+      errors: [{ code: "property_value", property: "config.qr.mode", message: "unsupported value" }],
+    }),
+  }),
+});
+try { await diagnosticClient.createOrder({ accessToken: "token-privado", payload: qr, idempotencyKey: "diagnostico-idempotente" }); } catch (error) { diagnosticError = error; }
+test("el error conserva estado, código, detalle y referencia del proveedor", diagnosticError?.status === 400 && diagnosticError?.providerCode === "property_value" && diagnosticError?.providerDetails?.[0]?.property === "config.qr.mode" && diagnosticError?.providerRequestId === "mp-request-123");
+test("el detalle de validación se traduce sin ocultar el campo observado", mercadoPagoProviderMessage(diagnosticError).includes("config.qr.mode"));
 test("estados del proveedor se normalizan", normalizedPaymentStatus("processed") === "approved" && normalizedPaymentStatus("rejected") === "failed" && normalizedPaymentStatus("created") === "pending");
 
 console.log(`\n${passed} pruebas del backend de pagos superadas.`);

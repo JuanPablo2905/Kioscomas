@@ -1,5 +1,41 @@
 [
   {
+    "version": "0.2.30",
+    "date": "2026-09-15",
+    "title": "QR dinámico compatible y con diagnóstico real",
+    "summary": "Reforzamos la orden que Kiosco+ envía a Mercado Pago y dejamos de ocultar el motivo técnico cuando el proveedor rechaza un QR, sin exponer credenciales ni datos privados.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "Las órdenes QR dinámicas incorporan un ítem resumen cuyo importe coincide con el total y la transacción. Esto mantiene compatibilidad con las cuentas sandbox que todavía procesan la solicitud mediante Merchant Orders, sin enviar el catálogo ni información privada del negocio.",
+          "La atribución opcional de plataforma, integrador y patrocinador se envía únicamente cuando respeta los formatos asignados por Mercado Pago. Un ID de aplicación o un valor inventado deja de contaminar la orden.",
+          "Los errores del proveedor conservan de forma segura el estado HTTP, el código, los campos observados y el identificador de solicitud. Tokens, secretos, credenciales y cuerpos arbitrarios no forman parte del diagnóstico visible.",
+          "La pantalla de cobro y Actividad y conciliación muestran el mensaje comprensible y permiten desplegar el diagnóstico técnico cuando hace falta soporte.",
+          "Un intento rechazado antes de recibir un número de orden ya no ofrece el botón Consultar, porque Mercado Pago todavía no creó nada que pueda consultarse.",
+          "El servidor registra una línea estructurada y segura por cada orden rechazada para poder relacionar el intento de Kiosco+ con los registros de Mercado Pago sin imprimir accesos privados."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Mercado Pago estaba devolviendo un mensaje demasiado general y Kiosco+ descartaba la parte útil. Ahora la app guarda y muestra el dato que realmente sirve para saber qué rechazó.",
+          "También agregamos un renglón simple de producto al pedido. No manda tu lista de productos: sólo informa una venta por el total exacto para que las cuentas de prueba más antiguas no fallen al armar la orden.",
+          "Si alguien pega por error el número de la aplicación donde iba un código especial de Mercado Pago, Kiosco+ ya no lo manda en el cobro.",
+          "Cuando Mercado Pago no llegó a crear la orden, desaparece el botón Consultar. En su lugar queda el diagnóstico que permite arreglar el problema sin adivinar.",
+          "La venta y el stock siguen intactos si el QR falla: nada se registra hasta que Mercado Pago confirme el pago."
+        ]
+      },
+      {
+        "title": "Comprobaciones",
+        "items": [
+          "Se agregaron pruebas para el ítem resumen, el descarte de identificadores opcionales inválidos y la conservación de código, campo, estado y referencia de los rechazos del proveedor.",
+          "La interfaz se verifica para asegurar que el diagnóstico exista tanto durante el cobro como en el historial y que nunca intente consultar una orden inexistente."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.29",
     "date": "2026-09-14",
     "title": "Caja QR de Mercado Pago reparable",

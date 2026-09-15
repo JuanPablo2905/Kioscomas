@@ -811,8 +811,9 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
     } catch (error) {
       if (createdAttempt?.id && !PAYMENT_FINAL_STATES.has(createdAttempt.status)) cancelPaymentAttempt(businessId, createdAttempt.id).catch(() => {});
       if (error?.payload?.integration) setPaymentProvider((current) => ({ ...current, ...error.payload.integration }));
+      const failedAttempt = error?.payload?.attempt || createdAttempt;
       paymentRequestRef.current = null;
-      setPaymentAttempt(null);
+      setPaymentAttempt(failedAttempt?.status === "failed" ? failedAttempt : null);
       setPaymentPresentationId("");
       setPaymentQrData("");
       setPaymentQrImage("");
@@ -992,6 +993,16 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
               {mercadoPagoMode !== "static_qr" && !activePaymentConnection?.connected && <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">{activePaymentConnection?.ready ? `Todavía no conectaste Mercado Pago para ${activeMercadoPagoSolution === "point" ? "Point" : "Código QR"}. Hacelo desde Configuración.` : `La conexión para ${activeMercadoPagoSolution === "point" ? "Point" : "Código QR"} todavía no está habilitada en el servidor. El QR estático sí se puede usar ahora.`}</p>}
 
               {paymentError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">{paymentError}</p>}
+
+              {paymentAttempt?.failure && <details className="rounded-xl border border-red-100 bg-white px-3 py-2 text-[10px] leading-4 text-red-800">
+                <summary className="cursor-pointer select-none text-xs font-bold">Ver diagnóstico de Mercado Pago</summary>
+                <p className="mt-2 break-all font-mono">{[
+                  paymentAttempt.failure.code ? `código ${paymentAttempt.failure.code}` : "",
+                  paymentAttempt.failure.httpStatus ? `HTTP ${paymentAttempt.failure.httpStatus}` : "",
+                  paymentAttempt.failure.requestId ? `solicitud ${paymentAttempt.failure.requestId}` : "",
+                ].filter(Boolean).join(" · ")}</p>
+                {(paymentAttempt.failure.details || []).map((detail, index) => <p key={`payment-failure-${index}`} className="mt-1 break-words">{[detail.field, detail.code, detail.message].filter(Boolean).join(" · ")}</p>)}
+              </details>}
 
               {paymentAttempt?.status && <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${paymentAttempt.status === "approved" ? "bg-emerald-100 text-emerald-800" : paymentAttempt.status === "failed" ? "bg-red-100 text-red-700" : "bg-white text-sky-900"}`}>{paymentAttempt.status === "approved" ? <CheckCircle2 size={16}/> : <RefreshCw className={PAYMENT_FINAL_STATES.has(paymentAttempt.status) ? "" : "animate-spin"} size={15}/>}{{ creating: "Creando el cobro…", pending: "Esperando la acreditación…", approved: "Pago acreditado. Ya podés confirmar la venta.", failed: "El cobro fue rechazado.", canceled: "El cobro fue cancelado.", expired: "El cobro venció." }[paymentAttempt.status] || `Estado: ${paymentAttempt.status}`}</div>}
 

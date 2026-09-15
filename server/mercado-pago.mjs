@@ -39,11 +39,29 @@ export const normalizeExpirationDuration = (value, defaultSeconds = 15 * 60) => 
 
 const integrationData = (config = {}) => {
   const result = {};
-  if (config.platformId) result.platform_id = config.platformId;
-  if (config.integratorId) result.integrator_id = config.integratorId;
-  if (config.sponsorId) result.sponsor = { id: String(config.sponsorId) };
+  const platformId = String(config.platformId || "").trim();
+  const integratorId = String(config.integratorId || "").trim();
+  const sponsorId = String(config.sponsorId || "").trim();
+  // Estos identificadores no son las credenciales de la aplicación ni el ID
+  // del vendedor. Mercado Pago los asigna expresamente a plataformas e
+  // integradores; omitir un valor dudoso es más seguro que rechazar el cobro.
+  if (/^dev_[A-Za-z0-9_-]{3,115}$/i.test(platformId)) result.platform_id = platformId;
+  if (/^dev_[A-Za-z0-9_-]{3,115}$/.test(integratorId)) result.integrator_id = integratorId;
+  if (/^\d{3,30}$/.test(sponsorId)) result.sponsor = { id: sponsorId };
   return Object.keys(result).length ? result : undefined;
 };
+
+const providerDetailText = (detail = {}) => String(
+  detail?.message
+  || detail?.description
+  || detail?.detail
+  || detail?.error
+  || "",
+).trim();
+
+const providerDetailEvidence = (error = {}) => (Array.isArray(error?.providerDetails) ? error.providerDetails : [])
+  .map((detail) => [detail?.code, detail?.field, detail?.property, providerDetailText(detail)].filter(Boolean).join(" "))
+  .filter(Boolean);
 
 export const normalizePaymentAmount = (value) => {
   const amount = Math.round(Number(value) * 100) / 100;
@@ -76,11 +94,31 @@ export const isMercadoPagoMissingPosError = (error = {}) => {
 
 export const mercadoPagoProviderMessage = (error) => {
   const message = String(error?.message || "").trim();
+  const code = String(error?.providerCode || "").trim();
+  const details = providerDetailEvidence(error);
+  const evidence = [code, message, ...details].filter(Boolean).join(" ");
   if (/test credentials are not supported/i.test(message)) {
     return "La autorización guardada de Mercado Pago no es compatible con la API de cobros. Desconectá esta integración y volvé a conectarla con un usuario vendedor de prueba.";
   }
   if (isMercadoPagoMissingPosError(error)) {
     return "Mercado Pago no encontró la caja QR vinculada. Kiosco+ intentó repararla; si el aviso vuelve a aparecer, entrá en Configuración > Mercado Pago y volvé a crear la caja QR.";
+  }
+  if (/sponsor_id_not_valid/i.test(evidence)) {
+    return "Mercado Pago rechazó el identificador opcional del integrador. Quitalo de la configuración del servidor salvo que Mercado Pago lo haya asignado expresamente a Kiosco+.";
+  }
+  if (/marketplace_not_valid|marketplace_fee_not_allowed/i.test(evidence)) {
+    return "Mercado Pago no reconoce este acceso como una conexión OAuth válida para cobrar en nombre del negocio. Desconectá y volvé a conectar la cuenta desde Kiosco+.";
+  }
+  if (/empty_required_header/i.test(evidence)) {
+    return "Mercado Pago rechazó la orden porque faltó su clave de reintento. Kiosco+ no registró la venta y podés volver a generar el QR.";
+  }
+  if (/unsupported_properties|property_value|property_type/i.test(evidence) && details.length) {
+    return `Mercado Pago rechazó un dato de la orden: ${details[0]}`.slice(0, 300);
+  }
+  if (/an error occurred when creating a merchant order/i.test(message)) {
+    return Number(error?.status) >= 500
+      ? "Mercado Pago no pudo crear la orden QR dentro de su servicio. La venta no se registró; revisá el diagnóstico técnico del intento antes de volver a probar."
+      : "Mercado Pago rechazó la creación de la orden QR. La venta no se registró; revisá el diagnóstico técnico del intento para identificar el dato observado.";
   }
   return message || "No se pudo procesar el cobro con Mercado Pago";
 };
@@ -213,12 +251,14 @@ export const buildMercadoPagoAuthorizationUrl = (config, { state, codeChallenge 
 
 export const buildQrOrderPayload = ({ amount, externalReference, externalPosId, expirationTime, expirationSeconds, description }, config = {}) => {
   const normalizedAmount = normalizePaymentAmount(amount).toFixed(2);
+  const reference = normalizeExternalReference(externalReference);
+  const orderDescription = String(description || "Cobro de Kiosco+").trim().slice(0, 120);
   const payload = {
     type: "qr",
     total_amount: normalizedAmount,
-    external_reference: normalizeExternalReference(externalReference),
+    external_reference: reference,
     expiration_time: normalizeExpirationDuration(expirationTime ?? expirationSeconds, 15 * 60),
-    description: String(description || "Cobro de Kiosco+").trim().slice(0, 120),
+    description: orderDescription,
     config: {
       qr: {
         external_pos_id: requiredText(externalPosId, "external_pos_id", 64),
@@ -226,6 +266,17 @@ export const buildQrOrderPayload = ({ amount, externalReference, externalPosId, 
       },
     },
     transactions: { payments: [{ amount: normalizedAmount }] },
+    // Aunque Orders admite omitir el detalle, algunas cuentas QR sandbox aún
+    // pasan por Merchant Orders y fallan internamente cuando no reciben ningún
+    // ítem. Un renglón resumen mantiene todos los importes consistentes sin
+    // enviar el catálogo ni información privada del negocio.
+    items: [{
+      title: orderDescription || "Venta presencial",
+      unit_price: normalizedAmount,
+      quantity: 1,
+      unit_measure: "unit",
+      external_code: reference.slice(0, 64),
+    }],
   };
   const attribution = integrationData(config);
   if (attribution) payload.integration_data = attribution;
@@ -319,6 +370,9 @@ const providerError = async (response) => {
   error.status = response.status;
   error.providerCode = detail?.code || firstDetail?.code || detail?.error || null;
   error.providerDetails = detail?.errors || detail?.cause || null;
+  error.providerRequestId = response?.headers?.get?.("x-request-id")
+    || response?.headers?.get?.("x-correlation-id")
+    || null;
   throw error;
 };
 

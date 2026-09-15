@@ -1773,10 +1773,26 @@ const updatePaymentAttemptFromOrder = (attempt, order) => {
   if (status === "refunded") attempt.refundedAt ||= attempt.updatedAt;
   return attempt;
 };
-const paymentFailure = (error) => ({
-  code: String(error?.providerCode || "provider_error").slice(0, 80),
-  message: mercadoPagoProviderMessage(error).slice(0, 300),
-});
+const paymentFailure = (error) => {
+  const details = (Array.isArray(error?.providerDetails) ? error.providerDetails : [])
+    .map((detail) => ({
+      code: cleanCatalogText(detail?.code || "", 80) || null,
+      field: cleanCatalogText(detail?.field || detail?.property || "", 120) || null,
+      message: cleanCatalogText(detail?.message || detail?.description || detail?.detail || detail?.error || "", 240) || null,
+    }))
+    .filter((detail) => detail.code || detail.field || detail.message)
+    .slice(0, 4);
+  const failure = {
+    code: cleanCatalogText(error?.providerCode || "provider_error", 80),
+    message: mercadoPagoProviderMessage(error).slice(0, 300),
+  };
+  const httpStatus = Number(error?.status);
+  if (Number.isInteger(httpStatus) && httpStatus >= 400 && httpStatus <= 599) failure.httpStatus = httpStatus;
+  const requestId = cleanCatalogText(error?.providerRequestId || "", 120);
+  if (requestId) failure.requestId = requestId;
+  if (details.length) failure.details = details;
+  return failure;
+};
 const paymentSetupExternalIds = (tenantId) => {
   const suffix = crypto.createHash("sha256").update(String(tenantId || "negocio")).digest("hex").slice(0, 16).toUpperCase();
   return { storeExternalId: `KIOSCO${suffix}`, posExternalId: `CAJA${suffix}` };
@@ -3295,6 +3311,12 @@ const handleRequest = async (req, res) => {
           attempt.failure = paymentFailure(error);
           attempt.updatedAt = new Date().toISOString();
           attempt.history.push({ status: "failed", code: attempt.failure.code, at: attempt.updatedAt });
+          console.warn("[mercado-pago] orden rechazada", JSON.stringify({
+            attemptId: attempt.id,
+            type: attempt.type,
+            externalReference: attempt.externalReference,
+            failure: attempt.failure,
+          }));
           await writeDb(db);
           return send(res, 502, { error: attempt.failure.message, attempt: paymentAttemptView(attempt), integration: paymentIntegrationView(currentIntegration, mercadoPago) });
         }
