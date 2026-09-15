@@ -6,15 +6,22 @@
 
 **Rama:** `main`
 
-**Commit funcional:** `dfb8b90619bd8f5d40b2a0cc8a7bcb532532d080`
+**Commit funcional:** `2d6c177` (sobre la base de `dfb8b90619bd8f5d40b2a0cc8a7bcb532532d080`, más dos commits del 15/09 de la tarde: captura de `detail.data` en errores de Mercado Pago, y `forcePosRecreate` en el repair de la caja QR)
 
 **Última etiqueta existente:** `v0.2.29`
 
-**Estado de 0.2.30:** subida a `main`, control de calidad aprobado y backend desplegado; falta la comprobación real final del QR y por eso no está etiquetada.
+**Estado de 0.2.30:** subida a `main`, control de calidad aprobado y backend desplegado; sigue sin etiquetarse porque el diagnóstico avanzó mucho pero todavía no cierra (ver más abajo).
+
+## 0. Cambio de entorno (15/09/2026, sesión de la tarde)
+
+- El proyecto vive ahora en `kiosco app\Kioscomas` directamente (antes estaba anidado en `kiosco app\PARA_SUBIR_A_GITHUB\Kioscomas`). La carpeta raíz se reordenó: todo lo viejo/duplicado quedó en `kiosco app\_ARCHIVO_HISTORICO\`, documentado en `kiosco app\README.md`.
+- Esta máquina ahora tiene instalados de forma persistente: Git, GitHub CLI (`gh`, sin autenticar todavía), Node.js LTS y pnpm 11.9.0 (activado vía `corepack`/npm global, no vía el instalador oficial). Antes ninguno de los cuatro estaba disponible.
+- Conectores activos en esta sesión de Claude Code: Mercado Pago (conector con OAuth ya autorizado, 11 herramientas: `application_list`, `get_credentials`, `create_test_user`, `add_money_test_user`, `notifications_history`, `save_webhook`, `search_documentation`, etc.), Render, Supabase, Resend.
+- Además se instaló el **plugin oficial `mercadopago@claude-plugins-official`** (distinto del conector de arriba — son dos integraciones separadas). Trae comandos `/mp-connect`, `/mp-test-cards`, un agente `mercadopago:mp-integration-expert` y skills (`mp-connect`, `mp-integrate`, `mp-review`, `mp-test-setup`, `mp-webhooks`). **Todavía no está autorizado** (pide OAuth interactivo); hay que correr `/mp-connect` o el equivalente para activarlo. Puede tener herramientas más específicas para lo que sigue pendiente.
 
 ## 1. Continuación inmediata: no perder este punto
 
-La tarea activa es terminar el diagnóstico de QR dinámico de Mercado Pago.
+La tarea activa es terminar el diagnóstico de QR dinámico de Mercado Pago. **Hubo avance grande en esta sesión: se descartó el código y la caja como causa, y se aisló el problema a la cuenta vendedora sandbox conectada.** Ver "Qué se descubrió en la sesión del 15/09 (tarde)" más abajo antes de seguir.
 
 ### Qué ocurrió antes de 0.2.30
 
@@ -44,20 +51,24 @@ La tarea activa es terminar el diagnóstico de QR dinámico de Mercado Pago.
 - La app publicada mostró la actualización de PWA y se recargó.
 - Esa recarga cerró o venció la sesión del navegador y dejó la pantalla de ingreso. No se copiaron ni inspeccionaron credenciales.
 
+### Qué se descubrió en la sesión del 15/09 (tarde)
+
+El error dejó de ser el genérico `An error occurred when creating a Merchant Order` y pasó a ser uno más específico y **estable en todos los reintentos**: `código: property_value · HTTP 400 · property_value: Invalid value for property`, sin que Mercado Pago indique nunca el campo (`field`/`property`/`data` vienen vacíos en la respuesta real — se confirmó con logs de Render). Cuatro request ID distintos, mismo resultado: `6e2345d5-e7ef-4c4f-9f16-62467cb8abd5`, `f685921b-9edc-4e31-aa96-535256513534`, `75fdef2b-f995-430c-8e77-8e3c9a429745`, `c78658f4-e44b-4f5a-927d-712d42a3d744`.
+
+Se descartaron, en orden, estas hipótesis:
+
+1. **`integration_data` (platform_id/integrator_id/sponsor_id) con un valor inventado.** Se blanquearon las tres variables en Render (`KIOSCO_MERCADOPAGO_PLATFORM_ID`, `_INTEGRATOR_ID`, `_SPONSOR_ID`) y el error persistió idéntico. Descartado.
+2. **Un bug de parseo en `providerDetailEvidence`** que no miraba `detail.data`. Se corrigió (commit `df2f059`), pasaron las 35 pruebas de `test:payments`, se desplegó y se repitió la prueba: el mensaje siguió exactamente igual. Confirma que Mercado Pago realmente no manda el nombre del campo en este caso — no era un bug de Kiosco+.
+3. **La caja QR conectada (`CAJAE6237BCF51ACD9CA`) estaba rota.** Se probó reproduciendo el mismo payload que genera `buildQrOrderPayload` directamente contra la API de Mercado Pago (fuera de Kiosco+), primero contra una tienda/caja nueva creada bajo la cuenta dueña de la aplicación "Kioscomas QR" (un vendedor distinto del conectado): **la orden se creó perfecta, con QR incluido.** Eso probó que el payload/código está bien. Después se agregó al backend la capacidad de borrar y recrear la caja QR (`client.deletePos` + flag `forcePosRecreate` en `reconcileMercadoPagoQrSetup`, sólo activable por el Dueño vía `repairOnly && forcePosRecreate` en el body de `/v1/payments/mercado-pago/qr/setup`; commit `2d6c177`), se ejecutó contra la cuenta real conectada (nueva caja: `posId 138202645`), y **el error volvió a aparecer idéntico con la caja completamente nueva.** Descartado: no es la caja.
+
+**Conclusión actual: el problema está en la cuenta vendedora sandbox conectada (`TESTUSER7499875603086904321`, sellerId `3688279868`), no en el código de Kiosco+ ni en la caja QR.** Algo de esa cuenta de prueba específica está mal configurado o roto del lado de Mercado Pago — posiblemente algo a nivel de cuenta (categoría fiscal, capacidad QR no activada del todo, etc.), no algo que Kiosco+ pueda arreglar desde su lado.
+
 ### Próxima acción exacta
 
-1. Pedirle a Juan que inicie sesión él mismo en `https://app.kioscomas.ar/` si todavía aparece la pantalla de acceso.
-2. Confirmar dentro de la aplicación que la versión visible es 0.2.30.
-3. Ir a **Configuración > Funcionamiento > Mercado Pago**.
-4. Actualizar el estado y ejecutar **Comprobar y reparar** para Código QR.
-5. Verificar que sigue conectada la cuenta sandbox y que existe la caja QR.
-6. Abrir Ventas. Si el carrito de prueba se conservó, contiene dos unidades de Sprite bajo una promoción 2x1 y total aproximado de $14.300; si no está, preparar una operación de prueba pequeña sin confirmarla.
-7. Elegir Mercado Pago, **QR dinámico** y **En este dispositivo**.
-8. Tocar **Generar QR dinámico**. Esta acción crea una orden sandbox, pero no confirma la venta local.
-9. Si aparece el QR, detenerse: comprobar que el importe sea correcto y que la venta siga esperando acreditación. No pagar ni confirmar la venta sin una autorización nueva y explícita.
-10. Si falla, abrir **Ver diagnóstico de Mercado Pago** y anotar sólo los campos saneados: mensaje, HTTP, código, campo, detalle y request ID.
-11. Correlacionar el request ID con el registro seguro del backend. No copiar access tokens ni respuestas completas de Render.
-12. Si el proveedor devuelve un error interno sin detalle, preparar un caso para soporte de Mercado Pago con hora, app, vendedor sandbox, endpoint `/v1/orders`, request ID y referencia de intento. No enviar credenciales.
+1. **Autorizar el plugin oficial `mercadopago@claude-plugins-official`** (ver sección 0) corriendo `/mp-connect` o el flujo equivalente — puede traer una herramienta de diagnóstico a nivel de cuenta que el conector actual no tiene, o el agente `mercadopago:mp-integration-expert` puede aportar una mirada nueva sobre por qué esta cuenta sandbox puntual falla.
+2. Si eso no destraba nada, **armar un caso para soporte de Mercado Pago** con toda la evidencia ya junta: los cuatro request ID de arriba, la comparación cruzada (funciona con cuenta/caja nueva propia, falla siempre con la cuenta vendedora conectada incluso con caja nueva), el endpoint (`POST /v1/orders`, `type: qr`, `config.qr.mode: dynamic`), y la app/aplicación (`Kioscomas QR`, AppID `7595655096885201`). No enviar credenciales ni access tokens.
+3. Alternativa si el soporte tarda: conectar Código QR con un vendedor sandbox **nuevo** (`create_test_user` del conector de Mercado Pago) en vez de insistir con `TESTUSER7499875603086904321`. Ojo: la documentación pide no desconectar/reemplazar la conexión activa sin necesidad — esto ya cuenta como necesidad justificada dado lo encontrado, pero conviene confirmarlo con Juan antes de tocar la conexión OAuth real (a diferencia de la caja, que ya se recreó con su autorización explícita).
+4. Sea cual sea el resultado, no tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR.
 
 ### Criterio para cerrar 0.2.30
 

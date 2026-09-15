@@ -4,13 +4,14 @@ Este archivo es la entrada obligatoria para continuar Kiosco+. Leelo completo an
 
 ## Estado de referencia
 
-- Fecha de este traspaso: 15 de septiembre de 2026.
+- Fecha de este traspaso: 15 de septiembre de 2026 (actualizado en la sesión de la tarde).
 - Versión de `package.json`: `0.2.30`.
 - Rama de trabajo: `main`.
-- Commit funcional de 0.2.30: `dfb8b90619bd8f5d40b2a0cc8a7bcb532532d080`.
+- Commit funcional: `2d6c177` (agregó dos fixes chicos de Mercado Pago sobre `dfb8b90619bd8f5d40b2a0cc8a7bcb532532d080`; ver `docs/TRASPASO_CLAUDE_CODE.md` sección 0 y 1).
 - Última etiqueta publicada presente al escribir esto: `v0.2.29`.
-- `0.2.30` está en `main`, pasó el control de calidad y está desplegada en el backend, pero todavía no debe etiquetarse ni anunciarse como comprobada hasta repetir la prueba real de QR dinámico indicada en el documento de traspaso.
-- El árbol estaba limpio antes de agregar estos documentos.
+- `0.2.30` está en `main`, pasó el control de calidad y está desplegada en el backend, pero todavía no debe etiquetarse: el diagnóstico de QR dinámico avanzó mucho (se aisló el problema a la cuenta vendedora sandbox conectada, no al código) pero sigue sin cerrar.
+- El proyecto se movió de carpeta: ahora vive en `kiosco app\Kioscomas` directamente (antes `kiosco app\PARA_SUBIR_A_GITHUB\Kioscomas`). Ver `kiosco app\README.md`.
+- El árbol estaba limpio antes de este commit.
 
 Este estado envejece. Al empezar cualquier trabajo, comprobalo otra vez con `package.json`, `git status`, `git log`, las etiquetas y `release-notes/releases.json`. Nunca supongas cuál es la próxima versión.
 
@@ -147,4 +148,4 @@ Después del push a `main`, comprobar:
 
 ## Primer paso recomendado
 
-No empieces una función nueva. Continuá primero la verificación real de QR dinámico de 0.2.30 que quedó pendiente por cierre de sesión. El procedimiento, los criterios de éxito y el plan si vuelve a fallar están en la primera sección de `docs/TRASPASO_CLAUDE_CODE.md`.
+No empieces una función nueva. Continuá primero el diagnóstico de QR dinámico de Mercado Pago — quedó aislado a la cuenta vendedora sandbox conectada (no es el código ni la caja), y el siguiente paso es autorizar el plugin oficial de Mercado Pago (`/mp-connect`, quedó instalado pero sin autorizar) o escalar a soporte con la evidencia ya recopilada. Todo el detalle está en la sección 0 y 1 de `docs/TRASPASO_CLAUDE_CODE.md`.
