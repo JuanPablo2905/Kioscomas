@@ -1811,7 +1811,7 @@ const paymentTerminalView = (terminal = {}) => ({
   externalPosId: cleanCatalogText(terminal.external_pos_id || "", 60) || null,
   operatingMode: cleanCatalogText(terminal.operating_mode || "UNDEFINED", 40),
 });
-const reconcileMercadoPagoQrSetup = async ({ integration, tenantId, connection, accessToken, payload = {}, createStoreIfMissing = false }) => {
+const reconcileMercadoPagoQrSetup = async ({ integration, tenantId, connection, accessToken, payload = {}, createStoreIfMissing = false, forcePosRecreate = false }) => {
   integration.qr ||= {};
   const ids = paymentSetupExternalIds(tenantId);
   const client = mercadoPagoClientFor("qr");
@@ -1843,6 +1843,13 @@ const reconcileMercadoPagoQrSetup = async ({ integration, tenantId, connection, 
     throw error;
   });
   let pos = providerResultList(posSearch, "data")[0] || null;
+  if (pos && forcePosRecreate) {
+    // Mercado Pago a veces deja una caja en un estado que "Comprobar y reparar"
+    // (sólo corrige operating_mode) no detecta ni arregla. Borrarla acá permite
+    // que el bloque de abajo cree una caja nueva con el mismo external_id.
+    await client.deletePos({ accessToken, posId: pos.id, idempotencyKey: crypto.randomUUID() });
+    pos = null;
+  }
   if (!pos) {
     const posPayload = buildMercadoPagoPosPayload({
       name: payload.posName || integration.qr.posName || "Caja principal",
@@ -3104,6 +3111,7 @@ const handleRequest = async (req, res) => {
             accessToken,
             payload: { ...payload, storeName, posName },
             createStoreIfMissing: payload.repairOnly !== true,
+            forcePosRecreate: payload.repairOnly === true && payload.forcePosRecreate === true,
           });
           if (!setupResult.repaired) {
             const missing = new Error("La caja anterior no pertenece al acceso actual. Completá nuevamente la dirección para crearla en la cuenta de Mercado Pago conectada.");

@@ -448,6 +448,7 @@ export const createMercadoPagoClient = ({ config = mercadoPagoConfig(), fetchImp
     createPos: ({ accessToken, payload, idempotencyKey }) => request("/v2/pos", { method: "POST", accessToken, body: payload, idempotencyKey }),
     searchPos: ({ accessToken, externalId }) => request(`/v2/pos?external_id=${encodeURIComponent(normalizeProviderExternalId(externalId, "pos_external_id", { alphanumericOnly: true, max: 40 }))}`, { accessToken }),
     updatePos: ({ accessToken, posId, payload, idempotencyKey }) => request(`/v2/pos/${encodeURIComponent(requiredText(posId, "pos_id", 80))}`, { method: "PATCH", accessToken, body: payload, idempotencyKey }),
+    deletePos: ({ accessToken, posId, idempotencyKey }) => request(`/v2/pos/${encodeURIComponent(requiredText(posId, "pos_id", 80))}`, { method: "DELETE", accessToken, idempotencyKey }),
     listTerminals: ({ accessToken, storeId, posId }) => {
       const search = new URLSearchParams({ limit: "50", offset: "0" });
       if (storeId) search.set("store_id", requiredText(storeId, "store_id", 80));
