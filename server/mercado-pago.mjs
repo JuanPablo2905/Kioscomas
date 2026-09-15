@@ -60,7 +60,15 @@ const providerDetailText = (detail = {}) => String(
 ).trim();
 
 const providerDetailEvidence = (error = {}) => (Array.isArray(error?.providerDetails) ? error.providerDetails : [])
-  .map((detail) => [detail?.code, detail?.field, detail?.property, providerDetailText(detail)].filter(Boolean).join(" "))
+  .map((detail) => [
+    detail?.code,
+    detail?.field,
+    detail?.property,
+    // Mercado Pago no siempre usa "field"/"property" para nombrar la propiedad
+    // inválida en errores property_value/property_type: a veces la manda en "data".
+    typeof detail?.data === "string" ? detail.data : null,
+    providerDetailText(detail),
+  ].filter(Boolean).join(" "))
   .filter(Boolean);
 
 export const normalizePaymentAmount = (value) => {
