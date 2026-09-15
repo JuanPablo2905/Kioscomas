@@ -2,7 +2,11 @@
 
 ## Estado de la implementación
 
-El código de Kiosco+ ya cubre el circuito de QR estático, QR dinámico y Mercado Pago Point. La conexión real permanece apagada hasta que se creen las aplicaciones en Mercado Pago, se carguen los secretos exclusivamente en Render y se haga una prueba con una cuenta vendedora de prueba.
+El código de Kiosco+ cubre el circuito de QR estático, QR dinámico y Mercado Pago Point. Al 15 de septiembre de 2026 el backend publicado está habilitado en **modo de prueba**, informa QR y Point preparados en `/v1/health` y una cuenta vendedora sandbox ya pudo autorizar Código QR. También se creó y reparó una sucursal/caja de prueba en modo integrado `pdv`.
+
+La versión 0.2.30 está desplegada pero todavía no debe considerarse validada de punta a punta ni pasar a producción: falta repetir la creación real del QR sandbox después de la última corrección. El intento anterior, realizado sobre 0.2.29, fue rechazado por Mercado Pago antes de entregar un ID de orden con el mensaje genérico `An error occurred when creating a Merchant Order`. 0.2.30 agregó un ítem resumen compatible, descartó IDs opcionales inválidos y conserva un diagnóstico seguro del proveedor. El procedimiento exacto para continuar está en `docs/TRASPASO_CLAUDE_CODE.md`.
+
+Que `/v1/health` muestre una solución como `ready` confirma que las variables necesarias están presentes; no demuestra por sí solo que la aplicación externa siga vigente, que el vendedor esté conectado o que un Point físico haya sido vinculado. Cada circuito requiere su prueba real.
 
 Mercado Pago requiere una aplicación diferente por cada solución: una para **Código QR** y otra para **Point**. Kiosco+ muestra ambas conexiones por separado y exige que el negocio autorice las dos con la misma cuenta vendedora. Cada access token y refresh token se cifra con AES-256-GCM en el servidor y nunca se envía al navegador, a la aplicación instalada ni al repositorio. Si Mercado Pago rota un refresh token, Kiosco+ persiste el nuevo antes de seguir; si una autorización vence o se revoca, la interfaz solicita reconectar sólo esa solución sin borrar sucursal, caja ni historial.
 
@@ -58,7 +62,7 @@ No copiar credenciales en GitHub, en un archivo enviado por chat ni en variables
 7. Cargar `KIOSCO_MERCADOPAGO_PLATFORM_ID`, `KIOSCO_MERCADOPAGO_INTEGRATOR_ID` o `KIOSCO_MERCADOPAGO_SPONSOR_ID` únicamente si Mercado Pago asignó esos valores a Kiosco+. No inventarlos ni usar el identificador de otra integración.
 8. Cuando estén guardadas las credenciales de las soluciones que se van a probar y la clave de cifrado, establecer `KIOSCO_MERCADOPAGO_BACKEND_ENABLED=1` y volver a desplegar el backend.
 9. Verificar `https://kiosco-plus-api.onrender.com/v1/health`: dentro de `paymentProviders.mercadoPago.solutions`, QR y Point deben informar `ready: true` y `webhookConfigured: true`. La respuesta sólo informa disponibilidad y no expone secretos.
-10. Desde Kiosco+, entrar como dueño a **Configuración > Funcionamiento > Mercado Pago**, conectar primero Código QR y luego Point usando la misma cuenta vendedora de prueba. Después, ejecutar el asistente de sucursal/caja QR.
+10. Desde Kiosco+, entrar como dueño a **Configuración > Funcionamiento > Mercado Pago**, conectar primero Código QR y luego Point usando la misma cuenta vendedora de prueba. Después, ejecutar el asistente de sucursal/caja QR. En el entorno actual Código QR ya fue conectado; no desconectarlo o reemplazarlo durante un diagnóstico salvo que el estado pida explícitamente reautorizar.
 
 Para Point, además hay que vincular físicamente el lector con la misma cuenta, sucursal y caja desde Mercado Pago. Después Kiosco+ podrá encontrarlo, pasarlo a modo PDV y seleccionarlo. Mercado Pago admite un Point integrado por caja; tras cambiar el modo, hay que reiniciar el lector antes de la primera prueba.
 

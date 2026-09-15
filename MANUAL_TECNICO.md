@@ -1,5 +1,7 @@
 # Registro de despliegue y nube — 31 de julio de 2026
 
+> **Documento histórico.** Este archivo conserva el estado de julio de 2026 y contiene pendientes, URLs y supuestos que ya fueron superados. Para continuar el proyecto desde la versión 0.2.30, leer primero `CLAUDE.md` y `docs/TRASPASO_CLAUDE_CODE.md`. Ante una contradicción prevalecen el código, las pruebas y esos documentos de continuidad.
+
 ## Enlaces activos
 
 - Aplicación pública: https://kiosco-plus.onrender.com

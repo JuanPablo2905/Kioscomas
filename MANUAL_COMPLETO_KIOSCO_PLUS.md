@@ -1,5 +1,7 @@
 # Manual completo de Kiosco+
 
+> **Manual general desactualizado respecto del desarrollo actual.** Sigue siendo útil para comprender los recorridos del producto, pero fue documentado en 0.2.3. El estado operativo, las decisiones recientes y los próximos pasos de 0.2.30 están en `CLAUDE.md`, `docs/TRASPASO_CLAUDE_CODE.md` y `docs/DECISIONES_DE_PRODUCTO_Y_TECNICAS.md`.
+
 **Versión documentada:** 0.2.3  
 **Última revisión:** 7 de septiembre de 2026  
 **Repositorio:** https://github.com/JuanPablo2905/Kioscomas  
