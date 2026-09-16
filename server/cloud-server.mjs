@@ -1091,6 +1091,12 @@ const appPasswordFields = (password) => {
   };
 };
 const sha256 = (value) => crypto.createHash("sha256").update(String(value || "")).digest("hex");
+// Cuentas recordadas con PIN: nunca se guarda la contraseña real, sólo esta
+// credencial aleatoria propia del dispositivo, hasheada igual que una
+// contraseña (appPasswordFields) y renovada en cada uso. Vive en db.users
+// (la misma fuente que emite las sesiones), no en el padrón de cuentas.
+const randomDeviceCredentialSecret = () => crypto.randomBytes(24).toString("base64url");
+const userForSession = (db, session) => session && Object.values(db.users || {}).find((item) => item.id === session.userId) || null;
 const passwordResetGenericMessage = "Si el correo corresponde a una cuenta, te enviaremos un enlace para crear una contraseña nueva.";
 const passwordResetIpAttempts = new Map();
 const passwordResetSubjectKey = ({ businessId, role, subjectId, username }) => [
@@ -1940,6 +1946,8 @@ const enforceSensitiveRequestLimit = (req, res) => {
   if (localMode) return true;
   const rules = {
     "POST /v1/auth/login": { maximum: 12, windowMs: 15 * 60 * 1000 },
+    "POST /v1/auth/device-credential/login": { maximum: 12, windowMs: 15 * 60 * 1000 },
+    "POST /v1/auth/device-credential": { maximum: 10, windowMs: 60 * 60 * 1000 },
     "POST /v1/auth/register": { maximum: 6, windowMs: 60 * 60 * 1000 },
     "POST /v1/auth/pair-device": { maximum: 8, windowMs: 15 * 60 * 1000 },
     "POST /v1/auth/bootstrap": { maximum: 4, windowMs: 60 * 60 * 1000 },
@@ -2732,6 +2740,50 @@ const handleRequest = async (req, res) => {
         account: accountForLogin(db, user),
       });
     }
+    if (req.method === "POST" && req.url === "/v1/auth/device-credential/login") {
+      const payload = await body(req);
+      const db = await readDb();
+      const deviceId = cleanActivationDeviceId(payload.deviceId);
+      const invalidCredentialMessage = "La credencial de este dispositivo ya no es válida. Iniciá sesión con tu contraseña.";
+      if (deviceId.length < 3) return send(res, 400, { error: "El identificador del dispositivo no es válido" });
+      if (db.devices?.[deviceId]?.revokedAt) return send(res, 403, { error: "Este dispositivo fue bloqueado por el administrador" });
+      const existingUser = Object.values(db.users || {}).find(
+        (item) => String(item?.username || "").trim().toLowerCase() === String(payload.username || "").trim().toLowerCase(),
+      );
+      const entry = existingUser?.deviceCredentials?.[deviceId];
+      const secretValid = entry && typeof payload.deviceCredential === "string"
+        && verifyAppPassword(payload.deviceCredential, { passwordHash: entry.passwordHash, passwordSalt: entry.passwordSalt });
+      if (!existingUser || !secretValid || existingUser.status !== "active") return send(res, 401, { error: invalidCredentialMessage });
+      if (!sessionSubjectIsActive(db, { userId: existingUser.id, businessId: existingUser.businessId, role: existingUser.role })) {
+        return send(res, 403, { error: "Esta cuenta fue bloqueada, eliminada o ya no pertenece al negocio" });
+      }
+      const activation = db.activations?.[deviceId];
+      if (requireDeviceActivation && (!activation || activation.revokedAt)) {
+        return send(res, 403, { error: "Este dispositivo todavía no fue autorizado. Ingresá una clave de activación antes de iniciar sesión." });
+      }
+      if (activation) activation.lastSeenAt = new Date().toISOString();
+      // Igual que el token de sesión, la credencial del dispositivo rota en
+      // cada uso: si alguien copiara el blob cifrado, dejaría de servir apenas
+      // el dueño real vuelva a entrar desde su equipo.
+      const nextSecret = randomDeviceCredentialSecret();
+      existingUser.deviceCredentials[deviceId] = { ...appPasswordFields(nextSecret), createdAt: entry.createdAt, updatedAt: new Date().toISOString() };
+      const accessToken = token();
+      const refreshToken = token();
+      const expiresAt = accessTokenExpiresAt();
+      db.sessions[accessTokenHash(accessToken)] = {
+        userId: existingUser.id, businessId: existingUser.businessId, deviceId, role: existingUser.role,
+        expiresAt, refreshExpiresAt: refreshTokenExpiresAt(),
+        refreshHash: crypto.createHash("sha256").update(refreshToken).digest("hex"), revokedAt: null,
+      };
+      db.devices[deviceId] = { tenantId: existingUser.businessId, userId: existingUser.id, lastSeenAt: new Date().toISOString(), revokedAt: null };
+      recordSecurityEvent(db, { userId: existingUser.id, role: existingUser.role }, existingUser.businessId, deviceId, { type: "device_credential_login", outcome: "accepted" });
+      await writeDb(db);
+      return send(res, 200, {
+        accessToken, refreshToken, expiresAt, deviceCredential: nextSecret,
+        user: { id: existingUser.id, name: existingUser.name, role: existingUser.role, businessId: existingUser.businessId },
+        account: accountForLogin(db, existingUser),
+      });
+    }
     if (req.method === "POST" && req.url === "/v1/auth/refresh") {
       const payload = await body(req);
       const db = await readDb();
@@ -2839,6 +2891,25 @@ const handleRequest = async (req, res) => {
         });
         await writeDb(db);
         return send(res, 200, { ok: true, account: accountForLogin(db, requestingUser) || nextAccount, teamRevision: nextAccount.teamRevision });
+      }
+      return send(res, 405, { error: "Método no permitido" });
+    }
+    if (req.url === "/v1/auth/device-credential") {
+      if (!session) return send(res, 401, { error: "Necesitás una sesión activa para recordar este dispositivo" });
+      const user = userForSession(db, session);
+      if (!user || user.businessId !== tenantId) return send(res, 403, { error: "No se pudo vincular la credencial con esta cuenta" });
+      if (req.method === "POST") {
+        const secret = randomDeviceCredentialSecret();
+        user.deviceCredentials = { ...(user.deviceCredentials || {}), [deviceId]: { ...appPasswordFields(secret), createdAt: new Date().toISOString() } };
+        recordSecurityEvent(db, session, tenantId, deviceId, { type: "device_credential_registered", outcome: "accepted" });
+        await writeDb(db);
+        return send(res, 201, { ok: true, username: user.username, deviceCredential: secret });
+      }
+      if (req.method === "DELETE") {
+        if (user.deviceCredentials) delete user.deviceCredentials[deviceId];
+        recordSecurityEvent(db, session, tenantId, deviceId, { type: "device_credential_revoked", outcome: "accepted" });
+        await writeDb(db);
+        return send(res, 200, { ok: true });
       }
       return send(res, 405, { error: "Método no permitido" });
     }
@@ -4064,6 +4135,11 @@ const handleRequest = async (req, res) => {
       db.devices[id].revokedAt = new Date().toISOString();
       for (const candidate of Object.values(db.sessions)) {
         if (candidate.deviceId === id && candidate.businessId === tenantId) candidate.revokedAt = new Date().toISOString();
+      }
+      // Un dispositivo desactivado tampoco puede seguir entrando con el PIN
+      // recordado: se borra su credencial de todos los usuarios del negocio.
+      for (const candidate of Object.values(db.users || {})) {
+        if (candidate.businessId === tenantId) delete candidate.deviceCredentials?.[id];
       }
       await writeDb(db);
       return send(res, 200, { ok: true });
