@@ -6,11 +6,11 @@
 
 **Rama:** `main`
 
-**Commit funcional:** `2d6c177` (sobre la base de `dfb8b90619bd8f5d40b2a0cc8a7bcb532532d080`, más dos commits del 15/09 de la tarde: captura de `detail.data` en errores de Mercado Pago, y `forcePosRecreate` en el repair de la caja QR)
+**Commit funcional:** `72c4bfc` (sobre la base de `dfb8b90619bd8f5d40b2a0cc8a7bcb532532d080`, más tres commits del 15-16/09: captura de `detail.data` en errores de Mercado Pago, `forcePosRecreate` en el repair de la caja QR, y el fix real: `platform_id=mp` en la URL de autorización OAuth)
 
 **Última etiqueta existente:** `v0.2.29`
 
-**Estado de 0.2.30:** subida a `main`, control de calidad aprobado y backend desplegado; sigue sin etiquetarse porque el diagnóstico avanzó mucho pero todavía no cierra (ver más abajo).
+**Estado de 0.2.30:** subida a `main`, control de calidad aprobado y backend desplegado. **La causa raíz del bug de QR dinámico quedó identificada y corregida (16/09/2026).** Falta re-conectar Código QR con el fix aplicado y confirmar en vivo que la orden se crea y acredita bien antes de etiquetar — ver sección 1.
 
 ## 0. Cambio de entorno (15/09/2026, sesión de la tarde)
 
@@ -21,7 +21,7 @@
 
 ## 1. Continuación inmediata: no perder este punto
 
-La tarea activa es terminar el diagnóstico de QR dinámico de Mercado Pago. **Hubo avance grande en esta sesión: se descartó el código y la caja como causa, y se aisló el problema a la cuenta vendedora sandbox conectada.** Ver "Qué se descubrió en la sesión del 15/09 (tarde)" más abajo antes de seguir.
+**La causa raíz del bug de QR dinámico se encontró y se corrigió el 16/09/2026.** No sigas leyendo esto como "diagnóstico abierto" — leé primero "Causa raíz encontrada y corregida" más abajo, y sólo hace falta confirmar la verificación final en vivo.
 
 ### Qué ocurrió antes de 0.2.30
 
@@ -61,14 +61,30 @@ Se descartaron, en orden, estas hipótesis:
 2. **Un bug de parseo en `providerDetailEvidence`** que no miraba `detail.data`. Se corrigió (commit `df2f059`), pasaron las 35 pruebas de `test:payments`, se desplegó y se repitió la prueba: el mensaje siguió exactamente igual. Confirma que Mercado Pago realmente no manda el nombre del campo en este caso — no era un bug de Kiosco+.
 3. **La caja QR conectada (`CAJAE6237BCF51ACD9CA`) estaba rota.** Se probó reproduciendo el mismo payload que genera `buildQrOrderPayload` directamente contra la API de Mercado Pago (fuera de Kiosco+), primero contra una tienda/caja nueva creada bajo la cuenta dueña de la aplicación "Kioscomas QR" (un vendedor distinto del conectado): **la orden se creó perfecta, con QR incluido.** Eso probó que el payload/código está bien. Después se agregó al backend la capacidad de borrar y recrear la caja QR (`client.deletePos` + flag `forcePosRecreate` en `reconcileMercadoPagoQrSetup`, sólo activable por el Dueño vía `repairOnly && forcePosRecreate` en el body de `/v1/payments/mercado-pago/qr/setup`; commit `2d6c177`), se ejecutó contra la cuenta real conectada (nueva caja: `posId 138202645`), y **el error volvió a aparecer idéntico con la caja completamente nueva.** Descartado: no es la caja.
 
-**Conclusión actual: el problema está en la cuenta vendedora sandbox conectada (`TESTUSER7499875603086904321`, sellerId `3688279868`), no en el código de Kiosco+ ni en la caja QR.** Algo de esa cuenta de prueba específica está mal configurado o roto del lado de Mercado Pago — posiblemente algo a nivel de cuenta (categoría fiscal, capacidad QR no activada del todo, etc.), no algo que Kiosco+ pueda arreglar desde su lado.
+En ese momento la conclusión de trabajo era "el problema está en la cuenta vendedora sandbox conectada" — **esa conclusión quedó descartada** por lo que sigue.
+
+### Causa raíz encontrada y corregida (16/09/2026)
+
+Se conectó Código QR con la **cuenta real** de Juan (no sandbox) para descartar de una vez la variable "cuenta de prueba". Con la cuenta real conectada por OAuth, **el error `property_value` volvió a aparecer, idéntico** (nuevo request ID `193d2186-ed55-43aa-a5ad-c16bfe424b8e`). Eso tiró abajo la conclusión anterior: no era la cuenta ni sandbox-vs-producción.
+
+El dato clave: el mismo payload exacto, con la **misma cuenta**,
+- usando el **Access Token fijo de producción** del panel de la app → funciona perfecto (crea la orden, devuelve QR real).
+- usando el **Access Token obtenido por el flujo OAuth `authorization_code`** (como hace Kiosco+ al conectar un vendedor) → falla siempre con `property_value`.
+
+Eso aisló el problema al token OAuth en sí, no a la cuenta ni al payload. Se le preguntó directamente al asistente de soporte de Mercado Pago (`developers/panel/app/.../metrics`, widget "Asistente"), y confirmó: **la URL de autorización (`auth.mercadopago.com/authorization`) requiere el parámetro `platform_id=mp`**. Sin él, el token resultante queda limitado y no puede operar correctamente con funcionalidades de MP In-store/QR, aunque la cuenta conectada sea válida. El asistente también aclaró explícitamente que **no** hay que agregar un parámetro `scope` — no está soportado en este flujo y sería un camino equivocado.
+
+`buildMercadoPagoAuthorizationUrl` en `server/mercado-pago.mjs` nunca mandaba `platform_id=mp` (no confundir con `integration_data.platform_id`, que es un concepto distinto — atribución opcional de partner, ya cubierta por `integrationData()` en el mismo archivo). Se agregó en el commit `72c4bfc`, con las 35+23+19 pruebas relevantes en verde y build limpio.
+
+**Importante:** las cuentas ya conectadas antes de este fix (incluida la real que se conectó durante el diagnóstico) tienen un token obtenido *sin* `platform_id=mp` — van a seguir fallando hasta que se desconecten y se vuelvan a conectar para obtener un token nuevo correctamente habilitado.
 
 ### Próxima acción exacta
 
-1. **Autorizar el plugin oficial `mercadopago@claude-plugins-official`** (ver sección 0) corriendo `/mp-connect` o el flujo equivalente — puede traer una herramienta de diagnóstico a nivel de cuenta que el conector actual no tiene, o el agente `mercadopago:mp-integration-expert` puede aportar una mirada nueva sobre por qué esta cuenta sandbox puntual falla.
-2. Si eso no destraba nada, **armar un caso para soporte de Mercado Pago** con toda la evidencia ya junta: los cuatro request ID de arriba, la comparación cruzada (funciona con cuenta/caja nueva propia, falla siempre con la cuenta vendedora conectada incluso con caja nueva), el endpoint (`POST /v1/orders`, `type: qr`, `config.qr.mode: dynamic`), y la app/aplicación (`Kioscomas QR`, AppID `7595655096885201`). No enviar credenciales ni access tokens.
-3. Alternativa si el soporte tarda: conectar Código QR con un vendedor sandbox **nuevo** (`create_test_user` del conector de Mercado Pago) en vez de insistir con `TESTUSER7499875603086904321`. Ojo: la documentación pide no desconectar/reemplazar la conexión activa sin necesidad — esto ya cuenta como necesidad justificada dado lo encontrado, pero conviene confirmarlo con Juan antes de tocar la conexión OAuth real (a diferencia de la caja, que ya se recreó con su autorización explícita).
-4. Sea cual sea el resultado, no tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR.
+1. Confirmar que el deploy del commit `72c4bfc` está live en `/v1/health` (`revision`).
+2. Desde Configuración → Mercado Pago del negocio de prueba, **desconectar Código QR** y **volver a conectarlo** (ahora la URL de autorización va a incluir `platform_id=mp` automáticamente).
+3. Generar un QR dinámico real desde Ventas/Caja y confirmar que **ahora sí se crea la orden y aparece el QR**, sin `property_value`.
+4. Sólo si ese punto 3 funciona, recién ahí se puede considerar cerrado el bug y evaluar etiquetar 0.2.30 (ver criterio abajo).
+5. Si por algún motivo sigue fallando incluso con `platform_id=mp`, ahí sí vale la pena escalar a soporte humano de Mercado Pago con toda la evidencia (ver historial de request ID arriba) — pero después de este fix es lo último que quedaría por intentar del lado de Kiosco+.
+6. No tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR. Si Point comparte la misma función `buildMercadoPagoAuthorizationUrl` (que sí la comparte), el mismo fix debería aplicarle, pero conviene verificarlo por separado antes de darlo por bueno.
 
 ### Criterio para cerrar 0.2.30
 
