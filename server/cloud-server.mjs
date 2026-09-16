@@ -3134,21 +3134,6 @@ const handleRequest = async (req, res) => {
         }
       }
 
-      // Diagnóstico temporal para el ticket WCS-50768 de soporte de Mercado Pago:
-      // sólo expone el prefijo del access token OAuth (nunca el token completo)
-      // para que el dueño pueda confirmar que las credenciales son de producción.
-      // Quitar esta ruta cuando el ticket se resuelva.
-      if (req.method === "GET" && req.url === "/v1/payments/mercado-pago/qr/token-prefix-diagnostic") {
-        if (!ownerRequired()) return send(res, 403, { error: "Sólo el dueño puede ver este diagnóstico" });
-        try {
-          const current = integration();
-          const accessToken = await mercadoPagoAccessToken(db, current, "qr");
-          return send(res, 200, { prefix: String(accessToken || "").slice(0, 12) });
-        } catch (error) {
-          return send(res, 400, { error: paymentFailure(error).message });
-        }
-      }
-
       if (req.method === "GET" && req.url === "/v1/payments/mercado-pago/terminals") {
         if (!ownerRequired()) return send(res, 403, { error: "Sólo el dueño puede configurar terminales Point" });
         const current = integration();
