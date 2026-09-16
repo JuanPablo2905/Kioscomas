@@ -192,7 +192,12 @@ export const registerBiometric = async ({ id, rpName = "Kiosco+", rpId, userLabe
         user: { id: userId, name: userLabel, displayName: userLabel },
         pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
         authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
-        extensions: { prf: {} },
+        // Se evalúa el PRF ya en el propio create(), no en un get() encadenado
+        // después: un segundo pedido de verificación biométrica disparado sin
+        // una interacción táctil nueva quedaba sin resolver en Safari/iOS, sin
+        // mostrar el Face ID ni un error -- el botón se quedaba "Configurando…"
+        // para siempre.
+        extensions: { prf: { eval: { first: prfSalt } } },
         timeout: 60000,
       },
     });
@@ -200,19 +205,32 @@ export const registerBiometric = async ({ id, rpName = "Kiosco+", rpId, userLabe
     if (error?.name === "NotAllowedError") throw new Error("Se canceló o no se pudo verificar la huella/Face ID.");
     throw new Error(`No se pudo configurar la biometría en este dispositivo (${error?.name || error?.message || "error desconocido"}).`);
   }
-  if (!credential?.getClientExtensionResults?.().prf?.enabled) {
+  const prfResult = credential?.getClientExtensionResults?.().prf;
+  if (!prfResult?.enabled) {
     throw new Error("Este dispositivo no soporta desbloqueo biométrico del vault todavía. Podés seguir usando el PIN.");
   }
-  const assertion = await navigator.credentials.get({
-    publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)), rpId,
-      allowCredentials: [{ id: credential.rawId, type: "public-key" }],
-      userVerification: "required",
-      extensions: { prf: { eval: { first: prfSalt } } },
-    },
-  });
-  const material = new Uint8Array(assertion.getClientExtensionResults().prf.results.first);
-  const box = await encryptWith(material, { deviceCredential });
+  // Algunos navegadores confirman soporte ("enabled") pero recién entregan el
+  // resultado evaluado en una verificación posterior. Si hace falta ese paso
+  // extra, ahora queda con su propio manejo de error en vez de quedar colgado.
+  let material = prfResult?.results?.first;
+  if (!material) {
+    let assertion;
+    try {
+      assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)), rpId,
+          allowCredentials: [{ id: credential.rawId, type: "public-key" }],
+          userVerification: "required",
+          extensions: { prf: { eval: { first: prfSalt } } },
+        },
+      });
+    } catch (error) {
+      throw new Error(`No se pudo terminar de configurar la biometría (${error?.name || error?.message || "error desconocido"}).`);
+    }
+    material = assertion.getClientExtensionResults().prf?.results?.first;
+  }
+  if (!material) throw new Error("Este dispositivo no soporta desbloqueo biométrico del vault todavía. Podés seguir usando el PIN.");
+  const box = await encryptWith(new Uint8Array(material), { deviceCredential });
   applyEntryUpdate(id, (current) => current && {
     ...current,
     biometric: { ...box, credentialId: toBase64(credential.rawId), prfSalt: toBase64(prfSalt) },
