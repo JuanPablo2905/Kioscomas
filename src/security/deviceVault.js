@@ -86,6 +86,22 @@ export const dismissRememberPrompt = (apiUrl, deviceId, username) => {
   try { localStorage.setItem(dismissedKey(apiUrl, deviceId, username), "1"); } catch { /* almacenamiento no disponible */ }
 };
 
+// Acceso directo sin PIN ni credencial cifrada: sólo recuerda a quién elegir
+// en el selector, pero exige la contraseña real igual al entrar. Se usa para
+// cuentas más sensibles (el Administrador de la app) donde no conviene que
+// un PIN corto alcance para entrar.
+export const rememberAccountShortcut = ({ apiUrl, deviceId, username, businessId, nombreNegocio, nombre, rol }) => {
+  if (!apiUrl || !deviceId || !username) return;
+  const id = accountId(apiUrl, deviceId, username);
+  const entry = {
+    id, apiUrl, deviceId, username, businessId: String(businessId || ""),
+    nombreNegocio: String(nombreNegocio || ""), nombre: String(nombre || ""), rol: String(rol || ""),
+    rememberedAt: new Date().toISOString(), lastUsedAt: null, requiresPassword: true,
+  };
+  writeAll([...readAll().filter((item) => item.id !== id), entry]);
+  return toPublicEntry(entry);
+};
+
 export const rememberAccount = async ({ apiUrl, deviceId, username, deviceCredential, pin, businessId, nombreNegocio, nombre, rol }) => {
   if (!pinPattern.test(String(pin || ""))) throw new Error("El PIN debe tener entre 4 y 8 números.");
   if (!apiUrl || !deviceId || !username || !deviceCredential) throw new Error("Faltan datos para recordar esta cuenta.");
@@ -164,19 +180,26 @@ export const isBiometricSupported = () => typeof window !== "undefined"
 
 export const registerBiometric = async ({ id, rpName = "Kiosco+", rpId, userLabel, deviceCredential, pin }) => {
   if (!isBiometricSupported()) throw new Error("Este navegador o dispositivo no permite usar huella/Face ID todavía.");
+  if (!rpId) throw new Error("No se pudo determinar el sitio para configurar la biometría. Probá recargar la página.");
   const prfSalt = crypto.getRandomValues(new Uint8Array(32));
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const userId = crypto.getRandomValues(new Uint8Array(16));
-  const credential = await navigator.credentials.create({
-    publicKey: {
-      challenge, rp: { name: rpName, id: rpId },
-      user: { id: userId, name: userLabel, displayName: userLabel },
-      pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-      authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
-      extensions: { prf: {} },
-      timeout: 60000,
-    },
-  });
+  let credential;
+  try {
+    credential = await navigator.credentials.create({
+      publicKey: {
+        challenge, rp: { name: rpName, id: rpId },
+        user: { id: userId, name: userLabel, displayName: userLabel },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "preferred" },
+        extensions: { prf: {} },
+        timeout: 60000,
+      },
+    });
+  } catch (error) {
+    if (error?.name === "NotAllowedError") throw new Error("Se canceló o no se pudo verificar la huella/Face ID.");
+    throw new Error(`No se pudo configurar la biometría en este dispositivo (${error?.name || error?.message || "error desconocido"}).`);
+  }
   if (!credential?.getClientExtensionResults?.().prf?.enabled) {
     throw new Error("Este dispositivo no soporta desbloqueo biométrico del vault todavía. Podés seguir usando el PIN.");
   }

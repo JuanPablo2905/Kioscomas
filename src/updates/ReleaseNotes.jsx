@@ -15,6 +15,12 @@ const formatDate = (value) => {
 export const RELEASE_NOTES = releases;
 export const CURRENT_RELEASE = RELEASE_NOTES.find((release) => release.version === CURRENT_VERSION) || null;
 
+function ReleaseHighlights({ release }) {
+  return <ul className="grid gap-2">
+    {release.highlights.map((item) => <li key={item} className="flex items-start gap-2 text-sm leading-6 text-gray-700"><span className="mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Check size={10} strokeWidth={3}/></span><span>{item}</span></li>)}
+  </ul>;
+}
+
 function ReleaseContent({ release, compact = false }) {
   return <div className={compact ? "grid gap-3" : "grid gap-5"}>
     {release.sections.map((section) => <section key={section.title}>
@@ -23,6 +29,19 @@ function ReleaseContent({ release, compact = false }) {
         {section.items.map((item) => <li key={item} className="flex items-start gap-2 text-sm leading-6 text-gray-600"><span className="mt-1 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Check size={10} strokeWidth={3}/></span><span>{item}</span></li>)}
       </ul>
     </section>)}
+  </div>;
+}
+
+// Primero lo simple (qué cambia para quien usa el kiosco), los detalles
+// técnicos quedan un clic más adentro para quien los necesita.
+function ReleaseBody({ release, compact = false }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const hasHighlights = Array.isArray(release.highlights) && release.highlights.length > 0;
+  if (!hasHighlights) return <ReleaseContent release={release} compact={compact}/>;
+  return <div className={compact ? "grid gap-3" : "grid gap-4"}>
+    <ReleaseHighlights release={release}/>
+    {showDetails ? <div className="border-t pt-4"><ReleaseContent release={release} compact={compact}/></div>
+      : <button type="button" onClick={() => setShowDetails(true)} className="flex min-h-9 items-center gap-1 self-start text-xs font-bold text-[#1C4A44] underline underline-offset-2">Ver detalles<ChevronDown size={14}/></button>}
   </div>;
 }
 
@@ -55,7 +74,7 @@ export function ReleaseNotesAnnouncement({ disabled = false }) {
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
         <p className="mb-5 text-sm leading-6 text-gray-700">{CURRENT_RELEASE.summary}</p>
-        <ReleaseContent release={CURRENT_RELEASE}/>
+        <ReleaseBody release={CURRENT_RELEASE}/>
       </div>
       <footer className="shrink-0 border-t bg-gray-50 p-4 sm:px-7"><button type="button" onClick={dismiss} className="min-h-12 w-full rounded-xl bg-[#1C4A44] px-5 text-sm font-black text-white">Entendido, empezar a usarla</button></footer>
     </div>
@@ -69,7 +88,7 @@ export function ReleaseNotesHistory() {
     <div className="mt-4 grid gap-3">
       {RELEASE_NOTES.map((release, index) => <details key={release.version} open={index === 0} className="group overflow-hidden rounded-xl border bg-gray-50">
         <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden"><span className="min-w-0"><b className="block text-sm">Versión {release.version} · {release.title}</b><small className="text-xs text-gray-500">{formatDate(release.date)}</small></span><ChevronDown className="shrink-0 transition-transform group-open:rotate-180" size={17}/></summary>
-        <div className="border-t bg-white px-4 py-4"><p className="mb-4 text-sm leading-6 text-gray-600">{release.summary}</p><ReleaseContent release={release} compact/></div>
+        <div className="border-t bg-white px-4 py-4"><p className="mb-4 text-sm leading-6 text-gray-600">{release.summary}</p><ReleaseBody release={release} compact/></div>
       </details>)}
     </div>
   </section>;

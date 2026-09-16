@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { repository } from "../cloud/repository";
 import { loadCloudConfig } from "../cloud/config";
 import { cloudFetch, cloudSession, ensureLocalCloudSession, loginCloud, loginCloudWithDeviceCredential, logoutCloud, pairCloudDevice, registerCloudAccount, registerDeviceCredential, requestCloudPasswordReset, resetCloudPassword } from "../cloud/cloudAuth";
-import { dismissRememberPrompt, listRememberedAccounts, shouldOfferToRemember } from "../security/deviceVault";
+import { dismissRememberPrompt, listRememberedAccounts, rememberAccountShortcut, shouldOfferToRemember } from "../security/deviceVault";
 import { RememberedAccountsPicker } from "../features/autenticacion/RememberedAccountsPicker";
 import { RememberDevicePrompt } from "../features/autenticacion/RememberDevicePrompt";
 import { clearLoginFailures, createSession, loginGuard, registerLoginFailure, secureAccounts, secureSubject, validSession, verifyPassword } from "../security/auth";
@@ -1170,17 +1170,33 @@ export default function KioscoApp() {
     return remoteSession.deviceCredential;
   };
 
+  // El id de "relying party" de WebAuthn tiene que ser el dominio de esta
+  // página (la que el navegador tiene abierta), nunca el del servidor de la
+  // API -- si no coinciden, el navegador rechaza el pedido sin avisar nada.
+  const webAuthnRpId = () => globalThis.location?.hostname || undefined;
+
   // Después de un login real con contraseña, ofrece (una vez, y no de nuevo
-  // si ya se descartó) recordar la cuenta con PIN en este dispositivo.
-  const offerRememberDeviceIfEligible = (username, { tenantId, nombre, nombreNegocio, rol }) => {
+  // si ya se descartó) recordar la cuenta con PIN en este dispositivo. Para
+  // el Administrador de la app, en cambio, sólo se guarda un acceso directo
+  // que en el selector va a pedir la contraseña real igual -- no un PIN --
+  // porque esa cuenta puede ver y administrar todos los negocios.
+  const offerRememberDeviceIfEligible = (username, { tenantId, nombre, nombreNegocio, rol, superAdmin }) => {
     const cloudConfig = loadCloudConfig();
     if (!cloudConfig.enabled || !cloudConfig.apiUrl) return;
+    if (superAdmin) {
+      rememberAccountShortcut({ apiUrl: cloudConfig.apiUrl, deviceId: cloudConfig.deviceId, username, businessId: tenantId, nombre, nombreNegocio, rol });
+      return;
+    }
     if (!shouldOfferToRemember(cloudConfig.apiUrl, cloudConfig.deviceId, username)) return;
     setRememberPrompt({
       apiUrl: cloudConfig.apiUrl, deviceId: cloudConfig.deviceId, username, businessId: tenantId,
-      nombre, nombreNegocio, rol, rpId: (() => { try { return new URL(cloudConfig.apiUrl).hostname; } catch { return undefined; } })(),
+      nombre, nombreNegocio, rol, rpId: webAuthnRpId(),
     });
   };
+
+  // Acceso guardado sólo para elegir el perfil más rápido; el selector de
+  // cuentas va a pedir la contraseña real de todas formas para estas.
+  const handlePasswordShortcutLogin = (entry, password) => handleLogin({ usuario: entry.username, password });
 
   const handleLogin = async ({ usuario, password }) => {
     const normalizedUser = String(usuario || "").trim();
@@ -1233,7 +1249,7 @@ export default function KioscoApp() {
       setSessionExpiresAt(trial.active && new Date(trial.expiresAt) < new Date(session.expiresAt) ? trial.expiresAt : session.expiresAt);
       setAuthSecurity((prev) => clearLoginFailures(prev, normalizedUser));
       setDatos((prev) => ({ ...prev, [activeAccount.id]: { ...prev[activeAccount.id], auditoria: [...(prev[activeAccount.id]?.auditoria || []), { id: crearIdOperacion("auditoria-login"), fecha: new Date().toISOString(), tenantId: String(activeAccount.id), usuario: activeAccount.nombre, usuarioId: identity.usuarioId, rol: identity.rol, origen: activeAccount.superAdmin ? "administracion_app" : "dueno", seccion: "seguridad", accion: "inicio_sesion", detalle: "Inicio de sesión", resultado: "exitoso" }] } }));
-      if (!activeAccount.superAdmin) offerRememberDeviceIfEligible(normalizedUser, { ...identity, nombreNegocio: activeAccount.nombreNegocio });
+      offerRememberDeviceIfEligible(normalizedUser, { ...identity, nombreNegocio: activeAccount.nombreNegocio });
       return;
     }
 
@@ -1335,7 +1351,7 @@ export default function KioscoApp() {
         const access = trialAccessStatus(remoteAccount);
         setSessionExpiresAt(access.active && new Date(access.expiresAt) < new Date(session.expiresAt) ? access.expiresAt : session.expiresAt);
         setAuthSecurity((previous) => clearLoginFailures(previous, normalizedUser));
-        if (!remoteAccount.superAdmin) offerRememberDeviceIfEligible(normalizedUser, { ...identity, nombreNegocio: remoteAccount.nombreNegocio });
+        offerRememberDeviceIfEligible(normalizedUser, { ...identity, nombreNegocio: remoteAccount.nombreNegocio });
         return;
       } catch (error) {
         setAuthSecurity((previous) => registerLoginFailure(previous, normalizedUser));
@@ -1551,7 +1567,10 @@ export default function KioscoApp() {
         <RememberedAccountsPicker
           apiUrl={cloudConfig.apiUrl}
           deviceId={cloudConfig.deviceId}
+          rpId={webAuthnRpId()}
           onDeviceCredentialLogin={handleDeviceCredentialLogin}
+          onPasswordLogin={handlePasswordShortcutLogin}
+          passwordError={loginError}
           onUseAnotherAccount={() => setUseAnotherAccount(true)}
         />
       );

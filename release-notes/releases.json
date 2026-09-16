@@ -4,6 +4,11 @@
     "date": "2026-09-16",
     "title": "Cuentas recordadas con PIN, ubicación oficial para el QR y un servidor más liviano",
     "summary": "El servidor deja de acumular versiones viejas que lo hacían quedarse sin memoria, la dirección del local para Mercado Pago ahora se elige de un catálogo oficial de provincias y ciudades, y se puede entrar con un PIN corto en vez de la contraseña en cada dispositivo.",
+    "highlights": [
+      "Podés entrar con un PIN corto en este dispositivo en vez de escribir usuario y contraseña cada vez, con la opción de usar huella o Face ID.",
+      "Al conectar el cobro por QR, ahora elegís tu provincia y tu ciudad de una lista en vez de escribirlas a mano.",
+      "Mejoras de sistema: el servidor quedó más liviano y estable."
+    ],
     "sections": [
       {
         "title": "Detalle técnico",

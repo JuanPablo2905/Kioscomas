@@ -44,9 +44,12 @@ export function RememberDevicePrompt({ context, registerCredential, onSkip, onSa
     setError("");
     try {
       await registerBiometric({ id: remembered.id, rpId: context.rpId, userLabel: context.username, deviceCredential: pendingSecret });
-    } catch { /* la biometría es opcional; seguir sin ella no es un error */ }
-    setWorking(false);
-    setStep("done");
+      setStep("done");
+    } catch (biometricError) {
+      setError(biometricError?.message || "No se pudo configurar la biometría.");
+    } finally {
+      setWorking(false);
+    }
   };
 
   if (step === "done") return null;
