@@ -126,6 +126,26 @@ Sólo etiquetar 0.2.30 si:
 
 Si 0.2.30 vuelve a fallar y necesita cambios de código, comprobar primero con Juan si el número ya fue publicado. Si ya fue publicado, el arreglo pertenece a 0.2.31. Nunca sobrescribir silenciosamente una versión cerrada.
 
+## 1.5. Desconexiones intermitentes del servidor — causa encontrada (16/09/2026)
+
+Juan reportó que el backend de Render "pega unas desconexiones a veces". Se investigó con métricas y logs de Render y con una consulta de sólo lectura a Supabase.
+
+**No es un problema de red ni de cold start.** El plan del servicio `kiosco-plus-api` es `starter`, con **límite de memoria de 512 MB** por instancia (`memory_limit` confirmado vía métricas: `536870900` bytes). El 15/09/2026 a las 21:08 UTC, memoria y CPU subieron de golpe: de ~220 MB estables a 389 MB en apenas 4 minutos, con CPU saltando de ~0.3% a ~26%. A las 21:12:04 UTC el proceso murió con:
+
+```
+FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+```
+
+Render reinició la instancia automáticamente (`Instance ... restarted`), y volvió a crashear casi de inmediato con el mismo error. Esa ventana coincide con una sesión de pruebas intensas contra Mercado Pago (muchos pedidos seguidos al backend). Las métricas de `http_request_count` confirman picos de `502`/`499` exactamente en ese horario — eso es lo que Juan percibió como "desconexión".
+
+**Causa estructural probable:** `readDb()`/`writeDb()` en `server/cloud-server.mjs` cargan y vuelven a escribir **la base completa de todos los negocios juntos** en memoria en cada pedido que necesita leer o mutar algo — no sólo los datos del negocio que hizo el pedido. Esto ya está documentado como limitación conocida en la sección "Disciplina de cambios" de `CLAUDE.md` ("las mutaciones se serializan dentro de una única instancia"), pero no se había medido el costo real en memoria. Se confirmó por consulta de sólo lectura a Supabase (tabla `kiosco_private.cloud_records_v2`): 28 MB totales, 2411 filas — el dato en sí es chico, pero varios pedidos simultáneos cargando su propia copia completa al mismo tiempo pueden sumar más de lo que entra en 512 MB, sobre todo con `scope = "change"` (bitácora de sincronización): 836 filas, 22 MB, una fila de hasta 470 KB.
+
+### Próximo paso exacto
+
+1. Corto plazo, sin riesgo (recomendado): subir el plan de Render de `starter` a `standard` (más memoria) como colchón mientras se diseña el arreglo real. Requiere aprobación de Juan porque tiene costo — no se hizo todavía.
+2. Mediano plazo: evitar que cada pedido cargue la base entera. Alternativas a evaluar: (a) que `readDb`/`writeDb` trabajen sólo con los registros del `tenantId` relevante en vez de todo el dataset, (b) limitar cuántos pedidos concurrentes pueden ejecutar un ciclo de lectura/escritura completo a la vez, (c) revisar si la bitácora `db.changes` (`scope = "change"`) puede acotarse más agresivamente que el límite actual de 10.000 entradas (`compactChangeLog` en `cloud-server.mjs`).
+3. Mientras tanto, seguir atento: si vuelve a ocurrir, confirmar que coincide con memoria alta vía `get_metrics` (Render MCP) antes de asumir que es lo mismo.
+
 ## 2. Qué es Kiosco+
 
 Kiosco+ es una aplicación de gestión para kioscos, almacenes, despensas, minimercados y comercios pequeños de Argentina. Está diseñada para una persona que administra el negocio y para equipos chicos con permisos diferenciados.
