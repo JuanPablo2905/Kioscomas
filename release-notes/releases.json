@@ -1,5 +1,40 @@
 [
   {
+    "version": "0.2.31",
+    "date": "2026-09-16",
+    "title": "Cuentas recordadas con PIN, ubicación oficial para el QR y un servidor más liviano",
+    "summary": "El servidor deja de acumular versiones viejas que lo hacían quedarse sin memoria, la dirección del local para Mercado Pago ahora se elige de un catálogo oficial de provincias y ciudades, y se puede entrar con un PIN corto en vez de la contraseña en cada dispositivo.",
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "El registro de sincronización guardaba todas las versiones históricas de ciertas preferencias (por ejemplo, al cambiar la apariencia con una imagen del negocio) en vez de sólo la vigente. Eso hacía crecer la memoria del servidor en cada pedido hasta provocar reinicios inesperados; ahora se conserva solamente la última versión de cada clave, igual que ya ocurría con el padrón de cuentas.",
+          "El alta de la caja QR de Mercado Pago reemplaza los campos de texto libre de ciudad y provincia por un selector en cascada contra el catálogo oficial de Argentina (Georef), cacheado en el servidor. Si el catálogo no responde, la app permite completar el dato a mano en vez de bloquear el alta.",
+          "Nueva credencial de dispositivo, independiente de la contraseña: al iniciar sesión se puede recordar la cuenta en ese equipo. La credencial se cifra localmente con una clave derivada de un PIN (PBKDF2 + AES-GCM) y se renueva en el servidor en cada uso, igual que el token de sesión.",
+          "Cinco PIN incorrectos borran la cuenta recordada de ese dispositivo en vez de dejarla bloqueada esperando; hay que iniciar sesión de nuevo con la contraseña real.",
+          "Desactivar un dispositivo desde Administración también invalida cualquier PIN recordado en él.",
+          "Capa opcional de huella dactilar, Face ID o Windows Hello (WebAuthn) para desbloquear el mismo PIN sin escribirlo, disponible sólo en los navegadores y equipos que lo permiten."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "El servidor se estaba quedando sin memoria de a ratos y por eso a veces daba error como si se hubiera cortado la conexión. Ya está arreglado.",
+          "Al conectar el cobro por QR, ahora elegís tu provincia y tu ciudad de una lista en vez de escribirlas, para que Mercado Pago no rechace la dirección por un error de tipeo.",
+          "En la caja podés entrar con un PIN corto en vez de escribir usuario y contraseña cada vez. Nunca guardamos tu contraseña real, y podés sacar esa cuenta del dispositivo cuando quieras."
+        ]
+      },
+      {
+        "title": "Comprobaciones",
+        "items": [
+          "Se agregaron pruebas para el catálogo de provincias y ciudades, para el alta y la renovación de la credencial de dispositivo en el servidor, y para la bóveda cifrada del PIN en el navegador.",
+          "Se verificó a mano, paso a paso, en un servidor de prueba: registrar una cuenta, recordarla con PIN, cerrar sesión, entrar de nuevo sólo con el PIN, y olvidar la cuenta.",
+          "La huella/Face ID/Windows Hello no se pudo probar con un sensor real durante el desarrollo; conviene confirmarla en un equipo físico antes de anunciarla."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.30",
     "date": "2026-09-15",
     "title": "QR dinámico compatible y con diagnóstico real",
