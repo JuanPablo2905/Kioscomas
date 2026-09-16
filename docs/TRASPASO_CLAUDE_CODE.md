@@ -140,11 +140,19 @@ Render reinició la instancia automáticamente (`Instance ... restarted`), y vol
 
 **Causa estructural probable:** `readDb()`/`writeDb()` en `server/cloud-server.mjs` cargan y vuelven a escribir **la base completa de todos los negocios juntos** en memoria en cada pedido que necesita leer o mutar algo — no sólo los datos del negocio que hizo el pedido. Esto ya está documentado como limitación conocida en la sección "Disciplina de cambios" de `CLAUDE.md` ("las mutaciones se serializan dentro de una única instancia"), pero no se había medido el costo real en memoria. Se confirmó por consulta de sólo lectura a Supabase (tabla `kiosco_private.cloud_records_v2`): 28 MB totales, 2411 filas — el dato en sí es chico, pero varios pedidos simultáneos cargando su propia copia completa al mismo tiempo pueden sumar más de lo que entra en 512 MB, sobre todo con `scope = "change"` (bitácora de sincronización): 836 filas, 22 MB, una fila de hasta 470 KB.
 
-### Próximo paso exacto
+### Arreglado y verificado en producción (16/09/2026)
 
-1. Corto plazo, sin riesgo (recomendado): subir el plan de Render de `starter` a `standard` (más memoria) como colchón mientras se diseña el arreglo real. Requiere aprobación de Juan porque tiene costo — no se hizo todavía.
-2. Mediano plazo: evitar que cada pedido cargue la base entera. Alternativas a evaluar: (a) que `readDb`/`writeDb` trabajen sólo con los registros del `tenantId` relevante en vez de todo el dataset, (b) limitar cuántos pedidos concurrentes pueden ejecutar un ciclo de lectura/escritura completo a la vez, (c) revisar si la bitácora `db.changes` (`scope = "change"`) puede acotarse más agresivamente que el límite actual de 10.000 entradas (`compactChangeLog` en `cloud-server.mjs`).
-3. Mientras tanto, seguir atento: si vuelve a ocurrir, confirmar que coincide con memoria alta vía `get_metrics` (Render MCP) antes de asumir que es lo mismo.
+Se confirmaron al menos **tres** episodios del mismo crash (`FATAL ERROR: Reached heap limit ... heap out of memory` seguido de reinicio automático de la instancia): 14/09 23:43, 15/09 02:43 y 15/09 21:12 (hora Argentina) — un patrón recurrente, no un evento aislado.
+
+Se identificó la causa exacta con una consulta de sólo lectura a Supabase: las operaciones de sincronización `type: "set"` (ej. `userPreferences`, que en algún momento llegó a pesar ~470 KB por fila, probablemente por incluir la imagen del negocio) reemplazan por completo el valor de una clave, pero `db.changes` guardaba **todas** las versiones históricas en vez de sólo la última — a diferencia de `system_set`/`cuentas`, que ya tenía esa deduplicación. Sólo en el negocio Hidraulic shop se habían acumulado 195 copias de `userPreferences` (12 MB de los 22 MB totales del log de cambios), cargado entero en memoria en cada pedido al servidor vía `readDb()`.
+
+**Fix (commit `b1bd7df`):** se generalizó `compactChangeLog()` en `server/cloud-server.mjs` para deduplicar también `type: "set"` por `(tenantId, key)`, igual que ya hacía con `cuentas` — un cliente que se pone al día sólo necesita la versión vigente de una clave (`isRedundantBootstrapOperation` en `src/cloud/syncEngine.js` ya trata `"set"` como reemplazo completo, así que esto no cambia el comportamiento de sincronización). También se aplicó la compactación dentro de `readDb()`, no sólo al recibir un cambio nuevo, para liberar de inmediato la memoria ya acumulada.
+
+Pasaron 104 pruebas de nube y 35 de pagos antes de desplegar. Verificado en producción después del deploy (disparando un `/v1/sync/push` con `operations: []`, el mismo patrón ya usado en las pruebas automáticas, para forzar la persistencia de la limpieza): la base de `kiosco_private.cloud_records_v2` pasó de **28 MB a 8,2 MB** (-70%), de 2411 a 2126 filas, y cada clave quedó con una sola fila vigente.
+
+### Si vuelve a ocurrir
+
+Confirmar primero con `get_metrics` (Render MCP, `metricTypes: ["memory_usage", "memory_limit"]`) si coincide con memoria alta antes de asumir que es la misma causa — puede haber otro contribuyente distinto de `userPreferences`. Revisar también si el plan de Render (`starter`, 512 MB) sigue siendo suficiente a medida que crece el uso real; subirlo a `standard` es una mitigación de corto plazo válida si hiciera falta (tiene costo, pedir aprobación a Juan antes).
 
 ## 2. Qué es Kiosco+
 
