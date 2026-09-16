@@ -95,11 +95,21 @@ El propio asistente calificó el caso (misma cuenta, mismo payload, `details[].f
 
 Se le pidió al asistente que abriera la consulta con el resumen completo (Producto: QR Code; Tema: Orders API con Access Token OAuth; descripción con la comparación token fijo vs OAuth, confirmación de `platform_id=mp` presente y el problema persistiendo, y los tres request IDs de fallos: `6e2345d5-e7ef-4c4f-9f16-62467cb8abd5`, `193d2186-ed55-43aa-a5ad-c16bfe424b8e`, `b315d0d1-9f11-4e85-a15e-65cc384c1b7b`), más el AppID (`7595655096885201`) y la aclaración de que la cuenta vendedora conectada es la cuenta real de producción del dueño de la app, no una de prueba.
 
-El asistente confirmó: **"¡Listo! Abrí una consulta para el soporte y pronto recibirás la confirmación en tu e-mail con el título que contiene el número de ticket en el siguiente formato: WCS-XXXXX"**. Se puede seguir el estado en el Centro de atención de Mercado Pago o por e-mail (la cuenta de Mercado Pago de Juan). Todavía no se conoce el número de ticket concreto (llega por e-mail).
+El asistente confirmó: **"¡Listo! Abrí una consulta para el soporte y pronto recibirás la confirmación en tu e-mail con el título que contiene el número de ticket en el siguiente formato: WCS-XXXXX"**. El ticket es **WCS-50768**. Se puede seguir el estado en el Centro de atención de Mercado Pago (`https://www.mercadopago.com.ar/developers/es/support/center/tickets/detail/WCS-50768`) o por e-mail.
+
+### Respuesta de soporte humano y datos adicionales enviados (16/09/2026, noche)
+
+Un agente humano (SUP_IXEXPERT_02) respondió el ticket: confirmó que el patrón (mismo payload, mismo token de cuenta, falla sólo con el token OAuth, `field: null`) **"no es consistente con un problema de scopes... ni con un payload inválido"** y que **"ha sido identificado internamente como un tema recurrente en la combinación Orders API + QR dinámico + token OAuth"**. Pidió tres datos para escalarlo: el body exacto de `POST /v1/orders`, si se envía `X-Idempotency-Key` y si cambia entre reintentos, y el prefijo del access token OAuth usado (para confirmar que es de producción).
+
+Se armaron las tres respuestas a partir del código (`buildQrOrderPayload` en `server/mercado-pago.mjs` para el body exacto — confirma que no se envían `sponsor`, `cash_out` ni `integration_data` porque esas variables están vacías; la ruta `POST /v1/payments/attempts` en `server/cloud-server.mjs` para la idempotencia — la clave es estable durante toda la vida de un intento y no se regenera en los reintentos automáticos). Para el prefijo del token se agregó temporalmente una ruta de diagnóstico de sólo lectura (`GET /v1/payments/mercado-pago/qr/token-prefix-diagnostic`, protegida para el dueño, nunca expuso el token completo) y se confirmó **`APP_USR-7595`** — token de producción real. Esa ruta ya se retiró del backend (commit `f8497d8`) apenas se obtuvo el dato.
+
+Importante para futuras sesiones: la conexión real de Mercado Pago para probar este bug vive en el negocio **Hidraulic shop** (tenantId `3a45375b-fbfc-4b3c-95fc-4d4b15a51296`), no en "Kiosco+ (no oficial)" — ese otro negocio quedó con una cuenta de prueba vieja y desconectada (`TESTUSER7499875603086904321`) de una etapa anterior del diagnóstico.
+
+Las tres respuestas se enviaron al ticket el 16/09/2026 a la noche. Queda esperando la próxima respuesta de soporte.
 
 ### Próxima acción exacta
 
-1. Cuando llegue el e-mail de Mercado Pago con el número de ticket `WCS-XXXXX`, guardarlo en esta sección y hacer seguimiento en el Centro de atención hasta que un humano de Mercado Pago responda con la causa real.
+1. Revisar el ticket `WCS-50768` (Centro de atención o e-mail) hasta que soporte de Mercado Pago identifique la causa real y un fix concreto.
 2. Una vez que Mercado Pago indique la causa real, aplicar el fix correspondiente, correr `pnpm test:payments`, `pnpm test:payment-ui`, `pnpm test:displays`, desplegar, y volver a pedirle a Juan que reconecte Código QR y genere el QR real él mismo desde Ventas/Caja (no generar el QR ni completar el pago desde la sesión de Claude Code).
 3. Sólo si ese punto se confirma en vivo por Juan se puede considerar cerrado el bug y evaluar etiquetar 0.2.30 (ver criterio abajo).
 4. No tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR. Point comparte la misma función `buildMercadoPagoAuthorizationUrl`, así que el fix de `platform_id=mp` ya le aplica, pero la causa adicional (si la hay) conviene verificarla por separado antes de darlo por bueno ahí también.
