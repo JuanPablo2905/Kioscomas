@@ -1,5 +1,38 @@
 [
   {
+    "version": "0.2.32",
+    "date": "2026-09-16",
+    "title": "La app se entera antes de que hay una actualización nueva",
+    "summary": "En la PWA instalada (especialmente en iPhone) la app casi nunca detectaba que había una versión nueva disponible, porque el chequeo dependía de un momento que casi no ocurre en el uso real. Ahora se revisa apenas termina de abrir, y el archivo que controla las actualizaciones nunca se sirve desde una copia vieja guardada en el navegador.",
+    "highlights": [
+      "La app ahora revisa si hay una versión nueva apenas termina de abrirse, no sólo después de un rato de estar en segundo plano.",
+      "El archivo que avisa sobre actualizaciones nunca queda guardado en caché, así que la detección no se demora por eso."
+    ],
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "El chequeo de actualización del service worker sólo se disparaba en la transición 'oculta a visible' de la pestaña o cada una hora. En una PWA instalada en iOS, abierta desde el ícono, esa transición casi nunca ocurre (arranca visible), por lo que en la práctica el chequeo nunca llegaba a ejecutarse en sesiones cortas.",
+          "Se agregó una llamada a `registration.update()` inmediatamente después de registrar el service worker, además de los disparadores existentes.",
+          "Se agregó `Cache-Control: no-cache` explícito para `/sw.js` en `render.yaml`, para que el navegador siempre revalide ese archivo contra el servidor en vez de servir una copia guardada."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Si instalaste Kiosco+ en el celular (sobre todo iPhone) y no te aparecían las funciones nuevas aunque ya estaban publicadas, era por esto: la app no se enteraba de que había algo nuevo hasta pasado un buen rato. Ahora se fija apenas la abrís."
+        ]
+      },
+      {
+        "title": "Comprobaciones",
+        "items": [
+          "Se corrió la batería de pruebas de PWA existente, que sigue pasando sin cambios de expectativas.",
+          "No se pudo comprobar el comportamiento real en un iPhone físico durante el desarrollo; conviene confirmarlo apenas esté publicada."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.31",
     "date": "2026-09-16",
     "title": "Cuentas recordadas con PIN, ubicación oficial para el QR y un servidor más liviano",

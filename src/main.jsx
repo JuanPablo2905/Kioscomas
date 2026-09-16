@@ -40,6 +40,11 @@ if ("serviceWorker" in navigator && import.meta.env.PROD && window.location.prot
         });
       });
       const check = () => registration.update().catch(() => {});
+      // En una PWA instalada (iOS en particular) rara vez ocurre una transición
+      // de "oculta a visible": cada apertura arranca ya visible. Sin este chequeo
+      // al cargar, la detección de actualización dependía únicamente de esa
+      // transición o de una hora seguida con la app abierta.
+      check();
       document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
       window.setInterval(check, 60 * 60 * 1000);
     } catch {}

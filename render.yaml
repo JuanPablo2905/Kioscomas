@@ -18,6 +18,9 @@ services:
         source: /*
         destination: /index.html
     headers:
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
       - path: /*
         name: X-Content-Type-Options
         value: nosniff
