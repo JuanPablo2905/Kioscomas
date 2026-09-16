@@ -82,12 +82,20 @@ const accessTokenExpiresAt = () => new Date(Date.now() + accessTokenTtlMs).toISO
 const refreshTokenExpiresAt = () => new Date(Date.now() + refreshTokenTtlMs).toISOString();
 const emptyDb = () => ({ schemaVersion: 9, cursor: 0, accepted: {}, system: {}, tenants: {}, changes: [], devices: {}, users: {}, sessions: {}, barcodeCatalog: {}, activationCodes: {}, activations: {}, passwordResetTokens: {}, passwordResetRateLimits: {}, platformNotifications: {}, notificationReads: {}, pushSubscriptions: {}, reportedIssues: {}, businessDisplays: {}, displayPairingCodes: {}, displayTokens: {}, paymentIntegrations: {}, paymentOauthStates: {}, paymentAttempts: {}, paymentPresentations: {}, securityEvents: {} });
 const compactChangeLog = (changes = []) => {
-  let latestAccountDirectoryKept = false;
+  // "set" y "system_set" reemplazan por completo el valor de una clave (ver
+  // isRedundantBootstrapOperation en syncEngine.js: un cliente que se pone al
+  // día sólo necesita la versión vigente). Sin esto, cada guardado de
+  // preferencias de apariencia (userPreferences puede pesar cientos de KB por
+  // incluir la imagen del negocio) queda para siempre en el log de cambios y
+  // se vuelve a cargar entero en memoria en cada pedido al servidor.
+  const keptDedupeKeys = new Set();
   return [...changes].reverse().filter((change) => {
-    const accountDirectory = change?.type === "system_set" && change?.key === "cuentas";
-    if (!accountDirectory) return true;
-    if (latestAccountDirectoryKept) return false;
-    latestAccountDirectoryKept = true;
+    const dedupeKey = change?.type === "set" ? `set:${change.tenantId}:${change.key}`
+      : (change?.type === "system_set" && change?.key === "cuentas") ? "system_set:cuentas"
+      : null;
+    if (!dedupeKey) return true;
+    if (keptDedupeKeys.has(dedupeKey)) return false;
+    keptDedupeKeys.add(dedupeKey);
     return true;
   }).reverse().slice(-10000);
 };
@@ -443,7 +451,14 @@ const readJsonDb = async () => {
 };
 const readDb = async () => {
   const saved = postgresStore ? await postgresStore.read() : await readJsonDb();
-  return ensureReferralMetadata(applyConfiguredSuperAdmin(hydrateBarcodeCatalog({ ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {}, activationCodes: saved.activationCodes || {}, activations: saved.activations || {} })));
+  return ensureReferralMetadata(applyConfiguredSuperAdmin(hydrateBarcodeCatalog({
+    ...emptyDb(), ...saved, system: saved.system || {}, barcodeCatalog: saved.barcodeCatalog || {},
+    activationCodes: saved.activationCodes || {}, activations: saved.activations || {},
+    // Compactar acá (no sólo al recibir un cambio nuevo) libera de inmediato la
+    // memoria que ya está acumulada por versiones viejas, sin esperar a que
+    // alguien vuelva a tocar esa clave para que se guarde la limpieza.
+    changes: compactChangeLog(saved.changes || []),
+  })));
 };
 const safeName = (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "_");
 const writeJson = async (file, value) => {
