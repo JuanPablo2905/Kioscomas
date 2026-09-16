@@ -1,7 +1,11 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { repository } from "../cloud/repository";
 import { loadCloudConfig } from "../cloud/config";
-import { cloudFetch, cloudSession, ensureLocalCloudSession, loginCloud, logoutCloud, pairCloudDevice, registerCloudAccount, requestCloudPasswordReset, resetCloudPassword } from "../cloud/cloudAuth";
+import { cloudFetch, cloudSession, ensureLocalCloudSession, loginCloud, loginCloudWithDeviceCredential, logoutCloud, pairCloudDevice, registerCloudAccount, registerDeviceCredential, requestCloudPasswordReset, resetCloudPassword } from "../cloud/cloudAuth";
+import { dismissRememberPrompt, listRememberedAccounts, shouldOfferToRemember } from "../security/deviceVault";
+import { RememberedAccountsPicker } from "../features/autenticacion/RememberedAccountsPicker";
+import { RememberDevicePrompt } from "../features/autenticacion/RememberDevicePrompt";
 import { clearLoginFailures, createSession, loginGuard, registerLoginFailure, secureAccounts, secureSubject, validSession, verifyPassword } from "../security/auth";
 import { accountAccessMessage, canAccessAccount, formatAccessExpiration, trialAccessStatus } from "../security/trialAccess";
 import { Sidebar } from "../shared/layout";
@@ -269,6 +273,8 @@ export default function KioscoApp() {
   const [identidad, setIdentidad] = useState(null); // { rol, nombre }
   const [loginError, setLoginError] = useState("");
   const [loginNotice, setLoginNotice] = useState("");
+  const [rememberPrompt, setRememberPrompt] = useState(null);
+  const [useAnotherAccount, setUseAnotherAccount] = useState(false);
   const [passwordResetToken, setPasswordResetToken] = useState(() => PUBLIC_DEMO_MODE ? "" : (new URLSearchParams(window.location.search).get("reset_token") || ""));
   const [notasAdmin, setNotasAdmin] = useState([]);
   const [authSecurity, setAuthSecurity] = useState({});
@@ -1132,6 +1138,50 @@ export default function KioscoApp() {
     if (!PUBLIC_DEMO_MODE) repository.seedCurrentTenant().catch((error) => repository.reportSyncError(error));
   };
 
+  // Cuentas recordadas por PIN: la sesión entra por la nube igual que un
+  // login normal, pero con la credencial de dispositivo en vez de la
+  // contraseña real. Devuelve la credencial renovada para que quien llamó
+  // (el selector de cuentas) la vuelva a cifrar localmente.
+  const handleDeviceCredentialLogin = async (rememberedEntry, deviceCredential) => {
+    const cloudConfig = loadCloudConfig();
+    if (!cloudConfig.enabled || !cloudConfig.apiUrl || !navigator.onLine) {
+      throw new Error("Necesitás conexión a internet para entrar con una cuenta recordada.");
+    }
+    const remoteSession = await loginCloudWithDeviceCredential(cloudConfig.apiUrl, rememberedEntry.username, cloudConfig.deviceId, deviceCredential);
+    const remoteAccount = await prepareCloudAccount(remoteSession.account);
+    if (!remoteAccount) throw new Error("La cuenta ya no está disponible en este dispositivo.");
+    saveCloudAccountLocally(remoteAccount);
+    if (!remoteAccount.superAdmin && !canAccessAccount(remoteAccount)) throw new Error(accountAccessMessage(remoteAccount));
+    const employee = remoteSession.user?.role === "employee"
+      ? (remoteAccount.empleados || []).find((item) => String(item.usuario || "").trim().toLowerCase() === rememberedEntry.username.toLowerCase())
+      : null;
+    const identity = employee
+      ? { usuarioId: `empleado:${employee.id}`, tenantId: String(remoteAccount.id), rol: employee.rol, nombre: employee.nombre, superAdmin: false }
+      : { usuarioId: `cuenta:${remoteAccount.id}`, tenantId: String(remoteAccount.id), rol: remoteAccount.superAdmin ? "Administrador de la app" : "Dueño", nombre: remoteAccount.nombre, superAdmin: !!remoteAccount.superAdmin, adminId: remoteAccount.superAdmin ? remoteAccount.id : null };
+    setLoginError("");
+    setView("home");
+    setCurrentUserId(remoteAccount.id);
+    setIdentidad(identity);
+    startAuthenticatedCloudSync(remoteAccount);
+    const session = createSession(remoteAccount.id, identity);
+    setSessionStartedAt(session.createdAt);
+    const access = trialAccessStatus(remoteAccount);
+    setSessionExpiresAt(access.active && new Date(access.expiresAt) < new Date(session.expiresAt) ? access.expiresAt : session.expiresAt);
+    return remoteSession.deviceCredential;
+  };
+
+  // Después de un login real con contraseña, ofrece (una vez, y no de nuevo
+  // si ya se descartó) recordar la cuenta con PIN en este dispositivo.
+  const offerRememberDeviceIfEligible = (username, { tenantId, nombre, nombreNegocio, rol }) => {
+    const cloudConfig = loadCloudConfig();
+    if (!cloudConfig.enabled || !cloudConfig.apiUrl) return;
+    if (!shouldOfferToRemember(cloudConfig.apiUrl, cloudConfig.deviceId, username)) return;
+    setRememberPrompt({
+      apiUrl: cloudConfig.apiUrl, deviceId: cloudConfig.deviceId, username, businessId: tenantId,
+      nombre, nombreNegocio, rol, rpId: (() => { try { return new URL(cloudConfig.apiUrl).hostname; } catch { return undefined; } })(),
+    });
+  };
+
   const handleLogin = async ({ usuario, password }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "");
@@ -1183,6 +1233,7 @@ export default function KioscoApp() {
       setSessionExpiresAt(trial.active && new Date(trial.expiresAt) < new Date(session.expiresAt) ? trial.expiresAt : session.expiresAt);
       setAuthSecurity((prev) => clearLoginFailures(prev, normalizedUser));
       setDatos((prev) => ({ ...prev, [activeAccount.id]: { ...prev[activeAccount.id], auditoria: [...(prev[activeAccount.id]?.auditoria || []), { id: crearIdOperacion("auditoria-login"), fecha: new Date().toISOString(), tenantId: String(activeAccount.id), usuario: activeAccount.nombre, usuarioId: identity.usuarioId, rol: identity.rol, origen: activeAccount.superAdmin ? "administracion_app" : "dueno", seccion: "seguridad", accion: "inicio_sesion", detalle: "Inicio de sesión", resultado: "exitoso" }] } }));
+      if (!activeAccount.superAdmin) offerRememberDeviceIfEligible(normalizedUser, { ...identity, nombreNegocio: activeAccount.nombreNegocio });
       return;
     }
 
@@ -1235,6 +1286,7 @@ export default function KioscoApp() {
         const trial = trialAccessStatus(activeBusiness);
         setSessionExpiresAt(trial.active && new Date(trial.expiresAt) < new Date(session.expiresAt) ? trial.expiresAt : session.expiresAt);
         setAuthSecurity((prev) => clearLoginFailures(prev, normalizedUser));
+        offerRememberDeviceIfEligible(normalizedUser, { ...identity, nombreNegocio: activeBusiness.nombreNegocio });
         return;
       }
     }
@@ -1283,6 +1335,7 @@ export default function KioscoApp() {
         const access = trialAccessStatus(remoteAccount);
         setSessionExpiresAt(access.active && new Date(access.expiresAt) < new Date(session.expiresAt) ? access.expiresAt : session.expiresAt);
         setAuthSecurity((previous) => clearLoginFailures(previous, normalizedUser));
+        if (!remoteAccount.superAdmin) offerRememberDeviceIfEligible(normalizedUser, { ...identity, nombreNegocio: remoteAccount.nombreNegocio });
         return;
       } catch (error) {
         setAuthSecurity((previous) => registerLoginFailure(previous, normalizedUser));
@@ -1388,6 +1441,7 @@ export default function KioscoApp() {
     setSessionExpiresAt(null);
     setSessionStartedAt(null);
     setView("home");
+    setUseAnotherAccount(false);
   };
 
   const handleReset = async () => {
@@ -1490,8 +1544,18 @@ export default function KioscoApp() {
   }
 
   if (!currentUserId) {
-    const cloudDeviceId = loadCloudConfig().deviceId;
+    const cloudConfig = loadCloudConfig();
     const installationReceipt = loadInstallationReceipt();
+    if (!useAnotherAccount && cloudConfig.enabled && cloudConfig.apiUrl && listRememberedAccounts(cloudConfig.apiUrl).length > 0) {
+      return (
+        <RememberedAccountsPicker
+          apiUrl={cloudConfig.apiUrl}
+          deviceId={cloudConfig.deviceId}
+          onDeviceCredentialLogin={handleDeviceCredentialLogin}
+          onUseAnotherAccount={() => setUseAnotherAccount(true)}
+        />
+      );
+    }
     return (
       <LoginView
         onLogin={handleLogin}
@@ -1501,12 +1565,22 @@ export default function KioscoApp() {
         notice={loginNotice}
         onReset={handleReset}
         showDemoAccounts={PUBLIC_DEMO_MODE}
-        requiresRegistrationCode={!PUBLIC_DEMO_MODE && !(installationReceipt?.activated && installationReceipt.deviceId === cloudDeviceId)}
+        requiresRegistrationCode={!PUBLIC_DEMO_MODE && !(installationReceipt?.activated && installationReceipt.deviceId === cloudConfig.deviceId)}
         cloudWarmupState={cloudWarmupState}
         onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}
       />
     );
   }
+
+  const rememberDevicePromptPortal = rememberPrompt && createPortal(
+    <RememberDevicePrompt
+      context={rememberPrompt}
+      registerCredential={() => registerDeviceCredential(rememberPrompt.apiUrl, rememberPrompt.businessId, rememberPrompt.deviceId).then((result) => ({ ...result, username: rememberPrompt.username }))}
+      onSkip={() => { dismissRememberPrompt(rememberPrompt.apiUrl, rememberPrompt.deviceId, rememberPrompt.username); setRememberPrompt(null); }}
+      onSaved={() => setRememberPrompt(null)}
+    />,
+    document.body,
+  );
 
   if (cuentaActual?.superAdmin && identidad?.superAdmin && !identidad?.operandoNegocio) {
     return (
@@ -1720,6 +1794,7 @@ export default function KioscoApp() {
 
   return (
     <div className="kiosco-themed flex h-screen w-full bg-gray-50 font-sans text-gray-900 overflow-hidden">
+      {rememberDevicePromptPortal}
       <a href="#main-content" className="skip-to-content">Saltar al contenido principal</a>
       <Sidebar
         current={view}

@@ -134,6 +134,45 @@ export async function loginCloud(apiUrl, username, password, deviceId) {
   return session;
 }
 
+// Cuentas recordadas por PIN: la credencial de dispositivo nunca es la
+// contraseña real (ver server/cloud-server.mjs, POST
+// /v1/auth/device-credential). El cifrado local vive en src/security/deviceVault.js.
+export async function loginCloudWithDeviceCredential(apiUrl, username, deviceId, deviceCredential) {
+  await waitForCloudReady(apiUrl);
+  const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/device-credential/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, deviceId, deviceCredential }),
+  }, CLOUD_AUTH_TIMEOUT_MS);
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    const error = new Error(detail.error || `No se pudo entrar con la cuenta recordada (${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
+  const session = await response.json();
+  save({ ...session, apiUrl });
+  return session;
+}
+
+export async function registerDeviceCredential(apiUrl, tenantId, deviceId) {
+  const response = await cloudFetch(apiUrl, "/v1/auth/device-credential", {
+    method: "POST",
+    headers: { "x-tenant-id": String(tenantId), "x-device-id": String(deviceId) },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "No se pudo recordar esta cuenta en el dispositivo.");
+  return payload;
+}
+
+export async function revokeDeviceCredential(apiUrl, tenantId, deviceId) {
+  const response = await cloudFetch(apiUrl, "/v1/auth/device-credential", {
+    method: "DELETE",
+    headers: { "x-tenant-id": String(tenantId), "x-device-id": String(deviceId) },
+  });
+  return response.ok;
+}
+
 export async function pairCloudDevice(apiUrl, deviceKey, deviceId) {
   await waitForCloudReady(apiUrl);
   const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/pair-device`, {
