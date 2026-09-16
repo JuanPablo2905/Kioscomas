@@ -4,6 +4,7 @@ import {
   MapPin, RefreshCw, RotateCcw, Store, Unlink, XCircle,
 } from "lucide-react";
 import { money } from "../../shared/domain";
+import { fetchArgentinaLocalidades, fetchArgentinaProvincias } from "../../shared/argentinaGeo";
 import {
   PAYMENT_MODES, PAYMENT_TARGETS, cancelPaymentAttempt, disconnectMercadoPago,
   listMercadoPagoTerminals, listPaymentAttempts, loadPaymentProviders, refreshPaymentAttempt, refundPaymentAttempt,
@@ -33,8 +34,12 @@ export function MercadoPagoSettings({ businessId, preferences, onChange, canConn
   const [message, setMessage] = useState("");
   const [setup, setSetup] = useState({
     storeName: "", posName: "Caja principal", streetName: "", streetNumber: "",
-    cityName: "", stateName: "", reference: "", latitude: "", longitude: "",
+    cityName: "", stateName: "", provinciaId: "", localidadId: "", reference: "", latitude: "", longitude: "",
   });
+  const [provincias, setProvincias] = useState([]);
+  const [provinciasStatus, setProvinciasStatus] = useState("idle");
+  const [localidades, setLocalidades] = useState([]);
+  const [localidadesStatus, setLocalidadesStatus] = useState("idle");
   const set = (patch) => onChange({ ...preferences, ...patch });
   const qrConfigured = Boolean(provider?.qr?.configured);
   const qrConnection = provider?.solutions?.qr || {
@@ -68,6 +73,22 @@ export function MercadoPagoSettings({ businessId, preferences, onChange, canConn
   };
 
   useEffect(() => { load(); }, [businessId]);
+
+  useEffect(() => {
+    if (provinciasStatus !== "idle") return;
+    setProvinciasStatus("loading");
+    fetchArgentinaProvincias()
+      .then((list) => { setProvincias(list); setProvinciasStatus(list.length ? "ready" : "error"); })
+      .catch(() => setProvinciasStatus("error"));
+  }, [provinciasStatus]);
+
+  useEffect(() => {
+    if (!setup.provinciaId) { setLocalidades([]); setLocalidadesStatus("idle"); return; }
+    setLocalidadesStatus("loading");
+    fetchArgentinaLocalidades(setup.provinciaId)
+      .then((list) => { setLocalidades(list); setLocalidadesStatus(list.length ? "ready" : "error"); })
+      .catch(() => setLocalidadesStatus("error"));
+  }, [setup.provinciaId]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -270,8 +291,29 @@ export function MercadoPagoSettings({ businessId, preferences, onChange, canConn
         <label className="text-xs font-bold text-sky-950">Nombre de esta caja<input value={setup.posName} onChange={(event) => setSetup((current) => ({ ...current, posName: event.target.value.slice(0, 60) }))} placeholder="Ej.: Caja principal" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
         <label className="text-xs font-bold text-sky-950">Calle<input value={setup.streetName} onChange={(event) => setSetup((current) => ({ ...current, streetName: event.target.value.slice(0, 100) }))} placeholder="Ej.: Av. Caseros" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
         <label className="text-xs font-bold text-sky-950">Número<input inputMode="numeric" value={setup.streetNumber} onChange={(event) => setSetup((current) => ({ ...current, streetNumber: event.target.value.slice(0, 20) }))} placeholder="Ej.: 1490" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
-        <label className="text-xs font-bold text-sky-950">Ciudad o localidad<input value={setup.cityName} onChange={(event) => setSetup((current) => ({ ...current, cityName: event.target.value.slice(0, 100) }))} placeholder="Ej.: Buenos Aires" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
-        <label className="text-xs font-bold text-sky-950">Provincia<input value={setup.stateName} onChange={(event) => setSetup((current) => ({ ...current, stateName: event.target.value.slice(0, 100) }))} placeholder="Ej.: Buenos Aires" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
+        {provinciasStatus === "error" ? <>
+          <label className="text-xs font-bold text-sky-950 sm:col-span-2">No pudimos cargar el catálogo oficial de provincias y localidades; completá a mano.</label>
+          <label className="text-xs font-bold text-sky-950">Provincia<input value={setup.stateName} onChange={(event) => setSetup((current) => ({ ...current, stateName: event.target.value.slice(0, 100) }))} placeholder="Ej.: Buenos Aires" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
+          <label className="text-xs font-bold text-sky-950">Ciudad o localidad<input value={setup.cityName} onChange={(event) => setSetup((current) => ({ ...current, cityName: event.target.value.slice(0, 100) }))} placeholder="Ej.: Buenos Aires" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
+        </> : <>
+          <label className="text-xs font-bold text-sky-950">Provincia<select value={setup.provinciaId} onChange={(event) => {
+            const provinciaId = event.target.value;
+            const nombre = provincias.find((item) => item.id === provinciaId)?.nombre || "";
+            setSetup((current) => ({ ...current, provinciaId, stateName: nombre, localidadId: "", cityName: "" }));
+          }} className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900">
+            <option value="">{provinciasStatus === "loading" ? "Cargando…" : "Elegí una provincia"}</option>
+            {provincias.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}
+          </select></label>
+          {localidadesStatus === "error" ? <label className="text-xs font-bold text-sky-950">Ciudad o localidad<input value={setup.cityName} onChange={(event) => setSetup((current) => ({ ...current, cityName: event.target.value.slice(0, 100) }))} placeholder="No pudimos cargar el listado; escribila" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
+          : <label className="text-xs font-bold text-sky-950">Ciudad o localidad<select value={setup.localidadId} disabled={!setup.provinciaId || localidadesStatus === "loading"} onChange={(event) => {
+            const localidadId = event.target.value;
+            const nombre = localidades.find((item) => item.id === localidadId)?.nombre || "";
+            setSetup((current) => ({ ...current, localidadId, cityName: nombre }));
+          }} className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900 disabled:opacity-50">
+            <option value="">{!setup.provinciaId ? "Elegí primero la provincia" : localidadesStatus === "loading" ? "Cargando…" : "Elegí una ciudad o localidad"}</option>
+            {localidades.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}
+          </select></label>}
+        </>}
         <label className="text-xs font-bold text-sky-950 sm:col-span-2">Referencia del lugar <span className="font-normal text-gray-500">(opcional)</span><input value={setup.reference} onChange={(event) => setSetup((current) => ({ ...current, reference: event.target.value.slice(0, 80) }))} placeholder="Ej.: local a la calle, persiana verde" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
         <label className="text-xs font-bold text-sky-950">Latitud<input inputMode="decimal" value={setup.latitude} onChange={(event) => setSetup((current) => ({ ...current, latitude: event.target.value }))} placeholder="-34.6037" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>
         <label className="text-xs font-bold text-sky-950">Longitud<input inputMode="decimal" value={setup.longitude} onChange={(event) => setSetup((current) => ({ ...current, longitude: event.target.value }))} placeholder="-58.3816" className="mt-1 min-h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-normal text-gray-900"/></label>

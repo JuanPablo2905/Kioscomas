@@ -11,6 +11,7 @@ import { createEmailService, isValidEmail, normalizeEmail } from "./email-servic
 import { argentinaDateKey, referralStats, referralStatus } from "../src/billing/referrals.js";
 import { sanitizePublicDisplayContent } from "../src/features/ventas/displayConfig.js";
 import { passwordPolicyError } from "../src/security/passwordPolicy.js";
+import { createGeoClient } from "./geo-argentina.mjs";
 import {
   buildMercadoPagoAuthorizationUrl,
   buildMercadoPagoPosPayload,
@@ -67,6 +68,7 @@ const emailService = createEmailService({
   appUrl: process.env.KIOSCO_PUBLIC_APP_URL || "https://app.kioscomas.ar",
   testMode: emailTestMode,
 });
+const geoClient = createGeoClient();
 const mercadoPago = mercadoPagoConfig(process.env);
 const mercadoPagoClients = {
   qr: createMercadoPagoClient({ config: mercadoPagoConfigFor(mercadoPago, "qr") }),
@@ -1987,6 +1989,18 @@ const handleRequest = async (req, res) => {
         configured: pushDeliveryConfigured,
         publicKey: pushDeliveryConfigured ? vapidPublicKey : null,
       });
+    }
+    // Catálogo oficial de provincias/localidades (Georef) para el selector de
+    // ubicación de Mercado Pago. Es información pública, no depende del
+    // negocio ni de la sesión, y se cachea en el servidor.
+    if (req.method === "GET" && req.url === "/v1/geo/provincias") {
+      try { return send(res, 200, { provincias: await geoClient.provincias() }); }
+      catch (error) { return send(res, 502, { error: "No se pudo consultar el catálogo de provincias" }); }
+    }
+    if (req.method === "GET" && req.url?.startsWith("/v1/geo/localidades")) {
+      const provinciaId = new URL(req.url, "http://localhost").searchParams.get("provincia");
+      try { return send(res, 200, { localidades: await geoClient.localidades(provinciaId) }); }
+      catch (error) { return send(res, error.message?.includes("inválida") ? 400 : 502, { error: error.message?.includes("inválida") ? error.message : "No se pudo consultar el catálogo de localidades" }); }
     }
     if (req.method === "GET" && req.url?.startsWith("/v1/payments/mercado-pago/oauth/callback")) {
       const url = new URL(req.url, "http://localhost");
@@ -4073,7 +4087,9 @@ const bypassDatabaseQueue = (req) => req.method === "OPTIONS"
   || req.url === "/v1/ready"
   || req.url === "/v1/ready/sections"
   || req.url?.startsWith("/v1/releases/latest")
-  || req.url === "/v1/catalog/providers";
+  || req.url === "/v1/catalog/providers"
+  || req.url === "/v1/geo/provincias"
+  || req.url?.startsWith("/v1/geo/localidades");
 
 const runQueuedRequest = async (req, res) => {
   let timeoutId;
