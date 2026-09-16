@@ -250,6 +250,11 @@ export const buildMercadoPagoAuthorizationUrl = (config, { state, codeChallenge 
   const url = new URL(AUTH_URL);
   url.searchParams.set("client_id", config.clientId);
   url.searchParams.set("response_type", "code");
+  // Mercado Pago exige este valor fijo para que el token resultante quede
+  // habilitado a operar con funcionalidades de MP In-store/QR. Sin él, el
+  // token se emite igual pero queda limitado y las órdenes fallan con un
+  // property_value sin campo indicado, aunque la cuenta conectada sea válida.
+  url.searchParams.set("platform_id", "mp");
   url.searchParams.set("redirect_uri", config.redirectUri);
   url.searchParams.set("state", requiredText(state, "state", 256));
   url.searchParams.set("code_challenge", requiredText(codeChallenge, "code_challenge", 256));
