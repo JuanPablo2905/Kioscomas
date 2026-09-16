@@ -77,14 +77,32 @@ Eso aisló el problema al token OAuth en sí, no a la cuenta ni al payload. Se l
 
 **Importante:** las cuentas ya conectadas antes de este fix (incluida la real que se conectó durante el diagnóstico) tienen un token obtenido *sin* `platform_id=mp` — van a seguir fallando hasta que se desconecten y se vuelvan a conectar para obtener un token nuevo correctamente habilitado.
 
+### El fix de `platform_id=mp` era necesario pero NO fue suficiente (16/09/2026, noche)
+
+Se confirmó el deploy live del commit `72c4bfc` en `/v1/health` (revision `b510bb54e35f`). Juan desconectó y reconectó Código QR con la misma cuenta real, con la URL de autorización ya incluyendo `platform_id=mp` (confirmado). `/v1/health` mostró `backendEnabled`/`oauthConfigured`/`webhookConfigured`/`ready` todos `true` y `testMode:false`.
+
+Al generar la orden QR dinámico, **el error volvió a ocurrir exactamente igual**: HTTP 400, código `property_value`, `Invalid value for property`, `details[].field` sigue `null`. Nuevo request ID: `b315d0d1-9f11-4e85-a15e-65cc384c1b7b`.
+
+Se le planteó esta actualización al asistente de soporte de Mercado Pago, que respondió con tres hipótesis adicionales a validar antes de escalar a un ticket humano:
+
+1. **Que el token OAuth no esté quedando asociado al mismo "usuario efectivo" que el token fijo**, aunque se haya autorizado con la misma cuenta. Validación sugerida: `GET /users/me` con ambos tokens (fijo vs OAuth) y comparar el `id` devuelto.
+2. **Confirmado: no hay parámetro `scope` documentado** para forzar más permisos en la URL de autorización del flujo `authorization_code` — insistir por ahí no es un camino real.
+3. **Validar que el token OAuth realmente puede ver/operar los recursos "in-store" (POS/sucursal/terminal)** que usa para armar la orden: listar/obtener la POS con el mismo token OAuth con el que falla la creación de la orden, y comparar contra lo que devuelve el token fijo.
+
+El propio asistente calificó el caso (misma cuenta, mismo payload, `details[].field` siempre `null`, dos intentos con y sin `platform_id=mp`) como más compatible con **un caso para revisión interna de Mercado Pago** que con un parámetro faltante del lado de Kiosco+, y se ofreció a abrir un ticket con toda la evidencia (request IDs incluidos). Juan confirmó abrirlo así, sin esperar el chequeo adicional de `GET /users/me`/POS.
+
+### Ticket abierto a soporte de Mercado Pago (16/09/2026, noche)
+
+Se le pidió al asistente que abriera la consulta con el resumen completo (Producto: QR Code; Tema: Orders API con Access Token OAuth; descripción con la comparación token fijo vs OAuth, confirmación de `platform_id=mp` presente y el problema persistiendo, y los tres request IDs de fallos: `6e2345d5-e7ef-4c4f-9f16-62467cb8abd5`, `193d2186-ed55-43aa-a5ad-c16bfe424b8e`, `b315d0d1-9f11-4e85-a15e-65cc384c1b7b`), más el AppID (`7595655096885201`) y la aclaración de que la cuenta vendedora conectada es la cuenta real de producción del dueño de la app, no una de prueba.
+
+El asistente confirmó: **"¡Listo! Abrí una consulta para el soporte y pronto recibirás la confirmación en tu e-mail con el título que contiene el número de ticket en el siguiente formato: WCS-XXXXX"**. Se puede seguir el estado en el Centro de atención de Mercado Pago o por e-mail (la cuenta de Mercado Pago de Juan). Todavía no se conoce el número de ticket concreto (llega por e-mail).
+
 ### Próxima acción exacta
 
-1. Confirmar que el deploy del commit `72c4bfc` está live en `/v1/health` (`revision`).
-2. Desde Configuración → Mercado Pago del negocio de prueba, **desconectar Código QR** y **volver a conectarlo** (ahora la URL de autorización va a incluir `platform_id=mp` automáticamente).
-3. Generar un QR dinámico real desde Ventas/Caja y confirmar que **ahora sí se crea la orden y aparece el QR**, sin `property_value`.
-4. Sólo si ese punto 3 funciona, recién ahí se puede considerar cerrado el bug y evaluar etiquetar 0.2.30 (ver criterio abajo).
-5. Si por algún motivo sigue fallando incluso con `platform_id=mp`, ahí sí vale la pena escalar a soporte humano de Mercado Pago con toda la evidencia (ver historial de request ID arriba) — pero después de este fix es lo último que quedaría por intentar del lado de Kiosco+.
-6. No tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR. Si Point comparte la misma función `buildMercadoPagoAuthorizationUrl` (que sí la comparte), el mismo fix debería aplicarle, pero conviene verificarlo por separado antes de darlo por bueno.
+1. Cuando llegue el e-mail de Mercado Pago con el número de ticket `WCS-XXXXX`, guardarlo en esta sección y hacer seguimiento en el Centro de atención hasta que un humano de Mercado Pago responda con la causa real.
+2. Una vez que Mercado Pago indique la causa real, aplicar el fix correspondiente, correr `pnpm test:payments`, `pnpm test:payment-ui`, `pnpm test:displays`, desplegar, y volver a pedirle a Juan que reconecte Código QR y genere el QR real él mismo desde Ventas/Caja (no generar el QR ni completar el pago desde la sesión de Claude Code).
+3. Sólo si ese punto se confirma en vivo por Juan se puede considerar cerrado el bug y evaluar etiquetar 0.2.30 (ver criterio abajo).
+4. No tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR. Point comparte la misma función `buildMercadoPagoAuthorizationUrl`, así que el fix de `platform_id=mp` ya le aplica, pero la causa adicional (si la hay) conviene verificarla por separado antes de darlo por bueno ahí también.
 
 ### Criterio para cerrar 0.2.30
 
