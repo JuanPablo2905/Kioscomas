@@ -2010,6 +2010,81 @@ const handleRequest = async (req, res) => {
       try { return send(res, 200, { localidades: await geoClient.localidades(provinciaId) }); }
       catch (error) { return send(res, error.message?.includes("inválida") ? 400 : 502, { error: error.message?.includes("inválida") ? error.message : "No se pudo consultar el catálogo de localidades" }); }
     }
+    // Diagnóstico temporal para el bug property_value del QR dinámico
+    // (ticket WCS-50768). Aislar por eliminación qué campo del payload de
+    // Orders API dispara el error sólo con token OAuth. Sin token de debug
+    // configurado, esta ruta no existe (404). No registra nada en
+    // db.paymentAttempts ni afecta ventas/stock reales — crea órdenes QR de
+    // prueba por un monto simbólico que expiran solas a los 15 minutos sin
+    // ser mostradas a nadie. Borrar esta ruta y la env var KIOSCO_MP_DEBUG_TOKEN
+    // en cuanto se resuelva el diagnóstico.
+    if (req.method === "POST" && req.url === "/v1/debug/mp-order-ab-test") {
+      const debugToken = String(req.headers["x-debug-token"] || "");
+      const expectedToken = String(process.env.KIOSCO_MP_DEBUG_TOKEN || "");
+      if (!expectedToken || debugToken !== expectedToken) return send(res, 404, {});
+      const payload = await body(req);
+      const tenantId = String(payload.tenantId || "").trim();
+      if (!tenantId) return send(res, 400, { error: "tenantId requerido" });
+      const db = await readDb();
+      const integrationRecord = mercadoPagoIntegration(db, tenantId);
+      if (!integrationRecord) return send(res, 404, { error: "Sin integración Mercado Pago para ese tenant" });
+      const posExternalId = integrationRecord?.qr?.posExternalId;
+      if (!posExternalId) return send(res, 409, { error: "El tenant no tiene una caja QR vinculada" });
+      let accessToken;
+      try {
+        accessToken = await mercadoPagoAccessToken(db, integrationRecord, "qr");
+      } catch (error) {
+        return send(res, 502, { error: error.message });
+      }
+      const stamp = Date.now();
+      const baseOrderPayload = {
+        type: "qr",
+        total_amount: "10.00",
+        external_reference: `DEBUGAB-${stamp}`,
+        expiration_time: "PT15M",
+        description: "Prueba diagnóstica Kiosco+ (no cobrar)",
+        config: { qr: { external_pos_id: posExternalId, mode: "dynamic" } },
+        transactions: { payments: [{ amount: "10.00" }] },
+        items: [{
+          title: "Prueba diagnóstica Kiosco+",
+          unit_price: "10.00",
+          quantity: 1,
+          unit_measure: "unit",
+          external_code: `DEBUGAB-${stamp}`,
+        }],
+      };
+      const variants = [
+        { name: "completo", strip: [] },
+        { name: "sin_expiration_time", strip: ["expiration_time"] },
+        { name: "sin_items", strip: ["items"] },
+        { name: "sin_external_code", strip: ["items[0].external_code"] },
+        { name: "sin_unit_measure", strip: ["items[0].unit_measure"] },
+      ];
+      const results = [];
+      for (const variant of variants) {
+        const orderPayload = structuredClone(baseOrderPayload);
+        for (const path of variant.strip) {
+          if (path === "items[0].external_code") delete orderPayload.items[0].external_code;
+          else if (path === "items[0].unit_measure") delete orderPayload.items[0].unit_measure;
+          else delete orderPayload[path];
+        }
+        const idempotencyKey = `debugab-${variant.name}-${crypto.randomUUID()}`;
+        try {
+          const order = await mercadoPagoClientFor("qr").createOrder({ accessToken, payload: orderPayload, idempotencyKey });
+          results.push({ variant: variant.name, ok: true, orderId: order?.id || null, status: order?.status || null });
+        } catch (error) {
+          results.push({
+            variant: variant.name,
+            ok: false,
+            httpStatus: error.status || null,
+            providerCode: error.providerCode || null,
+            providerDetails: error.providerDetails || null,
+            message: error.message || null,
+          });
+        }
+      }
+      return send(res, 200, { tenantId, posExternalId, results });
+    }
     if (req.method === "GET" && req.url?.startsWith("/v1/payments/mercado-pago/oauth/callback")) {
       const url = new URL(req.url, "http://localhost");
       const rawState = String(url.searchParams.get("state") || "");
