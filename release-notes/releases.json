@@ -1,5 +1,42 @@
 [
   {
+    "version": "0.2.33",
+    "date": "2026-09-17",
+    "title": "Un producto nuevo ya se puede vender al toque, y el QR para vincular una TV abre el panel correcto",
+    "summary": "Encontramos estos cuatro problemas durante una revisión integral de la app, recorriendo cada pantalla como lo haría un kiosquero real. El más importante: un producto recién cargado no aparecía en la búsqueda de venta porque el alta sólo cargaba stock en depósito, sin ningún aviso de por qué. También se corrigió que el panel con el código detectado al escanear el QR de una TV quedaba cerrado, dos botones de Stock sin nombre accesible, y un aviso de conflicto de sincronización que mostraba un código técnico en vez de identificar el estado de caja.",
+    "highlights": [
+      "Al cargar un producto nuevo ahora se puede indicar, de forma opcional, cuánto va directo a vitrina para poder venderlo de entrada.",
+      "El QR para vincular una TV o pantalla publicitaria ahora abre solo el panel con el código ya detectado, en vez de dejarlo escondido.",
+      "Los botones de editar y eliminar en Stock ahora tienen nombre para lectores de pantalla, y el aviso de conflicto de sincronización identifica el estado de caja en vez de mostrar un código técnico."
+    ],
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "La búsqueda de venta en `VentasView.jsx` filtra productos por `vitrina > 0` (salvo que el negocio permita stock negativo), pero el alta de producto en `StockView.jsx` sólo tenía campo para 'Stock en depósito'. Un producto recién cargado quedaba con `vitrina = 0` y no aparecía nunca al buscarlo para vender, sin ningún aviso. Se agregó un campo opcional 'Stock en vitrina' al paso 2 del alta de producto (sólo visible al crear, no al editar, para no duplicar el flujo ya existente en la pantalla Vitrina), con una aclaración de que el resto queda en depósito hasta moverlo manualmente.",
+          "`CustomerDisplaySettings.jsx` usaba `<details defaultOpen={...}>` para abrir automáticamente el panel '4. TVs y pantallas remotas' cuando se llega desde el QR de emparejamiento (`?displayPair=CODIGO` en la URL). `defaultOpen` no es una prop válida para el elemento `<details>` nativo en React (a diferencia de `defaultValue`/`defaultChecked` en inputs), así que se ignoraba en silencio y el panel quedaba cerrado. Se reemplazó por un estado controlado (`open`/`onToggle`) inicializado desde el parámetro de la URL.",
+          "En `StockView.jsx`, los botones de editar (lápiz) y eliminar (tacho) de cada fila de producto no tenían `aria-label` ni `title`, a diferencia de los de duplicar y ver historial. Se agregaron ambos atributos, con el nombre del producto incluido, en los cuatro botones de la fila.",
+          "El aviso de conflicto de sincronización usa una función `entityLabel` en `layout.jsx` para traducir el tipo de registro a un nombre legible, con `Registro #ID` como respaldo si no hay nombre. La entidad `cajaEstado` (el saldo de caja, un registro único con `id` fijo en `'actual'`, sin campo `nombre`) no estaba en esa lista, así que cualquier conflicto sobre el saldo de caja se mostraba como 'Registro #actual'. Se agregó la etiqueta 'Estado de caja' y se dejó de mostrar el `#id` en ese caso puntual, ya que al ser un registro único no aporta información."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Si cargabas un producto nuevo y no lo encontrabas al ir a venderlo, no era que la app estuviera fallando: le faltaba pasarlo a 'vitrina' a mano, y no había ningún cartel que lo explicara. Ahora podés cargar de una ese número al dar de alta el producto.",
+          "Si escaneaste el QR de una TV para vincularla como pantalla publicitaria y no encontrabas dónde poner el código, era un problema real de la app: el panel con el código ya cargado quedaba cerrado. Ahora se abre solo.",
+          "Si en algún momento ves un aviso de conflicto que dice 'Estado de caja' en vez de un código raro, es sobre el saldo de caja que se modificó desde dos dispositivos a la vez — elegí la versión que corresponda como siempre."
+        ]
+      },
+      {
+        "title": "Comprobaciones",
+        "items": [
+          "Los cuatro cambios se probaron de punta a punta con un backend local aislado (persistencia en archivo, sin tocar la base de producción ni Mercado Pago real): se creó un producto nuevo con stock en vitrina y apareció de inmediato en la búsqueda de venta; se simuló la llegada por el QR de una TV (`?displayPair=...`) y se confirmó que el panel se abre solo, sin el aviso de React en consola.",
+          "Se corrieron `pnpm run test:all` (122 pruebas funcionales + build de producción), `pnpm run test:cloud` (104 pruebas) y `pnpm run test:views`, todas sin cambios de expectativas salvo la versión."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.32",
     "date": "2026-09-16",
     "title": "La app se entera antes de que hay una actualización nueva, y se destraba la activación de Face ID",
