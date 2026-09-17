@@ -20,7 +20,7 @@ import { crearIdOperacion } from "../ventas/salesRules";
 
 const emptyForm = {
   nombre: "", codigo: "", costo: "", venta: "", deposito: "", minimo: "",
-  alertaVitrina: "", categoria: "Sin categoría", unidad: "unidad", vencimiento: "", familia: "", variante: "",
+  vitrina: "", alertaVitrina: "", categoria: "Sin categoría", unidad: "unidad", vencimiento: "", familia: "", variante: "",
 };
 
 function PreciosMasivosModal({ products, onClose, onApply }) {
@@ -86,6 +86,7 @@ export function ProductModal({ initial, onClose, onSave, proveedores = [], puede
       venta: redondearPrecio(form.venta, preferences.rounding),
       deposito: Number(form.deposito) || 0,
       minimo: Number(form.minimo) || 0,
+      vitrina: Number(form.vitrina) || 0,
       alertaVitrina: Number(form.alertaVitrina) || 0,
       unidad: form.unidad || "unidad",
     });
@@ -330,6 +331,26 @@ export function ProductModal({ initial, onClose, onSave, proveedores = [], puede
                   />
                 </div>
               </div>
+
+              {!isEdit && (
+                <div data-tour="product-vitrina-stock">
+                  <label className="text-sm text-gray-700 block mb-1">
+                    Stock en vitrina ({info.baseAbbr}, opcional)
+                  </label>
+                  <input
+                    type="number"
+                    onFocus={(e) => e.target.select()}
+                    step="any"
+                    value={form.vitrina}
+                    onChange={set("vitrina")}
+                    placeholder="0"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Sólo lo que cargues acá se puede vender de entrada. El resto queda en depósito hasta que lo muevas desde Vitrina.
+                  </p>
+                </div>
+              )}
 
               <div data-tour="product-showcase-alert">
                 <label className="text-sm text-gray-700 block mb-1">
@@ -837,23 +858,28 @@ export function StockView({ products, setProducts, proveedores = [], puedeEditar
                 {isLow && <AlertTriangle size={14} />}
               </div>
               <div data-tour="stock-product-actions" className="stock-product-actions col-span-2 flex justify-end gap-1 border-t pt-2 sm:border-0 sm:pt-0">
-                <button onClick={() => openDuplicate(p)} className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600" title="Duplicar como variante"><Copy size={16} /></button>
+                <button onClick={() => openDuplicate(p)} className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:text-blue-600" title="Duplicar como variante" aria-label={`Duplicar ${p.nombre} como variante`}><Copy size={16} /></button>
                 <button
                   onClick={() => setHistorialProducto(p)}
                   className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:text-gray-900"
                   title="Ver historial"
+                  aria-label={`Ver historial de ${p.nombre}`}
                 >
                   <History size={16} />
                 </button>
                 <button
                   onClick={() => openEdit(p)}
                   className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:text-gray-900"
+                  title="Editar"
+                  aria-label={`Editar ${p.nombre}`}
                 >
                   <Pencil size={16} />
                 </button>
                 {puedeEliminar && <button
                   onClick={() => handleDelete(p.id)}
                   className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:text-red-600"
+                  title="Eliminar"
+                  aria-label={`Eliminar ${p.nombre}`}
                 >
                   <Trash2 size={16} />
                 </button>}
