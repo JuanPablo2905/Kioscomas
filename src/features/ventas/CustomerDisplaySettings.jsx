@@ -31,6 +31,7 @@ export function CustomerDisplaySettings({ preferences, onChange, account, busine
   const [displays, setDisplays] = useState([]);
   const [runtimeMode, setRuntimeMode] = useState("browser");
   const [message, setMessage] = useState("");
+  const [remoteDisplaysOpen, setRemoteDisplaysOpen] = useState(() => Boolean(new URLSearchParams(window.location.search).get("displayPair")));
   const set = (patch) => onChange({ ...preferences, ...patch });
   const displayPromotions = useMemo(() => promocionesParaPantalla(promotions, products), [promotions, products]);
   const displayConfig = useMemo(() => normalizeDisplayConfig(preferences.customerDisplayConfig), [preferences.customerDisplayConfig]);
@@ -102,7 +103,7 @@ export function CustomerDisplaySettings({ preferences, onChange, account, busine
 
       {mercadoPagoSection}
 
-      <details defaultOpen={Boolean(new URLSearchParams(window.location.search).get("displayPair"))} className="rounded-xl border bg-white p-3"><summary className="cursor-pointer text-sm font-black">4. TVs y pantallas remotas</summary><div className="mt-4"><RemoteDisplayManager businessId={businessId} content={basePreviewState()}/></div></details>
+      <details open={remoteDisplaysOpen} onToggle={(event) => setRemoteDisplaysOpen(event.target.open)} className="rounded-xl border bg-white p-3"><summary className="cursor-pointer text-sm font-black">4. TVs y pantallas remotas</summary><div className="mt-4"><RemoteDisplayManager businessId={businessId} content={basePreviewState()}/></div></details>
 
       <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><button type="button" onClick={() => openPreview("idle")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 text-sm font-bold text-white"><Play size={16}/>Probar publicidad</button><button type="button" onClick={() => openPreview("sale")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-white px-4 text-sm font-bold text-emerald-900"><Monitor size={16}/>Simular venta</button><button type="button" onClick={() => closeCustomerDisplay({ businessId }).then(() => setMessage("Pantalla cerrada.")).catch(() => {})} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border bg-white px-4 text-sm font-semibold"><Power size={16}/>Cerrar</button></div>
       {runtimeMode === "browser" && <p className="text-xs text-gray-500">En navegador se abre una ventana que tenés que mover manualmente. La app instalada puede elegir el monitor automáticamente.</p>}{message && <p className="rounded-lg bg-white px-3 py-2 text-xs text-gray-700">{message}</p>}
