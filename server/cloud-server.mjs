@@ -2037,17 +2037,21 @@ const handleRequest = async (req, res) => {
         return send(res, 502, { error: error.message });
       }
       const stamp = Date.now();
+      // Mercado Pago exige un monto minimo (visto en pruebas: no admite menos
+      // de $15) para ordenes QR; usar un valor por encima de eso para que la
+      // comparacion A/B no quede enmascarada por ese rechazo.
+      const testAmount = String(payload.amount || "20.00");
       const baseOrderPayload = {
         type: "qr",
-        total_amount: "10.00",
+        total_amount: testAmount,
         external_reference: `DEBUGAB-${stamp}`,
         expiration_time: "PT15M",
         description: "Prueba diagnóstica Kiosco+ (no cobrar)",
         config: { qr: { external_pos_id: posExternalId, mode: "dynamic" } },
-        transactions: { payments: [{ amount: "10.00" }] },
+        transactions: { payments: [{ amount: testAmount }] },
         items: [{
           title: "Prueba diagnóstica Kiosco+",
-          unit_price: "10.00",
+          unit_price: testAmount,
           quantity: 1,
           unit_measure: "unit",
           external_code: `DEBUGAB-${stamp}`,
