@@ -4,7 +4,7 @@ import {
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
   MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
-  ChevronRight, Settings2, RotateCcw, Bug, House, HelpCircle, PanelLeftClose, PanelLeftOpen,
+  ChevronRight, Settings2, RotateCcw, Bug, House, HelpCircle, PanelLeftClose, PanelLeftOpen, ArrowLeft,
 } from "lucide-react";
 import { NAV_ITEMS } from "./domain";
 import { buildNotifications } from "../features/notificaciones/notificationRules";
@@ -164,6 +164,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
           <span className="truncate text-sm font-semibold">{cuenta?.nombreNegocio || "Kiosco+"}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {onReturnAdmin && <button onClick={onReturnAdmin} aria-label="Volver al panel de la app" className="mobile-header-action text-blue-700"><ArrowLeft size={18}/></button>}
           <button data-tour="global-scan" onClick={onGlobalScan} aria-label="Escanear producto o ticket" className="mobile-header-action"><ScanLine size={18}/></button>
           <button data-tour="help-button" onClick={onHelp} aria-label="Ayuda de esta sección" className="mobile-header-action"><HelpCircle size={18}/></button>
           <button data-tour="settings-button" onClick={onOpenSettings} aria-label="Configuración" className="mobile-header-action"><Settings2 size={18}/></button>
