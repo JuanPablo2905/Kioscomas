@@ -3234,28 +3234,6 @@ const handleRequest = async (req, res) => {
         }
       }
 
-      // Diagnóstico temporal para el ticket WCS-50768 de soporte de Mercado Pago:
-      // devuelve el user_id de GET /users/me y la respuesta de GET /v2/pos para
-      // el mismo token OAuth con el que falla la creación de la orden QR. Nunca
-      // expone el token. Quitar esta ruta cuando el ticket se resuelva.
-      if (req.method === "GET" && req.url === "/v1/payments/mercado-pago/qr/oauth-context-diagnostic") {
-        if (!ownerRequired()) return send(res, 403, { error: "Sólo el dueño puede ver este diagnóstico" });
-        const current = integration();
-        const externalPosId = current?.qr?.posExternalId || null;
-        if (!externalPosId) return send(res, 409, { error: "Todavía no hay una caja QR vinculada" });
-        try {
-          const accessToken = await mercadoPagoAccessToken(db, current, "qr");
-          const client = mercadoPagoClientFor("qr");
-          const [user, posSearch] = await Promise.all([
-            client.currentUser(accessToken),
-            client.searchPos({ accessToken, externalId: externalPosId }),
-          ]);
-          return send(res, 200, { externalPosId, oauthUserId: user?.id ?? null, posSearch });
-        } catch (error) {
-          return send(res, 400, { error: paymentFailure(error).message, providerDetails: error?.providerDetails || null });
-        }
-      }
-
       if (req.method === "GET" && req.url === "/v1/payments/mercado-pago/terminals") {
         if (!ownerRequired()) return send(res, 403, { error: "Sólo el dueño puede configurar terminales Point" });
         const current = integration();
@@ -3400,8 +3378,10 @@ const handleRequest = async (req, res) => {
         // Guardar el intento antes de hablar con el proveedor permite recuperar una
         // respuesta interrumpida repitiendo exactamente la misma clave, sin duplicar cobros.
         await writeDb(db);
+        let orderAccessToken;
         try {
           const accessToken = await mercadoPagoAccessToken(db, currentIntegration, type);
+          orderAccessToken = accessToken;
           let order;
           try {
             order = await mercadoPagoClientFor(type).createOrder({ accessToken, payload: orderPayload, idempotencyKey });
@@ -3441,15 +3421,32 @@ const handleRequest = async (req, res) => {
           attempt.failure = paymentFailure(error);
           attempt.updatedAt = new Date().toISOString();
           attempt.history.push({ status: "failed", code: attempt.failure.code, at: attempt.updatedAt });
+          // Temporal para el ticket WCS-50768: además del cuerpo real del pedido que
+          // falló, se junta en el mismo log el user_id de GET /users/me y la
+          // respuesta de GET /v2/pos para el mismo token OAuth, así Juan no tiene
+          // que llamar una ruta aparte — alcanza con reintentar el cobro. Nunca se
+          // registra el token. Si este diagnóstico falla, no afecta la respuesta
+          // real al cajero. Quitar junto con la ruta de arriba cuando se resuelva.
+          let oauthContext = null;
+          if (type === "qr" && orderAccessToken && currentIntegration?.qr?.posExternalId) {
+            try {
+              const diagnosticClient = mercadoPagoClientFor("qr");
+              const [oauthUser, posSearch] = await Promise.all([
+                diagnosticClient.currentUser(orderAccessToken),
+                diagnosticClient.searchPos({ accessToken: orderAccessToken, externalId: currentIntegration.qr.posExternalId }),
+              ]);
+              oauthContext = { externalPosId: currentIntegration.qr.posExternalId, oauthUserId: oauthUser?.id ?? null, posSearch };
+            } catch (diagnosticError) {
+              oauthContext = { error: paymentFailure(diagnosticError).message };
+            }
+          }
           console.warn("[mercado-pago] orden rechazada", JSON.stringify({
             attemptId: attempt.id,
             type: attempt.type,
             externalReference: attempt.externalReference,
             failure: attempt.failure,
-            // Temporal para el ticket WCS-50768: cuerpo e idempotencia reales del
-            // POST /v1/orders que falló, sin el access token. Quitar junto con la
-            // ruta de diagnóstico de arriba cuando el ticket se resuelva.
             request: { method: "POST", path: "/v1/orders", idempotencyKey, body: orderPayload },
+            oauthContext,
           }));
           await writeDb(db);
           return send(res, 502, { error: attempt.failure.message, attempt: paymentAttemptView(attempt), integration: paymentIntegrationView(currentIntegration, mercadoPago) });

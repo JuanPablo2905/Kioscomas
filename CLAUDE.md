@@ -148,4 +148,4 @@ Después del push a `main`, comprobar:
 
 ## Primer paso recomendado
 
-No empieces una función nueva. El bug de QR dinámico de Mercado Pago sigue abierto en el ticket `WCS-50768`. Soporte pidió tres datos concretos para aislar la propiedad rechazada; ya está el código listo para conseguirlos (log ampliado + ruta de diagnóstico temporal), falta que Juan genere un intento real de QR y llame a la ruta de diagnóstico una vez desplegado esto. Todo el detalle y el próximo paso exacto están en la sección 1 de `docs/TRASPASO_CLAUDE_CODE.md`.
+No empieces una función nueva. El bug de QR dinámico de Mercado Pago sigue abierto en el ticket `WCS-50768`. Soporte pidió tres datos concretos; ya está el código listo para conseguirlos con un solo paso de Juan (repetir "Generar QR dinámico" desde Ventas/Caja) — el log de rechazo ahora junta los tres datos solo. El dato 1 ya se obtuvo de un intento previo; falta uno nuevo, posterior al deploy de este commit, para los otros dos. Todo el detalle y el próximo paso exacto están en la sección 1 de `docs/TRASPASO_CLAUDE_CODE.md`.
