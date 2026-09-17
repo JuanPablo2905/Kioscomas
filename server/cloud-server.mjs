@@ -3378,10 +3378,8 @@ const handleRequest = async (req, res) => {
         // Guardar el intento antes de hablar con el proveedor permite recuperar una
         // respuesta interrumpida repitiendo exactamente la misma clave, sin duplicar cobros.
         await writeDb(db);
-        let orderAccessToken;
         try {
           const accessToken = await mercadoPagoAccessToken(db, currentIntegration, type);
-          orderAccessToken = accessToken;
           let order;
           try {
             order = await mercadoPagoClientFor(type).createOrder({ accessToken, payload: orderPayload, idempotencyKey });
@@ -3421,32 +3419,11 @@ const handleRequest = async (req, res) => {
           attempt.failure = paymentFailure(error);
           attempt.updatedAt = new Date().toISOString();
           attempt.history.push({ status: "failed", code: attempt.failure.code, at: attempt.updatedAt });
-          // Temporal para el ticket WCS-50768: además del cuerpo real del pedido que
-          // falló, se junta en el mismo log el user_id de GET /users/me y la
-          // respuesta de GET /v2/pos para el mismo token OAuth, así Juan no tiene
-          // que llamar una ruta aparte — alcanza con reintentar el cobro. Nunca se
-          // registra el token. Si este diagnóstico falla, no afecta la respuesta
-          // real al cajero. Quitar junto con la ruta de arriba cuando se resuelva.
-          let oauthContext = null;
-          if (type === "qr" && orderAccessToken && currentIntegration?.qr?.posExternalId) {
-            try {
-              const diagnosticClient = mercadoPagoClientFor("qr");
-              const [oauthUser, posSearch] = await Promise.all([
-                diagnosticClient.currentUser(orderAccessToken),
-                diagnosticClient.searchPos({ accessToken: orderAccessToken, externalId: currentIntegration.qr.posExternalId }),
-              ]);
-              oauthContext = { externalPosId: currentIntegration.qr.posExternalId, oauthUserId: oauthUser?.id ?? null, posSearch };
-            } catch (diagnosticError) {
-              oauthContext = { error: paymentFailure(diagnosticError).message };
-            }
-          }
           console.warn("[mercado-pago] orden rechazada", JSON.stringify({
             attemptId: attempt.id,
             type: attempt.type,
             externalReference: attempt.externalReference,
             failure: attempt.failure,
-            request: { method: "POST", path: "/v1/orders", idempotencyKey, body: orderPayload },
-            oauthContext,
           }));
           await writeDb(db);
           return send(res, 502, { error: attempt.failure.message, attempt: paymentAttemptView(attempt), integration: paymentIntegrationView(currentIntegration, mercadoPago) });

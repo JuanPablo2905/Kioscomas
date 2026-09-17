@@ -9,7 +9,7 @@ Este archivo es la entrada obligatoria para continuar Kiosco+. Leelo completo an
 - Rama de trabajo: `main`.
 - Commit funcional: `72c4bfc` (tres fixes de Mercado Pago sobre `dfb8b90619bd8f5d40b2a0cc8a7bcb532532d080`; ver `docs/TRASPASO_CLAUDE_CODE.md` sección 1).
 - Última etiqueta publicada presente al escribir esto: `v0.2.29`.
-- `0.2.30` está en `main`, pasó el control de calidad y está desplegada en el backend. **El bug de QR dinámico (`property_value` al crear la orden) sigue sin resolverse.** Hay un ticket abierto con soporte humano de Mercado Pago (`WCS-50768`). Soporte pidió tres datos nuevos (curl real del `POST /v1/orders`, `external_pos_id` + GET de esa POS, `user_id` de `GET /users/me` con el token OAuth); se agregó un log ampliado y una ruta de diagnóstico temporal (dueño únicamente, sin exponer tokens) para conseguirlos sin fabricar nada. Ver sección 1 de `docs/TRASPASO_CLAUDE_CODE.md` para el estado exacto y el próximo paso.
+- `0.2.30` está en `main`, pasó el control de calidad y está desplegada en el backend. **El bug de QR dinámico (`property_value` al crear la orden) sigue sin resolverse.** Hay un ticket abierto con soporte humano de Mercado Pago (`WCS-50768`). Soporte pidió tres datos (curl real del `POST /v1/orders`, `external_pos_id` + GET de esa POS, `user_id` de `GET /users/me` con el token OAuth); los tres ya se obtuvieron con un diagnóstico temporal (ya retirado del código) y muestran algo importante: el `user_id` del token OAuth coincide con el dueño de la POS, así que no es un problema de cuenta mal asociada. Falta enviar la respuesta al ticket. Ver sección 1 de `docs/TRASPASO_CLAUDE_CODE.md` para el detalle completo y el próximo paso.
 - El proyecto se movió de carpeta: ahora vive en `kiosco app\Kioscomas` directamente (antes `kiosco app\PARA_SUBIR_A_GITHUB\Kioscomas`). Ver `kiosco app\README.md`.
 - El árbol estaba limpio antes de este commit.
 
@@ -148,4 +148,4 @@ Después del push a `main`, comprobar:
 
 ## Primer paso recomendado
 
-No empieces una función nueva. El bug de QR dinámico de Mercado Pago sigue abierto en el ticket `WCS-50768`. Soporte pidió tres datos concretos; ya está el código listo para conseguirlos con un solo paso de Juan (repetir "Generar QR dinámico" desde Ventas/Caja) — el log de rechazo ahora junta los tres datos solo. El dato 1 ya se obtuvo de un intento previo; falta uno nuevo, posterior al deploy de este commit, para los otros dos. Todo el detalle y el próximo paso exacto están en la sección 1 de `docs/TRASPASO_CLAUDE_CODE.md`.
+No empieces una función nueva. El bug de QR dinámico de Mercado Pago sigue abierto en el ticket `WCS-50768`, pero ya no falta diagnóstico: los tres datos que pidió soporte están obtenidos y el texto de respuesta armado en la sección 1 de `docs/TRASPASO_CLAUDE_CODE.md`. Sólo falta que alguien lo pegue en el ticket. Todo el detalle está ahí.

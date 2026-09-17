@@ -129,19 +129,32 @@ Primer intento: se agregó un log ampliado más una ruta de diagnóstico separad
 
 Con esto Juan sólo tiene que repetir la acción que ya sabe hacer (apretar **Generar QR dinámico** desde Ventas/Caja) y Claude Code saca los tres datos leyendo los logs de Render (`mcp__Render__list_logs`, `resource: srv-d9mdoclbedkc73dh42b0`, texto `"orden rechazada"`) — no hace falta DevTools, curl manual ni tokens pegados en el chat. Se retiró la ruta separada.
 
-**Dato 1 ya obtenido (17/09/2026, noche), del intento con solicitud `65668936-f9f0-4a5b-9860-9329ec8159f2`:** `external_pos_id: CAJAE6237BCF51ACD9CA`, `idempotencyKey: 10a120fa-2170-4b31-991a-1aa4b2a23489`, importe `14300.00`. Body completo en el log de Render de esa fecha. Faltan los datos 2 y 3 (`oauthContext`): ese intento fue anterior a este cambio, así que no los tiene — hace falta un intento más, posterior al deploy de este commit.
+**Los tres datos se obtuvieron (17/09/2026, noche)**, del intento con solicitud `5a28007f-4faf-49f4-ae13-c9dc258671ad` (log de Render, `attemptId 575a27dd-0a41-4f20-a983-b92318321c1d`, `idempotencyKey a25f0f40-a6aa-44e8-85ee-8fa0c843ba46`):
 
-Pasaron las 35 pruebas de `test:payments` y las 7 de `test:server-security` antes de este commit. Es temporal, igual que el diagnóstico anterior de prefijo del token (commit `c29a565`/`f8497d8`): retirar el bloque `oauthContext` de `server/cloud-server.mjs` cuando el ticket se resuelva.
+1. **Body real del `POST /v1/orders`** (headers reconstruidos del código, token enmascarado):
+   ```
+   curl -X POST https://api.mercadopago.com/v1/orders \
+     -H "accept: application/json" \
+     -H "authorization: Bearer ***" \
+     -H "content-type: application/json" \
+     -H "x-idempotency-key: a25f0f40-a6aa-44e8-85ee-8fa0c843ba46" \
+     -d '{"type":"qr","total_amount":"14300.00","external_reference":"KIOSCO-1789683051793-eb28c231-91ce-48b6-9353-4a301a374619","expiration_time":"PT15M","description":"Venta presencial Kiosco+","config":{"qr":{"external_pos_id":"CAJAE6237BCF51ACD9CA","mode":"dynamic"}},"transactions":{"payments":[{"amount":"14300.00"}]},"items":[{"title":"Venta presencial Kiosco+","unit_price":"14300.00","quantity":1,"unit_measure":"unit","external_code":"KIOSCO-1789683051793-eb28c231-91ce-48b6-9353-4a301a374619"}]}'
+   ```
+2. **`external_pos_id` y el GET que lo valida:** `CAJAE6237BCF51ACD9CA`. `GET /v2/pos?external_id=CAJAE6237BCF51ACD9CA` con el mismo token OAuth devuelve la caja activa: `id 138263296`, `name "Caja principal"`, `status "active"`, `store_id "81160121"`, `external_store_id "KIOSCOE6237BCF51ACD9CA"`, `user_id 353295026`, `config.qr.operating_mode "pdv"`.
+3. **`user_id` de `GET /users/me`** con ese mismo token OAuth: `353295026`.
+
+**Hallazgo clave: el `user_id` del token OAuth (`353295026`) es idéntico al `user_id` que la propia POS informa como dueña.** Esto descarta la hipótesis de soporte de un token asociado a un "usuario efectivo" distinto — es la misma cuenta en ambos lados, y la orden igual falla con `property_value`/`field: null`.
+
+Se retiró el log ampliado y el bloque `oauthContext` de `server/cloud-server.mjs` apenas se obtuvieron estos datos (mismo criterio que el diagnóstico de prefijo del token, commit `c29a565`/`f8497d8`). Pasaron las 35 pruebas de `test:payments` y las 7 de `test:server-security` después de retirarlo.
 
 ### Próxima acción exacta
 
 1. Confirmar el deploy de este commit en `/v1/health` (`revision`).
-2. Pedirle a Juan que genere un intento real de QR dinámico desde Ventas/Caja del negocio **Hidraulic shop** (va a fallar igual que antes — no generar el QR ni completar el pago desde la sesión de Claude Code). Después, leer los logs de Render (`[mercado-pago] orden rechazada`) para sacar los tres datos (`request` + `oauthContext`) de una sola vez.
-3. Armar la respuesta al ticket `WCS-50768` con los tres datos y enviarla.
-4. Retirar el bloque `oauthContext` del log apenas se obtengan los datos, igual que se hizo con el diagnóstico de prefijo del token.
-5. Una vez que Mercado Pago indique la causa real, aplicar el fix correspondiente, correr `pnpm test:payments`, `pnpm test:payment-ui`, `pnpm test:displays`, desplegar, y volver a pedirle a Juan que reconecte Código QR y genere el QR real él mismo desde Ventas/Caja (no generar el QR ni completar el pago desde la sesión de Claude Code).
-6. Sólo si ese punto se confirma en vivo por Juan se puede considerar cerrado el bug y evaluar etiquetar 0.2.30 (ver criterio abajo).
-7. No tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR. Point comparte la misma función `buildMercadoPagoAuthorizationUrl`, así que el fix de `platform_id=mp` ya le aplica, pero la causa adicional (si la hay) conviene verificarla por separado antes de darlo por bueno ahí también.
+2. Enviar al ticket `WCS-50768` los tres datos de arriba, incluyendo el hallazgo del `user_id` coincidente.
+3. Revisar el ticket hasta que soporte de Mercado Pago identifique la causa real y un fix concreto.
+4. Una vez que Mercado Pago indique la causa real, aplicar el fix correspondiente, correr `pnpm test:payments`, `pnpm test:payment-ui`, `pnpm test:displays`, desplegar, y volver a pedirle a Juan que reconecte Código QR y genere el QR real él mismo desde Ventas/Caja (no generar el QR ni completar el pago desde la sesión de Claude Code).
+5. Sólo si ese punto se confirma en vivo por Juan se puede considerar cerrado el bug y evaluar etiquetar 0.2.30 (ver criterio abajo).
+6. No tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR. Point comparte la misma función `buildMercadoPagoAuthorizationUrl`, así que el fix de `platform_id=mp` ya le aplica, pero la causa adicional (si la hay) conviene verificarla por separado antes de darlo por bueno ahí también.
 
 ### Criterio para cerrar 0.2.30
 
