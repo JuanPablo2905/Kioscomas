@@ -1,5 +1,36 @@
 [
   {
+    "version": "0.2.34",
+    "date": "2026-09-17",
+    "title": "El administrador ya puede volver a su panel desde el celular",
+    "summary": "Cuando el administrador de Kiosco+ entra a operar el negocio de un cliente, el botón para volver a su propio panel vivía en una parte del menú que se oculta por completo en pantallas chicas. En el celular no había ningún reemplazo, así que quedaba sin forma visible de salir de ese negocio. Ahora ese botón aparece siempre, arriba de todo, tanto en computadora como en el celular.",
+    "highlights": [
+      "El botón 'Volver al panel de la app' ahora aparece también en el celular, como flecha en la parte de arriba."
+    ],
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "En `styles.css`, la regla para pantallas chicas (`max-width: 767px`) ocultaba `.sidebar-admin-return` (el botón de volver) junto con el logo, los encabezados de sección y el pie del menú, porque en el celular esa barra lateral se convierte en una navegación inferior angosta donde esos elementos no caben. El botón de volver quedó agrupado en esa misma regla sin ningún reemplazo visible en el encabezado móvil.",
+          "Se agregó el botón al encabezado fijo superior del celular (`mobile-app-header`), junto a los otros accesos rápidos (escanear, ayuda, configuración, reportar problema, cerrar sesión), usando una flecha para no ocupar espacio de texto."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Si entrabas a revisar el negocio de un cliente desde el celular y no encontrabas cómo volver a tu panel de administrador, no era que estuvieras haciendo algo mal: el botón directamente no aparecía en pantallas chicas. Ahora está siempre visible arriba, como una flecha."
+        ]
+      },
+      {
+        "title": "Comprobaciones",
+        "items": [
+          "Se reprodujo el escenario completo en un entorno de prueba aislado: se entró a operar un negocio como administrador con un ancho de pantalla de celular, y se confirmó que la flecha aparece en el encabezado y que sigue llevando de vuelta al panel del administrador.",
+          "Se corrió `pnpm run test:all` (build de producción y pruebas funcionales) y `pnpm run test:views`, sin cambios de expectativas salvo la versión."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.33",
     "date": "2026-09-17",
     "title": "Un producto nuevo ya se puede vender al toque, y el QR para vincular una TV abre el panel correcto",

@@ -24,7 +24,7 @@ const cloudServer = read("server/cloud-server.mjs");
 const childProcessHelper = read("scripts/test-child-process.mjs");
 
 const checks = [
-  [pkg.version === "0.2.33", "el paquete usa la versión 0.2.33"],
+  [pkg.version === "0.2.34", "el paquete usa la versión 0.2.34"],
   [cloudServer.includes("server.close") && cloudServer.includes('shutdown("SIGTERM")') && childProcessHelper.includes('child.kill("SIGKILL")'), "los servidores auxiliares cierran limpiamente y tienen salida de emergencia"],
   [app.includes("lazyNamed") && app.includes("Suspense") && app.includes('import("../shared/ScanModal")'), "las secciones pesadas y el escáner se cargan por demanda"],
   [main.includes('import("./features/ventas/CustomerDisplayScreen")') && main.includes('import("./features/ventas/RemoteDisplayScreen")') && main.includes("!isSecondaryDisplay && <PwaUpdateNotice"), "las pantallas secundarias cargan por demanda y no muestran avisos internos"],

@@ -1,7 +1,7 @@
 {
   "name": "kiosco-app",
   "private": true,
-  "version": "0.2.33",
+  "version": "0.2.34",
   "description": "Gestión simple de stock, ventas, caja y compras para comercios.",
   "author": "Kiosco+",
   "repository": {
