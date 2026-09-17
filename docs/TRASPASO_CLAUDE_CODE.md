@@ -107,12 +107,31 @@ Importante para futuras sesiones: la conexión real de Mercado Pago para probar 
 
 Las tres respuestas se enviaron al ticket el 16/09/2026 a la noche. Queda esperando la próxima respuesta de soporte.
 
+### Nueva ronda de soporte (17/09/2026): tres datos más pedidos
+
+Soporte volvió a responder el ticket `WCS-50768` pidiendo, para aislar la propiedad exacta que Mercado Pago rechaza:
+
+1. El `curl` completo del `POST /v1/orders` (headers, path y body reales; token enmascarado con `***`).
+2. El `config.qr.external_pos_id` exacto usado en una prueba fallida reciente, junto con la respuesta del GET con el que se valida esa POS antes de crear la orden.
+3. El `user_id` que devuelve `GET /users/me` usando el mismo access token OAuth con el que falla.
+
+Ninguno de los tres estaba capturado de antes (el log de rechazo sólo guardaba `externalReference` y el error traducido; Kiosco+ tampoco valida la POS con un GET antes de crear la orden en el camino normal — sólo lo hace como reparación si el error es `External POS id not found`, que no es este caso). Se agregó, sin tocar el flujo real de cobro:
+
+- **Log ampliado (mismo bloque `[mercado-pago] orden rechazada`):** ahora incluye `request: { method, path, idempotencyKey, body }` con el payload real que se mandó a `/v1/orders` (sin el token). Se completa solo la próxima vez que se intente generar un QR dinámico real y vuelva a fallar — con esto alcanza para armar el `curl` pedido en el punto 1.
+- **Ruta de diagnóstico temporal `GET /v1/payments/mercado-pago/qr/oauth-context-diagnostic`** (sólo dueño, nunca expone el token): llama a `GET /users/me` y a `GET /v2/pos?external_id=...` con el mismo token OAuth de Código QR y devuelve `{ externalPosId, oauthUserId, posSearch }`. Cubre los puntos 2 y 3 en una sola llamada.
+
+Pasaron las 35 pruebas de `test:payments`, las 7 de `test:server-security` y las 104 de `test:cloud` antes de este commit. Es temporal, igual que el diagnóstico anterior de prefijo del token (commit `c29a565`/`f8497d8`): retirar ambos agregados de `server/cloud-server.mjs` cuando el ticket se resuelva.
+
 ### Próxima acción exacta
 
-1. Revisar el ticket `WCS-50768` (Centro de atención o e-mail) hasta que soporte de Mercado Pago identifique la causa real y un fix concreto.
-2. Una vez que Mercado Pago indique la causa real, aplicar el fix correspondiente, correr `pnpm test:payments`, `pnpm test:payment-ui`, `pnpm test:displays`, desplegar, y volver a pedirle a Juan que reconecte Código QR y genere el QR real él mismo desde Ventas/Caja (no generar el QR ni completar el pago desde la sesión de Claude Code).
-3. Sólo si ese punto se confirma en vivo por Juan se puede considerar cerrado el bug y evaluar etiquetar 0.2.30 (ver criterio abajo).
-4. No tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR. Point comparte la misma función `buildMercadoPagoAuthorizationUrl`, así que el fix de `platform_id=mp` ya le aplica, pero la causa adicional (si la hay) conviene verificarla por separado antes de darlo por bueno ahí también.
+1. Confirmar el deploy de este commit en `/v1/health` (`revision`).
+2. Pedirle a Juan que genere un intento real de QR dinámico desde Ventas/Caja del negocio **Hidraulic shop** (va a fallar igual que antes — no complementar ni completar el pago desde la sesión de Claude Code). Después, leer los logs de Render (`[mercado-pago] orden rechazada`) para sacar el `curl` exacto del punto 1.
+3. Pedirle a Juan, como dueño logueado en la app, que llame una vez a `GET /v1/payments/mercado-pago/qr/oauth-context-diagnostic` (con su propio token de sesión de Kiosco+, no el de Mercado Pago) y pegue el JSON de respuesta — cubre los puntos 2 y 3.
+4. Armar la respuesta al ticket `WCS-50768` con los tres datos y enviarla.
+5. Retirar el log ampliado y la ruta de diagnóstico apenas se obtengan los datos, igual que se hizo con el diagnóstico de prefijo del token.
+6. Una vez que Mercado Pago indique la causa real, aplicar el fix correspondiente, correr `pnpm test:payments`, `pnpm test:payment-ui`, `pnpm test:displays`, desplegar, y volver a pedirle a Juan que reconecte Código QR y genere el QR real él mismo desde Ventas/Caja (no generar el QR ni completar el pago desde la sesión de Claude Code).
+7. Sólo si ese punto se confirma en vivo por Juan se puede considerar cerrado el bug y evaluar etiquetar 0.2.30 (ver criterio abajo).
+8. No tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR. Point comparte la misma función `buildMercadoPagoAuthorizationUrl`, así que el fix de `platform_id=mp` ya le aplica, pero la causa adicional (si la hay) conviene verificarla por separado antes de darlo por bueno ahí también.
 
 ### Criterio para cerrar 0.2.30
 
