@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
-  Package, Store, ShoppingCart, BarChart3, Shield, LogOut, ScanLine, Search,
-  Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
+  Store, ShoppingCart, BarChart3, Shield, LogOut, ScanLine, Search,
+  Plus, Pencil, Trash2, X, AlertTriangle, Save, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
   MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
   ChevronRight, Bug, Camera,
@@ -10,22 +10,70 @@ import { HOME_CARDS, money } from "../../shared/domain";
 import { permisosDe } from "../../app/data";
 import { isWithinRange } from "../../shared/dateRanges";
 
-function DashboardCard({ icon: Icon, label, value, sub, tono, onClick, sensitive = false }) {
-  const tonos = {
-    verde: "text-green-600",
-    rojo: "text-red-600",
-    ambar: "text-amber-600",
-    gris: "text-gray-900",
-  };
+const WEEKDAY_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+function ventasUltimos7Dias(tickets) {
+  return Array.from({ length: 7 }, (_, idx) => {
+    const day = new Date();
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() - (6 - idx));
+    const next = new Date(day);
+    next.setDate(next.getDate() + 1);
+    const total = (tickets || [])
+      .filter((t) => { const fecha = new Date(t.fecha); return fecha >= day && fecha < next; })
+      .reduce((sum, t) => sum + t.total, 0);
+    return { label: WEEKDAY_SHORT[day.getDay()], total, isToday: idx === 6 };
+  });
+}
+
+function VentasChart({ dias }) {
+  const max = Math.max(1, ...dias.map((d) => d.total));
+  return (
+    <div className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
+      <span className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Ventas · últimos 7 días</span>
+      <div className="mt-3 flex h-32 items-end gap-1.5 sm:h-40 sm:gap-2">
+        {dias.map((d, idx) => (
+          <div key={idx} className="flex h-full flex-1 flex-col items-stretch justify-end">
+            <div
+              className={`sensitive-value w-full rounded-t-md ${d.isToday ? "" : "bg-gray-200"}`}
+              style={{ height: `${Math.max(4, Math.round((d.total / max) * 100))}%`, background: d.isToday ? "var(--app-accent)" : undefined }}
+              title={`${d.isToday ? "Hoy" : d.label}: ${money(d.total)}`}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1.5 flex gap-1.5 sm:gap-2">
+        {dias.map((d, idx) => (
+          <span key={idx} className={`flex-1 truncate text-center text-[10px] ${d.isToday ? "font-bold text-gray-900" : "text-gray-400"}`}>{d.isToday ? "Hoy" : d.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QuickAction({ icon: Icon, label, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="home-metric-card min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-4 text-left transition-all hover:border-gray-400 hover:shadow-sm"
+      className="flex min-h-[52px] min-w-0 flex-1 items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-center text-[12.5px] font-bold transition-transform active:scale-[0.98] sm:text-[13px]"
+      style={{ background: "var(--app-accent)", color: "var(--app-accent-text, #fff)" }}
     >
-      <Icon size={17} className="text-gray-400 mb-2" />
-      <p className={`break-words text-xl font-bold tabular-nums ${sensitive ? "sensitive-value" : ""} ${tonos[tono] || "text-gray-900"}`}>{value}</p>
-      <p className="mt-0.5 break-words text-xs text-gray-500">{label}</p>
-      {sub && <p className="mt-1 break-words text-[11px] text-gray-400">{sub}</p>}
+      <Icon size={16} className="shrink-0" />
+      <span className="min-w-0 break-words">{label}</span>
+    </button>
+  );
+}
+
+function AccessTile({ icon: Icon, title, sub, subTone = "gray", badge, hint, onClick }) {
+  const subClass = subTone === "amber" ? "font-semibold text-amber-700" : subTone === "green" ? "text-green-700" : "text-gray-500";
+  return (
+    <button onClick={onClick} title={hint} className="home-access-tile relative flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white p-3 text-center transition-all hover:border-gray-400 hover:shadow-sm">
+      {badge != null && badge > 0 && (
+        <span className="absolute right-2 top-2 grid h-4 min-w-[16px] place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">{badge}</span>
+      )}
+      <span className="grid h-9 w-9 place-items-center rounded-lg bg-gray-100"><Icon size={17} className="text-gray-700" /></span>
+      <span className="break-words text-[12.5px] font-bold text-gray-900">{title}</span>
+      {sub && <span className={`break-words text-[10.5px] ${subClass}`}>{sub}</span>}
     </button>
   );
 }
@@ -126,6 +174,30 @@ export function Home({ onNavigate, cuenta, identidad, data, onReportProblem }) {
     isWithinRange(t.fecha, "Hoy")
   ).length;
 
+  const puedeVentas = permisos.includes("ventas");
+  const puedeStock = permisos.includes("stock");
+  const puedeVitrina = permisos.includes("vitrina");
+  const puedeGastos = permisos.includes("gastos");
+  const dias = puedeVentas ? ventasUltimos7Dias(data?.tickets) : [];
+
+  const accesosStats = {
+    stock: puedeStock ? {
+      sub: stockBajo.length > 0 ? `${stockBajo.length} crítico(s)` : "Sin críticos",
+      tone: stockBajo.length > 0 ? "amber" : "gray",
+      badge: stockBajo.length,
+      hint: `Valor del stock: ${money(valorStock)}`,
+    } : null,
+    vitrina: puedeVitrina ? {
+      sub: reposicionVitrina.length > 0 ? `${reposicionVitrina.length} para reponer` : "Al día",
+      tone: reposicionVitrina.length > 0 ? "amber" : "gray",
+      badge: reposicionVitrina.length,
+    } : null,
+    ventas: puedeVentas ? {
+      sub: data?.cajaAbierta ? "Caja abierta" : "Caja cerrada",
+      tone: data?.cajaAbierta ? "green" : "gray",
+    } : null,
+  };
+
   return (
     <div data-tour="home-summary" className="min-w-0 p-4 sm:p-8">
       <h1 className="mb-1 break-words text-2xl font-bold text-gray-900">
@@ -137,77 +209,66 @@ export function Home({ onNavigate, cuenta, identidad, data, onReportProblem }) {
         · ¿Qué querés hacer hoy?
       </p>
 
-      {data && (
-        <div className="home-card-grid home-metrics-grid grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-          {permisos.includes("ventas") && (
-            <DashboardCard
-              icon={Lock}
-              label="Caja"
-              value={data.cajaAbierta ? "Abierta" : "Cerrada"}
-              sub={data.cajaAbierta ? money(data.caja.saldo) : null}
-              tono={data.cajaAbierta ? "verde" : "gris"}
-              sensitive={data.cajaAbierta}
-              onClick={() => onNavigate("ventas")}
-            />
-          )}
-          {permisos.includes("ventas") && (
-            <DashboardCard
-              icon={ShoppingCart}
-              label="Ventas de hoy"
-              value={money(ventasHoy)}
-              sub={`${ticketsHoy} ticket(s)`}
-              tono="verde"
-              sensitive
-              onClick={() => onNavigate("reportes")}
-            />
-          )}
-          {permisos.includes("stock") && (
-            <DashboardCard
-              icon={AlertTriangle}
-              label="Productos críticos"
-              value={stockBajo.length}
-              sub="Stock bajo en depósito"
-              tono={stockBajo.length > 0 ? "rojo" : "gris"}
-              onClick={() => onNavigate("stock")}
-            />
-          )}
-          {permisos.includes("vitrina") && (
-            <DashboardCard
-              icon={Bell}
-              label="Reponer vitrina"
-              value={reposicionVitrina.length}
-              sub="Productos por debajo del umbral"
-              tono={reposicionVitrina.length > 0 ? "ambar" : "gris"}
-              onClick={() => onNavigate("vitrina")}
-            />
-          )}
-          {permisos.includes("stock") && (
-            <DashboardCard
-              icon={Package}
-              label="Valor del stock"
-              value={money(valorStock)}
-              sub="Depósito, a precio de costo"
-              tono="gris"
-              sensitive
-              onClick={() => onNavigate("stock")}
-            />
-          )}
+      {data && (puedeVentas || puedeVitrina) && (
+        <div className="mb-4 grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-[1.7fr_1fr]">
+          {puedeVentas && <VentasChart dias={dias} />}
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            {puedeVentas && (
+              <div className="flex min-w-0 flex-col justify-center gap-2 rounded-2xl border border-gray-200 bg-white p-4">
+                <div>
+                  <span className="block text-[10.5px] font-bold uppercase tracking-wide text-gray-500">Caja</span>
+                  <span className={`sensitive-value block break-words text-lg font-extrabold ${data.cajaAbierta ? "text-green-600" : "text-gray-900"}`}>
+                    {data.cajaAbierta ? `Abierta · ${money(data.caja.saldo)}` : "Cerrada"}
+                  </span>
+                </div>
+                <div className="h-px bg-gray-100" />
+                <div>
+                  <span className="block text-[10.5px] font-bold uppercase tracking-wide text-gray-500">Ventas de hoy</span>
+                  <span className="sensitive-value block break-words text-lg font-extrabold text-gray-900">{money(ventasHoy)} · {ticketsHoy} ticket(s)</span>
+                </div>
+              </div>
+            )}
+            {puedeVitrina && (
+              reposicionVitrina.length > 0 ? (
+                <button onClick={() => onNavigate("vitrina")} className="flex min-w-0 flex-col justify-center gap-1.5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left">
+                  <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-800"><AlertTriangle size={13} />Atención</span>
+                  <span className="break-words text-sm font-semibold text-gray-900">{reposicionVitrina.length} producto(s) para reponer en vitrina</span>
+                  <span className="text-xs font-bold text-amber-800">Reponer vitrina &rarr;</span>
+                </button>
+              ) : (
+                <div className="flex min-w-0 flex-col justify-center gap-1.5 rounded-2xl border border-gray-200 bg-white p-4">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Vitrina</span>
+                  <span className="text-sm font-semibold text-gray-700">Sin productos para reponer</span>
+                </div>
+              )
+            )}
+          </div>
         </div>
       )}
 
-      <div className="home-card-grid home-actions-grid grid grid-cols-2 md:grid-cols-4 gap-4">
+      {(puedeVentas || puedeStock || puedeGastos) && (
+        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {puedeVentas && <QuickAction icon={ShoppingCart} label="Nueva venta" onClick={() => onNavigate("ventas")} />}
+          {puedeVentas && <QuickAction icon={Lock} label={data?.cajaAbierta ? "Cerrar caja" : "Abrir caja"} onClick={() => onNavigate("ventas")} />}
+          {puedeStock && <QuickAction icon={Plus} label="Agregar producto" onClick={() => onNavigate("stock")} />}
+          {puedeGastos && <QuickAction icon={ArrowDownCircle} label="Registrar gasto" onClick={() => onNavigate("gastos")} />}
+        </div>
+      )}
+
+      <div className="home-card-grid home-actions-grid grid grid-cols-2 gap-3 sm:grid-cols-4">
         {cardsVisibles.map((card) => {
-          const Icon = card.icon;
+          const stat = accesosStats[card.id];
           return (
-            <button
+            <AccessTile
               key={card.id}
+              icon={card.icon}
+              title={card.title}
+              sub={stat?.sub}
+              subTone={stat?.tone}
+              badge={stat?.badge}
+              hint={stat?.hint}
               onClick={() => onNavigate(card.id)}
-              className="home-action-card min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-5 text-left transition-all hover:border-gray-400 hover:shadow-sm"
-            >
-              <Icon size={22} className="text-gray-900 mb-4" />
-              <p className="break-words font-semibold text-gray-900">{card.title}</p>
-              <p className="mt-0.5 break-words text-sm text-gray-500">{card.desc}</p>
-            </button>
+            />
           );
         })}
       </div>
