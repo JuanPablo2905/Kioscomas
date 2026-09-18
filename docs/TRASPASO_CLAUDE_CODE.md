@@ -170,6 +170,22 @@ Se avisó en el mismo ticket nuevo que se sigue probando desde este lado para ll
 3. Si vuelve a fallar: el problema sigue siendo intermitente del lado de Mercado Pago — no repetir el A/B test (ya se hizo y no aisló nada porque nada falló); en cambio, capturar el `request_id`/momento exacto y volver a escribir en el ticket con eso.
 4. No tocar el flujo de Point todavía — este diagnóstico fue sólo sobre Código QR. Point comparte la misma función `buildMercadoPagoAuthorizationUrl`, así que el fix de `platform_id=mp` ya le aplica, pero conviene verificar el mismo tipo de intermitencia por separado antes de darlo por bueno ahí también.
 
+### Auditoría exhaustiva del lado de Kiosco+ (17/09/2026, noche): no hay nada mal configurado
+
+A pedido de Juan ("seguí insistiendo hasta encontrar algo útil", sin abrir otro ticket), se revisó con el chatbot de soporte, campo por campo, todo el circuito OAuth + Orders API, y también se entró directamente al panel real de Developers (`Kioscomas QR`, AppID `7595655096885201`, con la sesión de Juan ya autenticada en su navegador). Resultado: **no se encontró ninguna configuración incorrecta de nuestro lado.**
+
+Verificado explícitamente:
+- **URL de autorización OAuth**: todos los parámetros (`client_id`, `response_type`, `platform_id=mp`, `redirect_uri`, `state`, `code_challenge`, `code_challenge_method=S256`) están presentes y bien codificados. No hace falta `scope`.
+- **PKCE**: `code_verifier` se genera con `crypto.randomBytes(48).toString("base64url")` (64 caracteres, formato correcto) y `code_challenge` es `SHA256(verifier)` en base64url — cumple la especificación S256. Se entró al panel real de la app y se confirmó que el toggle **"¿Usás el flujo de código de actualización con PKCE?" está en "Sí"**, coincidiendo con lo que manda el código. (Nota: la app secundaria **"Kioscomas QR Diagnostico"**, AppID `4952011705871579`, sí tiene ese toggle en "No" — pero esa app NO es la que usa producción, así que no aplica.)
+- **redirect_uri**: coincide carácter por carácter entre el código, la URL de autorización, el intercambio de token y el campo configurado en el panel (`https://kiosco-plus-api.onrender.com/v1/payments/mercado-pago/oauth/callback`).
+- **Intercambio de token** (`POST /oauth/token`): `grant_type`, `client_id`, `client_secret`, `code`, `redirect_uri`, `code_verifier`, `test_token=false` — todo como lo pide la documentación oficial.
+- **Permisos de la aplicación**: `read`, `write` y `offline_access` están los tres habilitados en el panel.
+- **Tipo de producto**: la app está correctamente configurada como **"Código QR Platform"** (pagos presenciales) — el tipo "marketplace" correcto para operar Orders API en nombre de un vendedor, no un "Código QR" individual.
+- **Headers de `POST /v1/orders`**: `accept`, `authorization: Bearer`, `content-type`, `x-idempotency-key` (UUID v4, 36 caracteres) — todos dentro de lo esperado; la doc de errores confirma que `X-Idempotency-Key` acepta de 1 a 64 caracteres.
+- **Panel de monitoreo** (`/developers/panel/app/7595655096885201/metrics`, función BETA): no tiene datos útiles — muestra 0 solicitudes/0 errores para el período 9-16/09, y no permite extender el rango a fechas más allá de ayer. No sirvió como fuente adicional de diagnóstico.
+
+**Conclusión de esta ronda:** se agotó la superficie técnica revisable de nuestro lado. No hay un cambio de código ni de configuración pendiente que podamos hacer nosotros mismos. Si el bug reaparece, la vía de progreso real sigue siendo la respuesta de soporte humano de Mercado Pago al ticket nuevo (ver sección anterior) — no seguir buscando configuraciones nuestras, ya se revisaron todas las candidatas razonables.
+
 ### Criterio para cerrar 0.2.30
 
 Sólo etiquetar 0.2.30 si:
