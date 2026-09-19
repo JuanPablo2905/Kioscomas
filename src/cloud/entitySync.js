@@ -16,7 +16,21 @@ const withEntityItems = (dataset = {}, entity, items = []) => {
   if (entity === "cajaEstado") {
     const state = items.find((item) => String(item?.id) === "actual");
     if (!state) return dataset;
-    return { ...dataset, caja: { ...(dataset.caja || {}), saldo: Number(state.saldo || 0), _syncSaldoVersion: Number(state._syncVersion || 0) } };
+    return {
+      ...dataset,
+      caja: {
+        ...(dataset.caja || {}),
+        saldo: Number(state.saldo || 0),
+        _syncSaldoVersion: Number(state._syncVersion || 0),
+        // Un cajaEstado puede llegar antes que cualquier cajaMovimientos/cajaHistorial
+        // (por ejemplo, la primera vez que se abre la caja en un negocio nuevo). Sin
+        // este resguardo, caja.movimientos quedaba undefined y todo lo que hace
+        // `...prev.movimientos` (abrir caja, cobrar, registrar un movimiento) rompía
+        // la pantalla en blanco.
+        movimientos: dataset.caja?.movimientos || [],
+        historial: dataset.caja?.historial || [],
+      },
+    };
   }
   const nestedKey = NESTED_ENTITY_KEYS[entity];
   if (!nestedKey) return { ...dataset, [entity]: items };

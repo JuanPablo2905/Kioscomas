@@ -1499,7 +1499,7 @@ export function VentasView({
         ...prev,
         saldo: prev.saldo + efectivoCobrado,
         movimientos: [
-          ...prev.movimientos,
+          ...(prev.movimientos || []),
           {
             id: crearIdOperacion("caja-venta"),
             tipo: "ingreso",
@@ -1547,7 +1547,7 @@ export function VentasView({
         ...prev,
         saldo: tipo === "ingreso" ? prev.saldo + monto : prev.saldo - monto,
         movimientos: [
-          ...prev.movimientos,
+          ...(prev.movimientos || []),
           {
             id: crearIdOperacion("caja"),
             tipo,
@@ -1567,7 +1567,7 @@ export function VentasView({
       ...prev,
       saldo: montoApertura,
       movimientos: [
-        ...prev.movimientos,
+        ...(prev.movimientos || []),
         {
           id: crearIdOperacion("caja"),
           tipo: "ingreso",
@@ -1577,7 +1577,7 @@ export function VentasView({
         },
       ],
       historial: [
-        ...prev.historial,
+        ...(prev.historial || []),
         {
           id: crearIdOperacion("caja-apertura"),
           tipo: "apertura",
@@ -1599,7 +1599,7 @@ export function VentasView({
       ...prev,
       saldo: 0,
       historial: [
-        ...prev.historial,
+        ...(prev.historial || []),
         {
           id: crearIdOperacion("caja-cierre"),
           tipo: "cierre",

@@ -398,7 +398,7 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
         ...prev,
         saldo: prev.saldo + montoAplicado,
         movimientos: [
-          ...prev.movimientos,
+          ...(prev.movimientos || []),
           {
             id: crearIdOperacion("caja-cobro-fiado"),
             tipo: "ingreso",
@@ -487,7 +487,7 @@ export function ClientesView({ clientes, setClientes, tickets, setTickets, setCa
         ...prev,
         saldo: prev.saldo - ticket.total,
         movimientos: [
-          ...prev.movimientos,
+          ...(prev.movimientos || []),
           {
             id: crearIdOperacion("caja-ajuste-fiado"),
             tipo: "egreso",

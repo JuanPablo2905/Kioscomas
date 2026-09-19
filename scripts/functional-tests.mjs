@@ -261,6 +261,8 @@ try {
   const mergedCash = entitySync.applyEntityOperations({ caja: { saldo: 1000, movimientos: [{ id: "movimiento-a", monto: 1000 }], historial: [] } }, [{ type: "entity_upsert", entity: "cajaMovimientos", entityId: "movimiento-b", value: { id: "movimiento-b", monto: 500 }, version: 1 }]);
   const mergedCashState = entitySync.applyEntityOperations(mergedCash, [{ type: "entity_upsert", entity: "cajaEstado", entityId: "actual", value: { id: "actual", saldo: 1500 }, version: 2 }]);
   test("un saldo remoto conserva los movimientos de las dos cajas", mergedCashState.caja.saldo === 1500 && mergedCashState.caja._syncSaldoVersion === 2 && mergedCashState.caja.movimientos.length === 2);
+  const freshTenantCash = entitySync.applyEntityOperations({}, [{ type: "entity_upsert", entity: "cajaEstado", entityId: "actual", value: { id: "actual", saldo: 15000 }, version: 1 }]);
+  test("un negocio nuevo sin caja previa no rompe movimientos ni historial", Array.isArray(freshTenantCash.caja.movimientos) && freshTenantCash.caja.movimientos.length === 0 && Array.isArray(freshTenantCash.caja.historial) && freshTenantCash.caja.historial.length === 0 && freshTenantCash.caja.saldo === 15000);
   const remoteApplied=entitySync.applyEntityOperations({products:[{id:1,nombre:"A"}]},[{type:"entity_upsert",entity:"products",entityId:"1",value:{id:1,nombre:"B"},version:3}]);
   test("cambio remoto conserva versión del registro", remoteApplied.products[0].nombre==="B" && remoteApplied.products[0]._syncVersion===3);
   const burstDataset = { products: [{ id: 1, nombre: "Alfajor", deposito: 25, _syncVersion: 4 }] };
