@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, CreditCard, ExternalLink, History, Link2,
+  AlertTriangle, CheckCircle2, CreditCard, History, Link2,
   MapPin, RefreshCw, RotateCcw, Store, Unlink, XCircle,
 } from "lucide-react";
 import { money } from "../../shared/domain";
@@ -8,7 +8,7 @@ import { fetchArgentinaLocalidades, fetchArgentinaProvincias } from "../../share
 import {
   PAYMENT_MODES, PAYMENT_TARGETS, cancelPaymentAttempt, disconnectMercadoPago,
   listMercadoPagoTerminals, listPaymentAttempts, loadPaymentProviders, refreshPaymentAttempt, refundPaymentAttempt,
-  setupMercadoPagoPoint, setupMercadoPagoQr, startMercadoPagoConnection,
+  setupMercadoPagoPoint, setupMercadoPagoQr,
 } from "./paymentService";
 
 const statusLabel = {
@@ -113,20 +113,6 @@ export function MercadoPagoSettings({ businessId, preferences, onChange, canConn
     window.addEventListener("focus", refreshOnReturn);
     return () => window.removeEventListener("focus", refreshOnReturn);
   }, [businessId]);
-
-  const connect = async (solution) => {
-    const label = solution === "point" ? "Point" : "Código QR";
-    setMessage(`Preparando la conexión segura para ${label}…`);
-    try {
-      const payload = await startMercadoPagoConnection(businessId, solution);
-      const opened = window.open(payload.authorizationUrl, "_blank");
-      if (opened) opened.opener = null;
-      if (!opened) window.location.assign(payload.authorizationUrl);
-      else setMessage(`Autorizá Kiosco+ para ${label} en Mercado Pago. Al volver, el estado se actualizará solo.`);
-    } catch (error) {
-      setMessage(error?.message || "No se pudo iniciar la conexión.");
-    }
-  };
 
   const disconnect = async (solution) => {
     const label = solution === "point" ? "Point" : "Código QR";
@@ -255,28 +241,25 @@ export function MercadoPagoSettings({ businessId, preferences, onChange, canConn
       <div className="min-w-0">
         <span className="inline-flex rounded-full bg-[#009ee3] px-3 py-1 text-[10px] font-black uppercase tracking-wide text-white">Mercado Pago</span>
         <h4 className="mt-2 text-base font-black text-sky-950">Cobros conectados del negocio</h4>
-        <p className="mt-1 text-xs leading-5 text-sky-900/75">QR dinámico por el importe exacto, QR estático y órdenes para Point, con seguimiento hasta la acreditación.</p>
+        <p className="mt-1 text-xs leading-5 text-sky-900/75">QR estático disponible. QR dinámico y Point están desactivados temporalmente: no se pueden conectar cuentas nuevas.</p>
       </div>
       <button type="button" onClick={() => load()} disabled={loading} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-sky-300 bg-white px-3 text-xs font-bold text-sky-900 disabled:opacity-50"><RefreshCw className={loading ? "animate-spin" : ""} size={15}/>Actualizar estado</button>
     </div>
 
     <div className="mt-4 grid gap-3 lg:grid-cols-2">
       {[
-        { id: "qr", label: "Código QR", detail: "QR dinámico por el importe exacto", connection: qrConnection },
-        { id: "point", label: "Point", detail: "Cobro enviado al lector físico", connection: pointConnection },
+        { id: "qr", label: "QR dinámico", detail: "Desactivado temporalmente", connection: qrConnection },
+        { id: "point", label: "Point", detail: "Desactivado temporalmente", connection: pointConnection },
       ].map(({ id, label, detail, connection }) => <div key={id} className={`rounded-xl border p-3 ${connection.connected ? "border-emerald-300 bg-emerald-50" : "border-sky-200 bg-white"}`}>
         <div className="flex h-full flex-col gap-3">
           <div className="flex items-start gap-2">
             {connection.connected ? <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-700" size={18}/> : id === "point" ? <CreditCard className="mt-0.5 shrink-0 text-sky-700" size={18}/> : <Link2 className="mt-0.5 shrink-0 text-sky-700" size={18}/>}
             <div><b className={`block text-sm ${connection.connected ? "text-emerald-950" : "text-sky-950"}`}>{label}</b><span className={`text-xs ${connection.connected ? "text-emerald-800" : "text-gray-600"}`}>{connection.connected ? connection.sellerNickname || connection.sellerId || "Cuenta autorizada" : detail}</span></div>
           </div>
-          {connection.status === "reauthorization_required" && <p className="text-xs leading-5 text-amber-800">La autorización venció o fue revocada. Volvé a conectarla; la configuración y el historial se conservan.</p>}
-          {!connection.ready && <p className="text-xs leading-5 text-gray-500">Faltan las credenciales de esta solución en el servidor.</p>}
-          {connection.ready && !connection.webhookConfigured && <p className="flex items-start gap-2 text-xs leading-5 text-amber-800"><AlertTriangle className="mt-0.5 shrink-0" size={14}/>Falta el secreto del webhook de {label}.</p>}
-          {canConnect && <div className="mt-auto flex justify-end">{connection.connected
-            ? <button type="button" onClick={() => disconnect(id)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-700"><Unlink size={14}/>Desconectar {label}</button>
-            : connection.ready && <button type="button" onClick={() => connect(id)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#009ee3] px-4 text-xs font-black text-white"><Link2 size={15}/>Conectar {label}<ExternalLink size={13}/></button>}
-          </div>}
+          {connection.connected && connection.status === "reauthorization_required" && <p className="text-xs leading-5 text-amber-800">La autorización venció o fue revocada. Esta solución sigue desactivada para conexiones nuevas; podés desconectarla.</p>}
+          {connection.connected && connection.ready && !connection.webhookConfigured && <p className="flex items-start gap-2 text-xs leading-5 text-amber-800"><AlertTriangle className="mt-0.5 shrink-0" size={14}/>Falta el secreto del webhook de {label}.</p>}
+          {!connection.connected && <p className="text-xs leading-5 text-gray-500">Por ahora, Kiosco+ cobra con QR estático. Esta solución no admite cuentas nuevas.</p>}
+          {canConnect && connection.connected && <div className="mt-auto flex justify-end"><button type="button" onClick={() => disconnect(id)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-700"><Unlink size={14}/>Desconectar {label}</button></div>}
         </div>
       </div>)}
     </div>
