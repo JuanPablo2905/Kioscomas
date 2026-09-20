@@ -58,6 +58,12 @@ const passwordResetTtlMinutes = Number.isFinite(configuredResetMinutes)
   ? Math.max(10, Math.min(120, configuredResetMinutes))
   : 30;
 const passwordResetTtlMs = passwordResetTtlMinutes * 60 * 1000;
+const configuredVerifyHours = Number(process.env.KIOSCO_EMAIL_VERIFY_HOURS || 48);
+const emailVerificationTtlHours = Number.isFinite(configuredVerifyHours)
+  ? Math.max(1, Math.min(168, configuredVerifyHours))
+  : 48;
+const emailVerificationTtlMs = emailVerificationTtlHours * 60 * 60 * 1000;
+const emailNotVerifiedMessage = "Confirmá tu correo antes de iniciar sesión. Revisá tu casilla o pedí que te reenviemos el enlace.";
 const emailTestMode = localMode && process.env.KIOSCO_EMAIL_TEST_MODE === "1";
 const emailService = createEmailService({
   apiKey: process.env.KIOSCO_RESEND_API_KEY || process.env.RESEND_API_KEY,
@@ -1236,6 +1242,11 @@ const passwordResetUrl = (rawToken) => {
   url.searchParams.set("reset_token", rawToken);
   return url.toString();
 };
+const emailVerificationUrl = (rawToken) => {
+  const url = new URL(emailService.appUrl);
+  url.searchParams.set("verify_email_token", rawToken);
+  return url.toString();
+};
 const sendEmailBestEffort = async (event, operation) => {
   try { return await operation(); }
   catch (error) {
@@ -1974,6 +1985,8 @@ const enforceSensitiveRequestLimit = (req, res) => {
     "POST /v1/auth/pair-device": { maximum: 8, windowMs: 15 * 60 * 1000 },
     "POST /v1/auth/bootstrap": { maximum: 4, windowMs: 60 * 60 * 1000 },
     "POST /v1/auth/password/forgot": { maximum: 10, windowMs: 60 * 60 * 1000 },
+    "POST /v1/auth/verify-email": { maximum: 15, windowMs: 60 * 60 * 1000 },
+    "POST /v1/auth/verify-email/resend": { maximum: 6, windowMs: 60 * 60 * 1000 },
     "POST /v1/payments/mercado-pago/oauth/start": { maximum: 10, windowMs: 60 * 60 * 1000 },
     "POST /v1/payments/mercado-pago/qr/setup": { maximum: 6, windowMs: 60 * 60 * 1000 },
     "POST /v1/payments/mercado-pago/point/setup": { maximum: 12, windowMs: 60 * 60 * 1000 },
@@ -2587,6 +2600,10 @@ const handleRequest = async (req, res) => {
         registrationDeviceId: deviceId,
         termsAcceptedAt: now,
         termsVersion: TERMS_VERSION,
+        // Sin correo configurado no hay forma de mandar el enlace, así que no
+        // se le puede exigir a nadie confirmarlo: la cuenta queda usable.
+        emailVerifiedAt: null,
+        emailVerificationRequired: emailService.configured,
         ...appPasswordFields(password),
       };
       const secured = hashPassword(password);
@@ -2627,16 +2644,114 @@ const handleRequest = async (req, res) => {
         action: { view: "administracion" },
       }).notification;
       await sendPushNotification(db, registrationNotice);
+      let verificationRawToken = "";
+      if (account.emailVerificationRequired) {
+        verificationRawToken = token();
+        db.emailVerificationTokens ||= {};
+        db.emailVerificationTokens[sha256(verificationRawToken)] = {
+          id: crypto.randomUUID(),
+          businessId,
+          createdAt: now,
+          expiresAt: new Date(Date.now() + emailVerificationTtlMs).toISOString(),
+          usedAt: null,
+          revokedAt: null,
+        };
+      }
       await writeDb(db);
       if (emailService.configured) {
-        void sendEmailBestEffort("de bienvenida", () => emailService.sendWelcome({
+        void sendEmailBestEffort("de confirmación de correo", () => emailService.sendEmailVerification({
           to: email,
           name,
           businessName,
+          verifyUrl: emailVerificationUrl(verificationRawToken),
+          expiresInHours: emailVerificationTtlHours,
           accountId: businessId,
         }));
+        const adminAlertEmail = normalizeEmail(process.env.KIOSCO_SUPERADMIN_EMAIL);
+        if (isValidEmail(adminAlertEmail)) {
+          void sendEmailBestEffort("de cuenta nueva para el administrador", () => emailService.sendNewAccountAdminAlert({
+            to: adminAlertEmail,
+            businessName,
+            ownerName: name,
+            ownerEmail: email,
+            accountId: businessId,
+          }));
+        }
       }
-      return send(res, 201, { ok: true, businessId, account });
+      return send(res, 201, {
+        ok: true,
+        businessId,
+        account,
+        ...(emailTestMode && isLoopback(req) && verificationRawToken ? { testEmailVerifyToken: verificationRawToken } : {}),
+      });
+    }
+    if (req.method === "POST" && req.url === "/v1/auth/verify-email") {
+      const payload = await body(req);
+      const rawToken = String(payload.token || "").trim();
+      const db = await readDb();
+      const entry = rawToken.length >= 30 ? db.emailVerificationTokens?.[sha256(rawToken)] : null;
+      const now = Date.now();
+      const tokenExpiresAt = Date.parse(entry?.expiresAt || "");
+      if (!entry || entry.usedAt || entry.revokedAt || !Number.isFinite(tokenExpiresAt) || tokenExpiresAt <= now) {
+        return send(res, 400, { error: "El enlace de confirmación es inválido, ya fue usado o venció." });
+      }
+      const account = tenantAccount(db, entry.businessId);
+      if (!account) return send(res, 400, { error: "La cuenta ya no existe." });
+      const nowIso = new Date(now).toISOString();
+      account.emailVerifiedAt = account.emailVerifiedAt || nowIso;
+      entry.usedAt = nowIso;
+      for (const candidate of Object.values(db.emailVerificationTokens || {})) {
+        if (candidate.businessId === entry.businessId && candidate.id !== entry.id && !candidate.usedAt && !candidate.revokedAt) {
+          candidate.revokedAt = nowIso;
+          candidate.revokedReason = "verified";
+        }
+      }
+      await writeDb(db);
+      return send(res, 200, { ok: true, businessId: account.id, businessName: account.nombreNegocio });
+    }
+    if (req.method === "POST" && req.url === "/v1/auth/verify-email/resend") {
+      const payload = await body(req);
+      const email = normalizeEmail(payload.email);
+      const genericMessage = "Si el correo corresponde a una cuenta sin confirmar, te reenviamos el enlace.";
+      if (!isValidEmail(email) || !emailService.configured) {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return send(res, 202, { ok: true, message: genericMessage });
+      }
+      const db = await readDb();
+      const account = (db.system?.cuentas || []).find((item) => (
+        item && !item.superAdmin && item.emailVerificationRequired && !item.emailVerifiedAt && normalizeEmail(item.email) === email
+      ));
+      if (account) {
+        const now = Date.now();
+        const nowIso = new Date(now).toISOString();
+        for (const candidate of Object.values(db.emailVerificationTokens || {})) {
+          if (candidate.businessId === account.id && !candidate.usedAt && !candidate.revokedAt) {
+            candidate.revokedAt = nowIso;
+            candidate.revokedReason = "replaced";
+          }
+        }
+        const rawToken = token();
+        db.emailVerificationTokens ||= {};
+        db.emailVerificationTokens[sha256(rawToken)] = {
+          id: crypto.randomUUID(),
+          businessId: account.id,
+          createdAt: nowIso,
+          expiresAt: new Date(now + emailVerificationTtlMs).toISOString(),
+          usedAt: null,
+          revokedAt: null,
+        };
+        await writeDb(db);
+        void sendEmailBestEffort("de confirmación de correo", () => emailService.sendEmailVerification({
+          to: account.email,
+          name: account.nombre,
+          businessName: account.nombreNegocio,
+          verifyUrl: emailVerificationUrl(rawToken),
+          expiresInHours: emailVerificationTtlHours,
+          accountId: account.id,
+        }));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      return send(res, 202, { ok: true, message: genericMessage });
     }
     if (req.method === "POST" && req.url === "/v1/auth/register-local") {
       if (!localMode || !isLoopback(req)) return send(res, 404, { error: "Ruta inexistente" });
@@ -2732,6 +2847,12 @@ const handleRequest = async (req, res) => {
       if (!user) return send(res, 401, { error: "Credenciales incorrectas" });
       if (!sessionSubjectIsActive(db, { userId: user.id, businessId: user.businessId, role: user.role })) {
         return send(res, 403, { error: "Esta cuenta fue bloqueada, eliminada o ya no pertenece al negocio" });
+      }
+      if (user.role === "owner") {
+        const account = tenantAccount(db, user.businessId);
+        if (account?.emailVerificationRequired && !account.emailVerifiedAt) {
+          return send(res, 403, { error: emailNotVerifiedMessage, code: "email_not_verified", email: account.email });
+        }
       }
       const activation = ensureDeviceActivation(db, deviceId);
       if (activation.revokedAt) {

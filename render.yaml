@@ -66,6 +66,8 @@ services:
         value: https://kioscomas.ar/pantalla
       - key: KIOSCO_PASSWORD_RESET_MINUTES
         value: "30"
+      - key: KIOSCO_EMAIL_VERIFY_HOURS
+        value: "48"
       - key: KIOSCO_ACCESS_TOKEN_HOURS
         value: "2"
       - key: KIOSCO_ALLOWED_ORIGINS

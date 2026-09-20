@@ -1,6 +1,8 @@
 # Configurar correos y recuperación de contraseña
 
-Kiosco+ envía únicamente correos transaccionales: bienvenida, habilitación de cuenta, recuperación de contraseña y confirmación de cambio de contraseña. Nunca envía la contraseña actual ni la nueva.
+Kiosco+ envía únicamente correos transaccionales: confirmación de correo al crear la cuenta, aviso al administrador de cada cuenta nueva, habilitación de cuenta, recuperación de contraseña y confirmación de cambio de contraseña. Nunca envía la contraseña actual ni la nueva.
+
+Cuando `KIOSCO_SUPERADMIN_EMAIL` y el resto de las variables están configurados, crear una cuenta nueva exige confirmar el correo antes de poder iniciar sesión (el enlace vence en `KIOSCO_EMAIL_VERIFY_HOURS` horas). Si el correo **no** está configurado, esa confirmación se salta por completo: la cuenta queda usable de inmediato, para no dejar a nadie sin poder entrar.
 
 ## 1. Preparar Resend
 
@@ -22,10 +24,11 @@ KIOSCO_EMAIL_FROM=Kiosco+ <notificaciones@correo.kioscomas.ar>
 KIOSCO_EMAIL_REPLY_TO=kkioscomas@gmail.com
 KIOSCO_PUBLIC_APP_URL=https://app.kioscomas.ar
 KIOSCO_PASSWORD_RESET_MINUTES=30
+KIOSCO_EMAIL_VERIFY_HOURS=48
 KIOSCO_SUPERADMIN_EMAIL=correo-del-administrador
 ```
 
-`KIOSCO_SUPERADMIN_EMAIL` es opcional, pero necesario si también se quiere recuperar automáticamente la cuenta administradora central. `KIOSCO_EMAIL_REPLY_TO` es la dirección que recibirá las respuestas de los clientes.
+`KIOSCO_SUPERADMIN_EMAIL` es opcional, pero necesario si también se quiere recuperar automáticamente la cuenta administradora central **y** para recibir el aviso de cada cuenta nueva. `KIOSCO_EMAIL_REPLY_TO` es la dirección que recibirá las respuestas de los clientes. `KIOSCO_EMAIL_VERIFY_HOURS` es opcional (por defecto 48) y define cuánto tarda en vencer el enlace de confirmación de correo.
 
 No crear variables que empiecen con `VITE_` para la API key. Todo valor `VITE_` puede terminar dentro de los archivos descargados por el navegador.
 

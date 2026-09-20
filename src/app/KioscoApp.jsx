@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { repository } from "../cloud/repository";
 import { loadCloudConfig } from "../cloud/config";
-import { cloudFetch, cloudSession, ensureLocalCloudSession, loginCloud, loginCloudWithDeviceCredential, logoutCloud, pairCloudDevice, registerCloudAccount, registerDeviceCredential, requestCloudPasswordReset, resetCloudPassword } from "../cloud/cloudAuth";
+import { cloudFetch, cloudSession, ensureLocalCloudSession, loginCloud, loginCloudWithDeviceCredential, logoutCloud, pairCloudDevice, registerCloudAccount, registerDeviceCredential, requestCloudPasswordReset, resendCloudEmailVerification, resetCloudPassword, verifyCloudEmail } from "../cloud/cloudAuth";
 import { dismissRememberPrompt, listRememberedAccounts, rememberAccountShortcut, shouldOfferToRemember } from "../security/deviceVault";
 import { RememberedAccountsPicker } from "../features/autenticacion/RememberedAccountsPicker";
 import { RememberDevicePrompt } from "../features/autenticacion/RememberDevicePrompt";
@@ -15,6 +15,7 @@ import { reportPlatformIssue } from "../features/notificaciones/notificationServ
 import { ActivationView } from "../features/autenticacion/ActivationView";
 import { LoginView } from "../features/autenticacion/LoginView";
 import { PasswordResetView } from "../features/autenticacion/PasswordResetView";
+import { EmailVerificationView } from "../features/autenticacion/EmailVerificationView";
 import { SettingsModal, applyPreferences, DEFAULT_PREFERENCES, migrateBrandPreferences } from "../shared/SettingsModal";
 import { useInteractionFeedback } from "../shared/useInteractionFeedback";
 import { useMobileKeyboardViewport } from "../shared/useMobileKeyboardViewport";
@@ -276,6 +277,8 @@ export default function KioscoApp() {
   const [rememberPrompt, setRememberPrompt] = useState(null);
   const [useAnotherAccount, setUseAnotherAccount] = useState(false);
   const [passwordResetToken, setPasswordResetToken] = useState(() => PUBLIC_DEMO_MODE ? "" : (new URLSearchParams(window.location.search).get("reset_token") || ""));
+  const [emailVerifyToken, setEmailVerifyToken] = useState(() => PUBLIC_DEMO_MODE ? "" : (new URLSearchParams(window.location.search).get("verify_email_token") || ""));
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState("");
   const [notasAdmin, setNotasAdmin] = useState([]);
   const [authSecurity, setAuthSecurity] = useState({});
   const [sessionExpiresAt, setSessionExpiresAt] = useState(null);
@@ -1214,6 +1217,7 @@ export default function KioscoApp() {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "");
     setLoginNotice("");
+    setPendingVerificationEmail("");
     const guard = loginGuard(authSecurity, normalizedUser);
     if (guard.blocked) { setLoginError(`Acceso bloqueado temporalmente. Probá nuevamente en ${Math.ceil(guard.remainingMs / 60000)} minuto(s).`); return; }
     const cuentaCandidate = cuentas.find((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase());
@@ -1233,6 +1237,7 @@ export default function KioscoApp() {
           cloudReady = true;
         } catch (error) {
           if (isDeviceRevokedError(error)) { setActivationDeviceId(cloudConfig.deviceId); setActivationStatus("revoked"); return; }
+          if (error?.code === "email_not_verified") { setPendingVerificationEmail(error.email || ""); setLoginError(error.message); return; }
           if ([401, 403].includes(Number(error?.status))) {
             setLoginError(error?.message || "La nube ya no autoriza estas credenciales.");
             return;
@@ -1368,6 +1373,8 @@ export default function KioscoApp() {
         offerRememberDeviceIfEligible(normalizedUser, { ...identity, nombreNegocio: remoteAccount.nombreNegocio });
         return;
       } catch (error) {
+        if (isDeviceRevokedError(error)) { setActivationDeviceId(cloudConfig.deviceId); setActivationStatus("revoked"); return; }
+        if (error?.code === "email_not_verified") { setPendingVerificationEmail(error.email || ""); setLoginError(error.message); return; }
         setAuthSecurity((previous) => registerLoginFailure(previous, normalizedUser));
         setLoginError(error?.message || "Usuario o contraseña incorrectos.");
         return;
@@ -1433,12 +1440,9 @@ export default function KioscoApp() {
       if (!account) throw new Error("La nube no devolvió la cuenta creada.");
       saveCloudAccountLocally(account);
       setLoginError("");
-      setLoginNotice("Solicitud enviada. La cuenta quedó pendiente; vas a poder entrar con este usuario y contraseña cuando el administrador la habilite.");
+      setLoginNotice(`Cuenta creada. Te mandamos un mail a ${email} para confirmarla. Apenas la confirmes, entrás directo con 30 días de prueba sin cargo.`);
       return { ok: true };
     } catch (error) {
-      if (error?.status === 403 && /dispositivo.*autoriza/i.test(String(error?.message || ""))) {
-        clearInstallationReceipt();
-      }
       setLoginNotice("");
       setLoginError(error?.message || "No se pudo enviar la solicitud de cuenta.");
       return { ok: false };
@@ -1547,8 +1551,38 @@ export default function KioscoApp() {
     setLoginNotice(completed ? "Contraseña actualizada. Iniciá sesión con tu contraseña nueva." : "");
   };
 
+  const handleCloudEmailVerify = async () => {
+    const cloudConfig = loadCloudConfig();
+    if (!cloudConfig.enabled || !cloudConfig.apiUrl) throw new Error("La aplicación no tiene configurada la dirección de la nube.");
+    if (!navigator.onLine) throw new Error("Necesitás Internet para confirmar el correo.");
+    return verifyCloudEmail(cloudConfig.apiUrl, emailVerifyToken);
+  };
+
+  const handleResendEmailVerification = async () => {
+    const cloudConfig = loadCloudConfig();
+    if (!cloudConfig.enabled || !cloudConfig.apiUrl || !pendingVerificationEmail) return;
+    try {
+      await resendCloudEmailVerification(cloudConfig.apiUrl, pendingVerificationEmail);
+      setLoginNotice("Si la cuenta todavía no está confirmada, te reenviamos el enlace. Revisá tu casilla (y spam).");
+    } catch (error) {
+      setLoginError(error?.message || "No se pudo reenviar la confirmación.");
+    }
+  };
+
+  const closeEmailVerification = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("verify_email_token");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    setEmailVerifyToken("");
+    setLoginError("");
+  };
+
   if (passwordResetToken) {
     return <PasswordResetView onSubmit={handleCloudPasswordReset} onDone={closePasswordReset}/>;
+  }
+
+  if (emailVerifyToken) {
+    return <EmailVerificationView onVerify={handleCloudEmailVerify} onDone={closeEmailVerification}/>;
   }
 
   if (activationStatus === "required" || activationStatus === "revoked") {
@@ -1591,6 +1625,8 @@ export default function KioscoApp() {
         showDemoAccounts={PUBLIC_DEMO_MODE}
         cloudWarmupState={cloudWarmupState}
         onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}
+        pendingVerificationEmail={pendingVerificationEmail}
+        onResendEmailVerification={handleResendEmailVerification}
       />
     );
   }
