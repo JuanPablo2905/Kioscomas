@@ -13,10 +13,9 @@ import { TERMS_VERSION } from "../../legal/terms";
 import { passwordPolicyError, passwordPolicyHint } from "../../security/passwordPolicy";
 import { CloudWarmupStatus } from "./CloudWarmupStatus";
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
-const formatActivationCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
 const formatReferralCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 14);
 
-export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice, onReset, showDemoAccounts = false, requiresRegistrationCode = false, cloudWarmupState, onRetryCloud }) {
+export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice, onReset, showDemoAccounts = false, cloudWarmupState, onRetryCloud }) {
   const [modo, setModo] = useState("login");
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
@@ -27,7 +26,6 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
   const [formError, setFormError] = useState("");
   const [nombreNegocio, setNombreNegocio] = useState("");
   const [modoNegocio, setModoNegocio] = useState("solo");
-  const [activationCode, setActivationCode] = useState("");
   const [referralCode, setReferralCode] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsError, setTermsError] = useState("");
@@ -63,7 +61,6 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
           password,
           nombreNegocio: nombreNegocio.trim(),
           modoNegocio,
-          activationCode,
           referralCode,
           termsAccepted: true,
           termsVersion: TERMS_VERSION,
@@ -129,21 +126,8 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, error, notice
         {modo === "registro" && (
           <>
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-              La solicitud se enviará al administrador de Kiosco+. Podrás entrar cuando la apruebe y habilite el abono. Si ya tenés una cuenta, volvé a Iniciar sesión: no necesitás una clave nueva.
+              Vas a poder entrar enseguida: la beta incluye 30 días de prueba sin cargo ni tarjeta. Si ya tenés una cuenta, volvé a Iniciar sesión.
             </div>
-            {requiresRegistrationCode && <>
-              <label className="block text-sm text-gray-700" htmlFor="registration-activation-code">Clave para crear el negocio</label>
-              <input
-                id="registration-activation-code"
-                value={activationCode}
-                onChange={(event) => setActivationCode(formatActivationCode(event.target.value))}
-                autoComplete="off"
-                spellCheck="false"
-                placeholder="KIOSCO-XXXX-XXXX-XXXX-XXXX"
-                className="mb-1 mt-1 min-h-11 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm font-semibold uppercase"
-              />
-              <p className="mb-3 text-xs leading-relaxed text-gray-500">La genera el administrador y autoriza este dispositivo a enviar una cuenta nueva.</p>
-            </>}
             <label className="text-sm text-gray-700 block mb-1">Tu nombre</label>
             <input
               value={nombre}

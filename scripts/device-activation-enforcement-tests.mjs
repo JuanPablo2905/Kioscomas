@@ -16,7 +16,6 @@ const child = spawn(process.execPath, ["server/cloud-server.mjs"], {
     KIOSCO_CLOUD_DB: path.join(dataDir, "database.json"),
     KIOSCO_CLOUD_DATA_DIR: dataDir,
     KIOSCO_LOCAL_MODE: "0",
-    KIOSCO_REQUIRE_DEVICE_ACTIVATION: "1",
     KIOSCO_SUPERADMIN_USERNAME: adminUsername,
     KIOSCO_SUPERADMIN_PASSWORD: adminPassword,
     DATABASE_URL: "",
@@ -31,9 +30,9 @@ const request = async (url, options = {}) => {
   return { response, value };
 };
 
-const post = (url, payload) => request(url, {
+const post = (url, payload, headers = {}) => request(url, {
   method: "POST",
-  headers: { "content-type": "application/json" },
+  headers: { "content-type": "application/json", ...headers },
   body: JSON.stringify(payload),
 });
 
@@ -51,29 +50,42 @@ try {
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  assert(health?.response.ok, "el servidor arrancó");
 
-  assert(health?.response.ok && health.value.deviceActivationRequired === true, "la nube publicada exige activar dispositivos");
+  const firstLogin = await post("/v1/auth/login", {
+    username: adminUsername,
+    password: adminPassword,
+    deviceId: "dispositivo-nuevo-sin-clave",
+  });
+  assert(firstLogin.response.ok && Boolean(firstLogin.value.accessToken), "un dispositivo nuevo puede iniciar sesión sin pedir ninguna clave de activación");
+
+  const callerLogin = await post("/v1/auth/login", {
+    username: adminUsername,
+    password: adminPassword,
+    deviceId: "dispositivo-del-admin",
+  });
+  assert(callerLogin.response.ok && Boolean(callerLogin.value.accessToken), "el dispositivo que va a revocar al otro también entra directo, sin clave");
+
+  const revoke = await post("/v1/admin/activations/dispositivo-nuevo-sin-clave/revoke", {}, {
+    authorization: `Bearer ${callerLogin.value.accessToken}`,
+    "x-tenant-id": "system-admin",
+    "x-device-id": "dispositivo-del-admin",
+  });
+  assert(revoke.response.ok && Boolean(revoke.value.activation?.revokedAt), "el superadmin puede desactivar puntualmente un dispositivo ya usado");
 
   const rejected = await post("/v1/auth/login", {
     username: adminUsername,
     password: adminPassword,
-    deviceId: "new-web-browser",
+    deviceId: "dispositivo-nuevo-sin-clave",
   });
-  assert(rejected.response.status === 403, "un navegador nuevo no puede iniciar sesión sin activación");
+  assert(rejected.response.status === 403 && /desactivado/i.test(String(rejected.value.error || "")), "el dispositivo desactivado no puede volver a iniciar sesión, con un mensaje claro de por qué");
 
-  const activation = await post("/v1/activation/admin", {
-    deviceKey: adminPassword,
-    deviceId: "new-web-browser",
-    appVersion: "web-test",
-  });
-  assert(activation.response.ok && activation.value.activated === true, "la clave autoriza el navegador");
-
-  const accepted = await post("/v1/auth/login", {
+  const stillWorks = await post("/v1/auth/login", {
     username: adminUsername,
     password: adminPassword,
-    deviceId: "new-web-browser",
+    deviceId: "otro-dispositivo-cualquiera",
   });
-  assert(accepted.response.ok && Boolean(accepted.value.accessToken), "el navegador autorizado puede iniciar sesión");
+  assert(stillWorks.response.ok && Boolean(stillWorks.value.accessToken), "desactivar un dispositivo puntual no afecta a los demás dispositivos nuevos");
 } finally {
   await stopChildProcess(child);
   await fs.rm(dataDir, { recursive: true, force: true });

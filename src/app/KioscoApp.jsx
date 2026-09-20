@@ -1147,7 +1147,13 @@ export default function KioscoApp() {
     if (!cloudConfig.enabled || !cloudConfig.apiUrl || !navigator.onLine) {
       throw new Error("Necesitás conexión a internet para entrar con una cuenta recordada.");
     }
-    const remoteSession = await loginCloudWithDeviceCredential(cloudConfig.apiUrl, rememberedEntry.username, cloudConfig.deviceId, deviceCredential);
+    let remoteSession;
+    try {
+      remoteSession = await loginCloudWithDeviceCredential(cloudConfig.apiUrl, rememberedEntry.username, cloudConfig.deviceId, deviceCredential);
+    } catch (error) {
+      if (isDeviceRevokedError(error)) { setActivationDeviceId(cloudConfig.deviceId); setActivationStatus("revoked"); }
+      throw error;
+    }
     const remoteAccount = await prepareCloudAccount(remoteSession.account);
     if (!remoteAccount) throw new Error("La cuenta ya no está disponible en este dispositivo.");
     saveCloudAccountLocally(remoteAccount);
@@ -1198,6 +1204,12 @@ export default function KioscoApp() {
   // cuentas va a pedir la contraseña real de todas formas para estas.
   const handlePasswordShortcutLogin = (entry, password) => handleLogin({ usuario: entry.username, password });
 
+  // El servidor devuelve este mensaje exacto cuando el superadmin (o el dueño
+  // del negocio) desactivó este dispositivo puntual. En vez de un error de
+  // formulario más, se muestra la misma pantalla de activación pero avisando
+  // que fue desactivado, sin pedir ninguna clave.
+  const isDeviceRevokedError = (error) => String(error?.message || "") === "Este dispositivo fue desactivado.";
+
   const handleLogin = async ({ usuario, password }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "");
@@ -1220,6 +1232,7 @@ export default function KioscoApp() {
           }
           cloudReady = true;
         } catch (error) {
+          if (isDeviceRevokedError(error)) { setActivationDeviceId(cloudConfig.deviceId); setActivationStatus("revoked"); return; }
           if ([401, 403].includes(Number(error?.status))) {
             setLoginError(error?.message || "La nube ya no autoriza estas credenciales.");
             return;
@@ -1279,6 +1292,7 @@ export default function KioscoApp() {
             saveCloudAccountLocally(remoteAccount);
             cloudReady = true;
           } catch (error) {
+            if (isDeviceRevokedError(error)) { setActivationDeviceId(cloudConfig.deviceId); setActivationStatus("revoked"); return; }
             if ([401, 403].includes(Number(error?.status))) {
               setLoginError(error?.message || "La nube ya no autoriza estas credenciales.");
               return;
@@ -1386,7 +1400,7 @@ export default function KioscoApp() {
     }
   };
 
-  const handleRegister = async ({ nombre, email, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "", referralCode = "", termsAccepted = false, termsVersion = "" }) => {
+  const handleRegister = async ({ nombre, email, usuario, password, nombreNegocio, modoNegocio = "solo", referralCode = "", termsAccepted = false, termsVersion = "" }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "");
     if (cuentas.some((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())) {
@@ -1403,14 +1417,6 @@ export default function KioscoApp() {
       return;
     }
     try {
-      const receipt = loadInstallationReceipt();
-      const deviceActivated = receipt?.activated && receipt.deviceId === cloudConfig.deviceId;
-      if (!deviceActivated) {
-        if (String(activationCode).replace(/[^A-Z0-9]/gi, "").length < 12) {
-          throw new Error("Ingresá la clave que te dio el administrador para crear un negocio nuevo.");
-        }
-        await redeemInstallationCode(cloudConfig.apiUrl, activationCode, cloudConfig.deviceId, import.meta.env.VITE_APP_VERSION || "web");
-      }
       const result = await registerCloudAccount(cloudConfig.apiUrl, {
         deviceId: cloudConfig.deviceId,
         name: nombre,
@@ -1545,8 +1551,8 @@ export default function KioscoApp() {
     return <PasswordResetView onSubmit={handleCloudPasswordReset} onDone={closePasswordReset}/>;
   }
 
-  if (activationStatus === "required") {
-    return <ActivationView deviceId={activationDeviceId} onActivate={handleInstallationActivation} onAdminActivate={handleAdministratorActivation} cloudWarmupState={cloudWarmupState} onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}/>;
+  if (activationStatus === "required" || activationStatus === "revoked") {
+    return <ActivationView revoked={activationStatus === "revoked"} deviceId={activationDeviceId} onActivate={handleInstallationActivation} onAdminActivate={handleAdministratorActivation} cloudWarmupState={cloudWarmupState} onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}/>;
   }
 
   if (cargando) {
@@ -1561,7 +1567,6 @@ export default function KioscoApp() {
 
   if (!currentUserId) {
     const cloudConfig = loadCloudConfig();
-    const installationReceipt = loadInstallationReceipt();
     if (!useAnotherAccount && cloudConfig.enabled && cloudConfig.apiUrl && listRememberedAccounts(cloudConfig.apiUrl).length > 0) {
       return (
         <RememberedAccountsPicker
@@ -1584,7 +1589,6 @@ export default function KioscoApp() {
         notice={loginNotice}
         onReset={handleReset}
         showDemoAccounts={PUBLIC_DEMO_MODE}
-        requiresRegistrationCode={!PUBLIC_DEMO_MODE && !(installationReceipt?.activated && installationReceipt.deviceId === cloudConfig.deviceId)}
         cloudWarmupState={cloudWarmupState}
         onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}
       />
