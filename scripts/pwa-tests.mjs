@@ -9,6 +9,7 @@ const serviceWorker = fs.readFileSync("public/sw.js", "utf8");
 const terms = fs.readFileSync("src/terminos.jsx", "utf8");
 const privacy = fs.readFileSync("src/privacidad.jsx", "utf8");
 const notificationService = fs.readFileSync("src/features/notificaciones/notificationService.js", "utf8");
+const notificationSettingsPanel = fs.readFileSync("src/features/notificaciones/NotificationSettingsPanel.jsx", "utf8");
 const settings = fs.readFileSync("src/shared/SettingsModal.jsx", "utf8");
 const customerDisplay = fs.readFileSync("src/features/ventas/CustomerDisplayScreen.jsx", "utf8");
 const customerDisplaySettings = fs.readFileSync("src/features/ventas/CustomerDisplaySettings.jsx", "utf8");
@@ -45,6 +46,7 @@ const checks = [
   [serviceWorker.includes('addEventListener("push"') && serviceWorker.includes("showNotification"), "El service worker debe mostrar avisos push."],
   [serviceWorker.includes('addEventListener("notificationclick"') && serviceWorker.includes("openWindow"), "Los avisos deben abrir Kiosco+ al tocarlos."],
   [notificationService.includes("Notification.requestPermission") && notificationService.includes("pushManager.subscribe"), "La app debe pedir permiso antes de registrar el dispositivo para avisos."],
+  [notificationService.includes("hasActivePushSubscription") && notificationService.includes("resolvePushState") && notificationSettingsPanel.includes("resolvePushState"), "El botón de avisos debe reflejar si hay una suscripción real, no sólo el permiso del navegador (que nunca se puede revocar por código)."],
   [settings.includes("VITE_APP_VERSION") && settings.includes("Versión actual:") && settings.includes("Aplicación web instalada"), "Configuración debe mostrar claramente la versión y el tipo de aplicación."],
   [settings.includes("Buscar actualizaciones") && settings.includes("Reiniciar e instalar actualización") && desktopMain.includes("quitAndInstall(true, true)"), "Ayuda debe permitir buscar una versión y reiniciar la aplicación para instalarla."],
   [settings.includes("settings-mobile-safe-header") && styles.includes("(display-mode: standalone)") && styles.includes("env(safe-area-inset-top) + .75rem") && styles.includes("backdrop-filter: none"), "Las pestañas de Configuración deben quedar debajo del área segura de iPhone sin arrastrar el degradado."],

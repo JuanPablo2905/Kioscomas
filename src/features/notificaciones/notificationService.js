@@ -69,6 +69,27 @@ export const pushCapability = () => {
   return Notification.permission === "granted" ? "granted" : "available";
 };
 
+export async function hasActivePushSubscription() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) return false;
+    const subscription = await registration.pushManager.getSubscription();
+    return Boolean(subscription);
+  } catch {
+    return false;
+  }
+}
+
+// El permiso del navegador (Notification.permission) nunca vuelve a "no otorgado" por código,
+// aunque el usuario haya desactivado los avisos desde Kiosco+ y ya no exista una suscripción real.
+// Por eso el estado visible depende de si hay una suscripción activa, no sólo del permiso.
+export async function resolvePushState() {
+  const capability = pushCapability();
+  if (capability !== "granted") return capability;
+  return (await hasActivePushSubscription()) ? "granted" : "available";
+}
+
 const urlBase64ToBytes = (value) => {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
   const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");

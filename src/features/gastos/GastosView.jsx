@@ -49,12 +49,12 @@ function GastoModal({ onClose, onSave }) {
             </AppSelect>
           </div>
           <div data-tour="expense-status" className="grid grid-cols-2 gap-2 sm:gap-3">
-            <label className="flex min-h-11 items-center rounded-lg border p-2 text-sm sm:p-3">
-              <input type="radio" name="estado" value="pagado" checked={form.estado === "pagado"} onChange={set("estado")} className="mr-2 shrink-0" />
+            <label className="flex min-h-11 items-center gap-2.5 rounded-lg border p-2 text-sm sm:p-3">
+              <input type="radio" name="estado" value="pagado" checked={form.estado === "pagado"} onChange={set("estado")} className="shrink-0" />
               Ya pagado
             </label>
-            <label className="flex min-h-11 items-center rounded-lg border p-2 text-sm sm:p-3">
-              <input type="radio" name="estado" value="pendiente" checked={form.estado === "pendiente"} onChange={set("estado")} className="mr-2 shrink-0" />
+            <label className="flex min-h-11 items-center gap-2.5 rounded-lg border p-2 text-sm sm:p-3">
+              <input type="radio" name="estado" value="pendiente" checked={form.estado === "pendiente"} onChange={set("estado")} className="shrink-0" />
               Pendiente
             </label>
           </div>
