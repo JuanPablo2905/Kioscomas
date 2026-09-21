@@ -188,7 +188,14 @@ function PlanStatusCard({ account }) {
       : access.activeSubscription
         ? `Suscripción activa hasta ${new Date(access.expiresAt).toLocaleDateString("es-AR")}`
         : "Cuenta pendiente";
-  return <div className="min-w-0 rounded-2xl border border-orange-200 bg-orange-50/70 p-4 sm:p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-wide text-[#B95125]">Plan Kiosco+</p><h3 className="mt-1 text-lg font-bold">{status}</h3><p className="mt-2 text-xs leading-5 text-gray-600">La beta incluye {BETA_TRIAL_DAYS} días sin cargo ni tarjeta. {introductoryRemaining > 0 ? `Después te quedan ${introductoryRemaining} mes(es) pagos a ${money(INTRODUCTORY_MONTHLY_PLAN_PRICE)}.` : `El precio de lista es ${money(DEFAULT_MONTHLY_PLAN_PRICE)} por mes.`} Dos dispositivos están incluidos.</p><p className="mt-2 text-[11px] text-gray-500">Los referidos con abono vigente empiezan a descontar desde el cuarto mes pago. No hay débito automático durante la beta.</p></div>{paymentsEnabled && checkoutUrl ? <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-[#1C4A44] px-4 text-sm font-bold text-white">Pagar con Mercado Pago</a> : <span className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-dashed border-orange-300 bg-white px-4 text-center text-xs font-semibold text-orange-800">Pago online próximamente</span>}</div></div>;
+  const planInfoItems = [
+    `${BETA_TRIAL_DAYS} días de prueba sin cargo ni tarjeta`,
+    introductoryRemaining > 0
+      ? `Después: ${introductoryRemaining} mes(es) a ${money(INTRODUCTORY_MONTHLY_PLAN_PRICE)}`
+      : `Precio de lista: ${money(DEFAULT_MONTHLY_PLAN_PRICE)} por mes`,
+    "2 dispositivos incluidos",
+  ];
+  return <div className="min-w-0 rounded-2xl border border-orange-200 bg-orange-50/70 p-4 sm:p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-wide text-[#B95125]">Plan Kiosco+</p><h3 className="mt-1 text-lg font-bold">{status}</h3><ul className="mt-2 flex flex-wrap gap-1.5">{planInfoItems.map((item) => <li key={item} className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-orange-900">{item}</li>)}</ul><p className="mt-2 text-[11px] text-gray-500">Los referidos con abono vigente empiezan a descontar desde el cuarto mes pago. No hay débito automático durante la beta.</p></div>{paymentsEnabled && checkoutUrl ? <a href={checkoutUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-[#1C4A44] px-4 text-sm font-bold text-white">Pagar con Mercado Pago</a> : <span className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-dashed border-orange-300 bg-white px-4 text-center text-xs font-semibold text-orange-800">Pago online próximamente</span>}</div></div>;
 }
 
 function Preview({ current }) {
