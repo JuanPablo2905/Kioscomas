@@ -137,7 +137,7 @@ try {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ deviceId: "not-activated-pc", name: "Cliente", email: "not-activated@example.com", businessName: "Kiosco sin activar", businessMode: "solo", username: "not-activated-owner", password: "12345678", ...acceptedTerms }),
   });
-  test("una PC sin clave de instalación no puede solicitar una cuenta", unactivatedRegistration.response.status === 403);
+  test("una PC nueva puede pedir una cuenta sin ninguna clave de instalación", unactivatedRegistration.response.status === 201);
   const missingTermsRegistration = await request("/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },

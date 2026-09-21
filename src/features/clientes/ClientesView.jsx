@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import {
   Package, Store, ShoppingCart, BarChart3, Shield, LogOut, ScanLine, Search,
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
-  ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
+  ArrowDownCircle, Clock, Lock, Users, ClipboardList, Link2, Wallet, CreditCard,
   MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
   ChevronRight,
 } from "lucide-react";
@@ -115,7 +115,7 @@ function PagoModal({ cliente, onClose, onConfirm }) {
         </AppSelect>
         {montoNumerico > cliente.saldo && (
           <p className="text-xs text-amber-700 -mt-3 mb-4">
-            Se aplicara solamente el saldo pendiente.
+            Se aplicará solamente el saldo pendiente.
           </p>
         )}
         <div className="grid grid-cols-2 gap-2">
@@ -185,7 +185,7 @@ function DeudaManualModal({ cliente, onClose, onConfirm }) {
             disabled={!Number(monto) || Number(monto) <= 0}
             className="flex-1 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-40"
           >
-            Agregar deuda
+            Cargar deuda
           </button>
         </div>
       </div>
@@ -297,7 +297,7 @@ function ClienteRow({ cliente, onPagar, onDeuda, onVincular, onToggleHistorial, 
             onClick={() => onVincular(cliente)}
             className="flex min-h-10 items-center justify-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1.5 text-xs font-medium hover:bg-gray-50 sm:min-h-0 sm:px-3"
           >
-            <ClipboardList size={13} />
+            <Link2 size={13} />
             Vincular ticket
           </button>
           <button

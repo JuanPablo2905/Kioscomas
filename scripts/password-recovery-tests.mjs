@@ -105,6 +105,12 @@ try {
   });
   assert(duplicateEmail.response.status === 409, "un correo no puede pertenecer a dos cuentas");
 
+  assert(typeof registration.value.testEmailVerifyToken === "string" && registration.value.testEmailVerifyToken.length >= 30, "el registro exige confirmar el correo antes de poder entrar");
+  const blockedLogin = await post("/v1/auth/login", { username: "recovery-owner", password: "old-secret", deviceId: "recovery-pc" });
+  assert(blockedLogin.response.status === 403 && blockedLogin.value.code === "email_not_verified", "no se puede iniciar sesión antes de confirmar el correo");
+  const verifyEmail = await post("/v1/auth/verify-email", { token: registration.value.testEmailVerifyToken });
+  assert(verifyEmail.response.ok, "el enlace del mail confirma la cuenta");
+
   const oldLogin = await post("/v1/auth/login", { username: "recovery-owner", password: "old-secret", deviceId: "recovery-pc" });
   assert(oldLogin.response.ok && oldLogin.value.refreshToken, "la contraseña original funciona antes del cambio");
 

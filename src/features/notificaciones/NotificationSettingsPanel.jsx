@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BellOff, BellRing, CheckCircle2, Send, Smartphone } from "lucide-react";
-import { DEFAULT_PUSH_PREFERENCES, disablePushNotifications, enablePushNotifications, loadPlatformNotifications, normalizePushPreferences, NOTIFICATION_CATEGORY_OPTIONS, pushCapability, sendPushNotificationTest, updatePushNotificationPreferences } from "./notificationService";
+import { DEFAULT_PUSH_PREFERENCES, disablePushNotifications, enablePushNotifications, loadPlatformNotifications, normalizePushPreferences, NOTIFICATION_CATEGORY_OPTIONS, pushCapability, resolvePushState, sendPushNotificationTest, updatePushNotificationPreferences } from "./notificationService";
 
 const GROUPS = [
   { id: "account", label: "Cuenta y suscripción", categories: ["subscription", "accounts"] },
@@ -25,6 +25,11 @@ export function NotificationSettingsPanel({ preferences = {}, onPreferencesChang
   useEffect(() => {
     loadPlatformNotifications().then((detail) => setPushConfigured(Boolean(detail.pushConfigured))).catch(() => setPushConfigured(null));
   }, []);
+  useEffect(() => {
+    let active = true;
+    resolvePushState().then((state) => { if (active) setPushState(state); });
+    return () => { active = false; };
+  }, []);
 
   const save = (patch) => {
     const next = normalizePushPreferences({ ...pushPreferences, ...patch });
@@ -34,12 +39,12 @@ export function NotificationSettingsPanel({ preferences = {}, onPreferencesChang
   const activate = async () => {
     setBusy(true); setMessage("");
     try { await enablePushNotifications(pushPreferences); setPushState("granted"); setMessage("Los avisos quedaron activos en este dispositivo."); }
-    catch (error) { setPushState(pushCapability()); setMessage(error?.message || "No se pudieron activar los avisos."); }
+    catch (error) { setPushState(await resolvePushState()); setMessage(error?.message || "No se pudieron activar los avisos."); }
     finally { setBusy(false); }
   };
   const deactivate = async () => {
     setBusy(true); setMessage("");
-    try { await disablePushNotifications(); setPushState(pushCapability() === "granted" ? "available" : pushCapability()); setMessage("Los avisos se desactivaron en este dispositivo."); }
+    try { await disablePushNotifications(); setPushState(pushCapability() === "denied" || pushCapability() === "unsupported" ? pushCapability() : "available"); setMessage("Los avisos se desactivaron en este dispositivo."); }
     catch (error) { setMessage(error?.message || "No se pudieron desactivar los avisos."); }
     finally { setBusy(false); }
   };

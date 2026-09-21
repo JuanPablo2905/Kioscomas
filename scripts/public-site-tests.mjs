@@ -44,8 +44,8 @@ test("la demostración no puede superar el ancho disponible", responsive.include
 test("la landing bloquea el desbordamiento horizontal", responsive.includes("overflow-x: hidden"));
 test("hay reglas específicas para teléfonos horizontales", responsive.includes("orientation: landscape") && responsive.includes("max-height: 600px"));
 test("editar y eliminar tienen etiquetas visibles", adminPanel.includes("<Pencil size={14}/>Editar") && adminPanel.includes("<Trash2 size={14}/>Eliminar"));
-test("la app real exige activación y la demo puede omitirla", cloudApp.includes("REQUIRE_DEVICE_ACTIVATION") && cloudApp.includes("PUBLIC_DEMO_MODE"));
-test("el servidor verifica la activación al iniciar y renovar sesión", cloudServer.includes("requireDeviceActivation") && cloudServer.includes("Este dispositivo todavía no fue autorizado") && cloudServer.includes("Este dispositivo ya no está autorizado"));
+test("crear cuenta e iniciar sesión ya no piden una clave de activación", cloudApp.includes("PUBLIC_DEMO_MODE") && !cloudApp.includes("requiresRegistrationCode"));
+test("el servidor sigue pudiendo desactivar puntualmente un dispositivo, sin exigir clave para uno nuevo", cloudServer.includes("ensureDeviceActivation") && cloudServer.includes("Este dispositivo fue desactivado."));
 test("el sitio público conoce la URL de la aplicación real", publicEnv.includes("VITE_CLOUD_APP_URL=https://app.kioscomas.ar"));
 test("la pantalla pública conoce el servidor que genera su QR y código", publicEnv.includes("VITE_PUBLIC_API_URL=https://kiosco-plus-api.onrender.com"));
 test("la portada quedó limpia y lleva al centro de descargas", landing.includes('./descargas.html') && !landing.includes('id="descargas-mac"'));
@@ -55,6 +55,6 @@ test("el entorno público apunta a los dos instaladores Mac", publicEnv.includes
 test("la publicación de Mac separa Apple Silicon e Intel", releaseWorkflow.includes("arch: arm64") && releaseWorkflow.includes("arch: x64") && !releaseWorkflow.includes("--universal"));
 test("cada instalador Mac usa el equipo nativo correcto", releaseWorkflow.includes("runner: macos-15") && releaseWorkflow.includes("runner: macos-15-intel") && releaseWorkflow.includes("runs-on: ${{ matrix.runner }}"));
 test("los instaladores Mac tienen órdenes separadas", packageManifest.includes("desktop:build:mac:arm64") && packageManifest.includes("desktop:build:mac:x64"));
-test("la compilación de nube activa el control de dispositivos", cloudEnv.includes("VITE_REQUIRE_DEVICE_ACTIVATION=true"));
+test("la compilación de nube ya no exige una clave para entrar por primera vez", cloudEnv.includes("VITE_REQUIRE_DEVICE_ACTIVATION=false"));
 
 console.log(`Sitio público y acceso: ${passed} comprobaciones superadas`);

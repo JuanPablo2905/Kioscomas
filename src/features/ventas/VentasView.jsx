@@ -173,7 +173,7 @@ function AperturaModal({ onClose, onConfirm }) {
           </button>
         </div>
         <p className="text-sm text-gray-500 mb-4">
-          Elegi como queres registrar el monto inicial.
+          Elegí cómo querés registrar el monto inicial.
         </p>
         <div className="grid grid-cols-2 gap-2 mb-4">
           <button
@@ -216,7 +216,7 @@ function AperturaModal({ onClose, onConfirm }) {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             />
             <p className="text-xs text-gray-400 mt-2">
-              Se registrara la apertura sin detalle de billetes.
+              Se registrará la apertura sin detalle de billetes.
             </p>
           </>
         )}
@@ -282,7 +282,7 @@ function CierreModal({ esperado, onClose, onConfirm }) {
           </>
         ) : (
           <p className="text-xs text-gray-400 py-3">
-            El cierre quedara registrado sin arqueo ni diferencia de caja.
+            El cierre quedará registrado sin arqueo ni diferencia de caja.
           </p>
         )}
         <div className="grid grid-cols-2 gap-2 mt-5">
@@ -382,7 +382,7 @@ function MovimientoModal({ saldo, onClose, onConfirm }) {
       <div className="mobile-dialog bg-white rounded-xl w-full max-w-sm max-h-[calc(100dvh-1rem)] overflow-y-auto p-4 sm:p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-gray-900">
-            Agregar / Retirar dinero
+            Ingreso / Retiro de dinero
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
             <X size={20} />
@@ -853,7 +853,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
   const confirmLabel = esFiado
     ? "Confirmar venta fiada"
     : incluyeMercadoPago && mercadoPagoMode === "static_qr"
-      ? "Confirmé el pago y registrar venta"
+      ? "Confirmar pago y registrar venta"
       : "Confirmar y registrar venta";
 
   return (
@@ -1424,6 +1424,7 @@ export function VentasView({
   const handleCobrar = ({ medio, clienteId, pagos = [], providerPayment = null }) => {
     if (cartItems.length === 0) return;
     const selectedCustomer = medio === "Cuenta corriente" ? clientes.find((customer) => String(customer.id) === String(clienteId)) : null;
+    const grupoAccion = crearIdOperacion("venta");
     setProducts((prev) =>
       prev.map((p) => {
         const item = cart.find((c) => c.productId === p.id);
@@ -1441,7 +1442,8 @@ export function VentasView({
             ),
           ],
         };
-      })
+      }),
+      { groupId: grupoAccion }
     );
     const fecha = new Date();
     const identidadTicket = crearIdentidadTicket(fecha);
@@ -1490,7 +1492,7 @@ export function VentasView({
         descuentoTipo: descuentoManual > 0 ? descuentoTipo : null,
         descuentoValor: descuentoManual > 0 ? Number(descuentoValor) : 0,
     };
-    setTickets((prev) => [...prev, ticket]);
+    setTickets((prev) => [...prev, ticket], { groupId: grupoAccion });
     queueMicrotask(() => setTicketParaImprimir(ticket));
 
     const efectivoCobrado = medio === "Efectivo" ? total : medio === "Pago combinado" ? Number(pagos.find((pago) => pago.metodo === "Efectivo")?.monto || 0) : 0;
@@ -1508,7 +1510,7 @@ export function VentasView({
             fecha: fecha.toLocaleString("es-AR"),
           },
         ],
-      }));
+      }), { groupId: grupoAccion });
     } else if (medio === "Cuenta corriente" && clienteId) {
       setClientes((prev) =>
         prev.map((c) =>
@@ -1528,7 +1530,8 @@ export function VentasView({
                 ],
               }
             : c
-        )
+        ),
+        { groupId: grupoAccion }
       );
     }
     setCart([]);
@@ -1652,7 +1655,7 @@ export function VentasView({
 
   return (
     <div data-tour="sales-content-venta" className="ventas-view min-w-0 px-4 py-5 sm:p-8">
-      <ConfirmDialog open={Boolean(ventaARecuperar)} title="Reemplazar venta actual" message="Los productos cargados actualmente seran reemplazados por la venta suspendida." confirmLabel="Reemplazar venta" onCancel={() => setVentaARecuperar(null)} onConfirm={() => aplicarVentaSuspendida(ventaARecuperar)}/>
+      <ConfirmDialog open={Boolean(ventaARecuperar)} title="Reemplazar venta actual" message="Los productos cargados actualmente serán reemplazados por la venta suspendida." confirmLabel="Reemplazar venta" onCancel={() => setVentaARecuperar(null)} onConfirm={() => aplicarVentaSuspendida(ventaARecuperar)}/>
       <SectionHeader
         title="Ventas / Caja"
         actions={
@@ -1669,7 +1672,7 @@ export function VentasView({
               className="flex min-h-10 flex-1 items-center justify-center gap-2 border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium hover:bg-gray-50 sm:flex-none"
             >
               <Plus size={16} />
-              Agregar / Retirar
+              Ingreso / Retiro
             </button>
             <button
               data-tour="cash-movements"

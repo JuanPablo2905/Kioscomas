@@ -209,6 +209,7 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
       !["Efectivo", "Cuenta corriente", ...(mercadoPagoRefund ? ["Mercado Pago"] : [])].includes(pago?.metodo)
       && Number(pago?.monto || 0) > 0
     ));
+    const grupoAccion = crearIdOperacion("anulacion");
     setTickets((prev) => prev.map((t) => t.id === target.id ? anularTicket({
       ...t,
       providerPayment: mercadoPagoRefund ? { ...t.providerPayment, status: "refunded", providerStatus: mercadoPagoRefund.providerStatus, refundedAt: mercadoPagoRefund.refundedAt } : t.providerPayment,
@@ -225,14 +226,14 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
           responsable,
         },
       } : {}),
-    }, motivo, responsable, fecha.toISOString()) : t));
-    setProducts((prev) => restaurarStock(prev, target));
+    }, motivo, responsable, fecha.toISOString()) : t), { groupId: grupoAccion });
+    setProducts((prev) => restaurarStock(prev, target), { groupId: grupoAccion });
     if (target.medio === "Cuenta corriente" && target.clienteId && setClientes) {
       setClientes((prev) => prev.map((cliente) => cliente.id === target.clienteId ? {
         ...cliente,
         saldo: Number(cliente.saldo || 0) - Number(target.total || 0),
         movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-anulacion"), tipo: "anulacion", monto: Number(target.total || 0), nota: `Anulación ticket #${numeroTicket(target)}: ${motivo}`, fecha: fecha.toLocaleString("es-AR") }],
-      } : cliente));
+      } : cliente), { groupId: grupoAccion });
     }
     const efectivoTicket = efectivoDeTicket(target);
     setCaja((prev) => ({
@@ -248,7 +249,7 @@ export function ReportesView({ tickets, products, setTickets, setCaja, setProduc
           fecha: nowFecha(),
         },
       ],
-    }));
+    }), { groupId: grupoAccion });
     setBorrandoTicket(null);
     setVoidBusy(false);
   };

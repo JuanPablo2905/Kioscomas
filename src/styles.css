@@ -120,14 +120,14 @@ input[type="radio"]:checked::before { transform: scale(1); }
 .action { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; border-radius: .6rem; background: var(--app-accent); color: var(--app-accent-text, #fff); padding: .55rem .8rem; font-size: .875rem; font-weight: 600; white-space: nowrap; }
 .action:disabled { opacity: .4; }
 .kiosco-themed, .kiosco-themed > div:nth-child(2), .kiosco-themed .view-stage { background-color: var(--app-background, #f8fafc) !important; }
-.kiosco-themed > div:first-child, .kiosco-themed > div:first-child .bg-white { background-color: var(--app-menu, #fff) !important; }
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar), :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .bg-white { background-color: var(--app-menu, #fff) !important; }
 .kiosco-themed .bg-white { background-color: var(--app-card, #fff) !important; color: var(--app-card-text, #111827) !important; }
-.kiosco-themed > div:first-child, .kiosco-themed > div:first-child.bg-white, .kiosco-themed > div:first-child .bg-white {
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar), :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar).bg-white, :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .bg-white {
   background-color: var(--app-menu, #fff) !important;
   color: var(--app-menu-text, #111827) !important;
 }
-[data-menu-tone="dark"] .kiosco-themed > div:first-child, [data-menu-tone="dark"] .kiosco-themed > div:first-child .text-gray-900, [data-menu-tone="dark"] .kiosco-themed > div:first-child .text-gray-700, [data-menu-tone="dark"] .kiosco-themed > div:first-child .text-gray-600 { color: #f8fafc !important; }
-[data-menu-tone="dark"] .kiosco-themed > div:first-child .text-gray-500, [data-menu-tone="dark"] .kiosco-themed > div:first-child .text-gray-400 { color: #cbd5e1 !important; }
+[data-menu-tone="dark"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar), [data-menu-tone="dark"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-900, [data-menu-tone="dark"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-700, [data-menu-tone="dark"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-600 { color: #f8fafc !important; }
+[data-menu-tone="dark"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-500, [data-menu-tone="dark"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-400 { color: #cbd5e1 !important; }
 [data-background-tone="dark"] .kiosco-themed, [data-background-tone="dark"] .kiosco-themed .view-stage, [data-background-tone="dark"] .kiosco-themed .view-stage .text-gray-900 { color: #f8fafc !important; }
 [data-background-tone="dark"] .kiosco-themed .view-stage .text-gray-500, [data-background-tone="dark"] .kiosco-themed .view-stage .text-gray-600 { color: #cbd5e1 !important; }
 .kiosco-themed .bg-gray-900 { background-color: var(--app-accent) !important; }
@@ -149,31 +149,31 @@ input[type="radio"]:checked::before { transform: scale(1); }
   border-color: color-mix(in srgb, var(--app-control-text, #111827) 28%, transparent) !important;
   color: color-mix(in srgb, var(--app-control-text, #111827) 62%, transparent) !important;
 }
-.kiosco-themed > div:first-child .sidebar-nav-active,
-[data-theme="oscuro"] .kiosco-themed > div:first-child .sidebar-nav-active,
-[data-theme="automatico"] .kiosco-themed > div:first-child .sidebar-nav-active {
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .sidebar-nav-active,
+[data-theme="oscuro"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .sidebar-nav-active,
+[data-theme="automatico"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .sidebar-nav-active {
   background: var(--app-selection, var(--app-accent)) !important;
   color: var(--app-selection-text, var(--app-accent-text)) !important;
   border-color: color-mix(in srgb, var(--app-accent) 70%, transparent) !important;
 }
-.kiosco-themed > div:first-child .sidebar-nav-active *,
-[data-theme="oscuro"] .kiosco-themed > div:first-child .sidebar-nav-active *,
-[data-theme="automatico"] .kiosco-themed > div:first-child .sidebar-nav-active * { color: inherit !important; }
-.kiosco-themed > div:first-child .hover\:bg-gray-50:hover,
-.kiosco-themed > div:first-child .hover\:bg-gray-100:hover {
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .sidebar-nav-active *,
+[data-theme="oscuro"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .sidebar-nav-active *,
+[data-theme="automatico"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .sidebar-nav-active * { color: inherit !important; }
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .hover\:bg-gray-50:hover,
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .hover\:bg-gray-100:hover {
   background: var(--app-hover) !important;
   color: var(--app-hover-text) !important;
 }
-.kiosco-themed > div:first-child .hover\:bg-gray-50:hover *,
-.kiosco-themed > div:first-child .hover\:bg-gray-100:hover * { color: inherit !important; }
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .hover\:bg-gray-50:hover *,
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .hover\:bg-gray-100:hover * { color: inherit !important; }
 .settings-panel aside button:not(.bg-gray-900):hover {
   background: var(--app-hover) !important;
   color: var(--app-hover-text) !important;
   border-color: color-mix(in srgb, var(--app-accent) 55%, transparent) !important;
 }
 .settings-panel aside button:not(.bg-gray-900):hover * { color: inherit !important; }
-.kiosco-themed > div:first-child, .kiosco-themed > div:first-child .text-gray-900, .kiosco-themed > div:first-child .text-gray-700, .kiosco-themed > div:first-child .text-gray-600, .settings-panel, .settings-panel h2, .settings-panel h3 { color: var(--app-menu-text, #111827) !important; }
-.kiosco-themed > div:first-child .text-gray-500, .kiosco-themed > div:first-child .text-gray-400, .settings-panel .text-gray-500, .settings-panel .text-gray-400 { color: var(--app-menu-muted, #64748b) !important; }
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar), :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-900, :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-700, :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-600, .settings-panel, .settings-panel h2, .settings-panel h3 { color: var(--app-menu-text, #111827) !important; }
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-500, :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-400, .settings-panel .text-gray-500, .settings-panel .text-gray-400 { color: var(--app-menu-muted, #64748b) !important; }
 .kiosco-themed > div:nth-child(2), .kiosco-themed .view-stage { color: var(--app-background-text, #111827) !important; }
 .kiosco-themed .view-stage > div > h1, .kiosco-themed .view-stage > div > h2, .kiosco-themed .view-stage > div > p { color: var(--app-background-text, #111827); }
 .kiosco-themed .bg-white, .kiosco-themed .bg-white .text-gray-900, .kiosco-themed .bg-white .text-gray-700, .kiosco-themed .bg-white .text-gray-600 { color: var(--app-card-text, #111827) !important; }
@@ -291,8 +291,8 @@ body[data-tutorial-active="true"] .app-date-menu {
     padding-right: 11px !important;
   }
 }
-.kiosco-themed > div:first-child, .kiosco-themed > div:first-child .text-gray-900, .kiosco-themed > div:first-child .text-gray-700, .kiosco-themed > div:first-child .text-gray-600 { color: var(--app-menu-text, #111827) !important; }
-.kiosco-themed > div:first-child .text-gray-500, .kiosco-themed > div:first-child .text-gray-400 { color: var(--app-menu-muted, #64748b) !important; }
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar), :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-900, :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-700, :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-600 { color: var(--app-menu-text, #111827) !important; }
+:is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-500, :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .text-gray-400 { color: var(--app-menu-muted, #64748b) !important; }
 .vitrina-product-card, .vitrina-family-card, .vitrina-group-editor, .gestion-card {
   background: var(--app-card, #fff);
   color: var(--app-card-text, #111827);
@@ -437,17 +437,17 @@ body[data-tutorial-active="true"] .app-date-menu {
 .settings-panel .h-52 button { pointer-events: none; }
 .kiosco-themed button:focus-visible, .kiosco-themed input:focus, .kiosco-themed select:focus, .kiosco-themed textarea:focus { outline: 2px solid color-mix(in srgb, var(--app-accent) 65%, transparent); outline-offset: 1px; border-color: var(--app-accent) !important; }
 [data-color-scope="completa"] .kiosco-themed { background: var(--app-background, #f8fafc) !important; }
-[data-color-scope="completa"] .kiosco-themed > div:first-child { background: var(--app-menu, #fff) !important; border-color: color-mix(in srgb, var(--app-menu) 78%, var(--app-background)) !important; }
+[data-color-scope="completa"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) { background: var(--app-menu, #fff) !important; border-color: color-mix(in srgb, var(--app-menu) 78%, var(--app-background)) !important; }
 [data-color-scope="completa"] .kiosco-themed > div:nth-child(2), [data-color-scope="completa"] .view-stage { background: var(--app-background, #f8fafc) !important; }
 [data-color-scope="completa"] .kiosco-themed .bg-gray-50, [data-color-scope="completa"] .settings-panel .bg-gray-50 { background-color: color-mix(in srgb, var(--app-menu) 88%, var(--app-background)) !important; color: var(--app-menu-text) !important; }
 [data-color-scope="completa"] .kiosco-themed .bg-gray-100 { background-color: color-mix(in srgb, var(--app-menu) 78%, var(--app-background)) !important; color: var(--app-menu-text) !important; }
-[data-color-scope="completa"] .kiosco-themed > div:first-child .bg-gray-100,
-[data-color-scope="completa"] .kiosco-themed > div:first-child button.bg-gray-100 {
+[data-color-scope="completa"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .bg-gray-100,
+[data-color-scope="completa"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) button.bg-gray-100 {
   background-color: var(--app-selection) !important;
   color: var(--app-selection-text) !important;
 }
-[data-color-scope="completa"] .kiosco-themed > div:first-child .bg-gray-100 *,
-[data-color-scope="completa"] .kiosco-themed > div:first-child button.bg-gray-100 * { color: var(--app-selection-text) !important; }
+[data-color-scope="completa"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) .bg-gray-100 *,
+[data-color-scope="completa"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) button.bg-gray-100 * { color: var(--app-selection-text) !important; }
 [data-color-scope="completa"] .kiosco-themed .bg-gray-900,
 [data-color-scope="completa"] .settings-panel .bg-gray-900 { color: var(--app-accent-text) !important; }
 [data-color-scope="completa"] .kiosco-themed .bg-gray-900 *,
@@ -603,8 +603,8 @@ body[data-tutorial-active="true"] .app-date-menu {
 .invoice-print .font-mono {
   font-family: var(--brand-font-data);
 }
-[data-sidebar-size="angosto"] .kiosco-themed > div:first-child { width: 11rem !important; }
-[data-sidebar-size="ancho"] .kiosco-themed > div:first-child { width: 18rem !important; }
+[data-sidebar-size="angosto"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) { width: 11rem !important; }
+[data-sidebar-size="ancho"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar) { width: 18rem !important; }
 [data-sidebar-size] .admin-app-shell > div:first-child { width: 100% !important; max-width: none !important; }
 [data-sidebar-size] .admin-catalog-shell > div:first-child { width: 100% !important; max-width: none !important; }
 /* El pie del menú siempre debe quedar dentro de la ventana. Cuando falta alto,
