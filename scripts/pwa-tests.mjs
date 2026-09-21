@@ -36,6 +36,7 @@ const checks = [
   [login.includes("requestPwaInstall"), "El botón móvil debe invocar la instalación nativa del navegador."],
   [!login.includes("requiresRegistrationCode") && !login.includes("activationCode"), "La web ya no debe pedir ninguna clave al crear un negocio desde un dispositivo nuevo."],
   [app.includes("handleRegister = async ({ nombre, email, usuario, password, nombreNegocio, modoNegocio") && !app.includes("activationCode = \"\"") && app.includes("redeemInstallationCode"), "El alta web ya no debe pedir clave, pero la app de escritorio conserva su propia activación."],
+  [styles.includes("[data-sidebar-size=\"angosto\"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar)") && styles.includes("[data-sidebar-size=\"ancho\"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar)"), "El ancho del menú lateral debe aplicarse por su clase fija, no sólo por ser el primer hijo (roto por el link de accesibilidad)."],
   [serviceWorker.includes("pwa-icon-maskable-512.png"), "Los íconos deben estar disponibles sin conexión."],
   [app.includes("Modo sin conexión: podés seguir trabajando") && app.includes('window.addEventListener("offline"'), "La app debe avisar claramente que puede seguir trabajando sin conexión."],
   [fs.existsSync("terminos.html") && terms.includes("BOTÓN DE BAJA DE SERVICIO") && terms.includes("BOTÓN DE ARREPENTIMIENTO"), "El sitio debe publicar los términos y los accesos de baja y arrepentimiento."],

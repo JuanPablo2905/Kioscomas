@@ -198,6 +198,34 @@ function describePurchaseOrders(previous, next) {
   return "Pedidos actualizados";
 }
 
+const ticketEstado = (ticket) => {
+  if (!ticket) return "inexistente";
+  if (ticket.estado === "anulado" || ticket.anulado === true) return "anulado";
+  if (ticket.estado === "devuelto" || ticket.devuelto === true) return "devuelto";
+  return ticket.estado || "activo";
+};
+const ticketLabel = (ticket = {}) => `Ticket ${ticket?.numero || ticket?.codigoTicket || (ticket?.id ? `#${ticket.id}` : "sin número")}`;
+
+function describeTickets(previous, next) {
+  const change = arrayChange(previous || [], next || []);
+  if (change.added.length === 1) return `Venta registrada: ${ticketLabel(change.added[0])}`;
+  if (change.added.length > 1) return `Ventas registradas: ${change.added.map(ticketLabel).join(", ")}`;
+  if (change.removed.length === 1) return `Venta eliminada: ${ticketLabel(change.removed[0])}`;
+  if (change.removed.length > 1) return `Ventas eliminadas: ${change.removed.map(ticketLabel).join(", ")}`;
+  if (change.changed.length === 1) {
+    const [{ old, item }] = change.changed;
+    const oldEstado = ticketEstado(old);
+    const newEstado = ticketEstado(item);
+    if (oldEstado !== newEstado) {
+      const status = { activo: "Activo", anulado: "Anulado", devuelto: "Devuelto" };
+      return `${ticketLabel(item)}: ${status[oldEstado] || oldEstado} → ${status[newEstado] || newEstado}`;
+    }
+    return `${ticketLabel(item)}: actualizado`;
+  }
+  if (change.changed.length > 1) return `Ventas actualizadas: ${change.changed.map(({ item }) => ticketLabel(item)).join(", ")}`;
+  return "Ventas y tickets actualizados";
+}
+
 const goalAmount = (goal) => `$${Number(goal?.objetivo || 0).toLocaleString("es-AR")}`;
 const workModeLabel = (mode) => mode === "equipo" ? "Tengo empleados" : "Trabajo solo";
 
@@ -229,6 +257,7 @@ export function describeDataChange(key, previousValue, nextValue) {
   if (key === "metas") return describeGoals(previousValue, nextValue);
   if (key === "comprasItems") return describePurchaseItems(previousValue, nextValue);
   if (key === "pedidos") return describePurchaseOrders(previousValue, nextValue);
+  if (key === "tickets") return describeTickets(previousValue, nextValue);
   if (key === "caja") {
     const oldMovements = previousValue?.movimientos || [];
     const nextMovements = nextValue?.movimientos || [];

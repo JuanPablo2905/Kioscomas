@@ -70,6 +70,11 @@ try {
   const oldOrderWithoutNames = { id: "pedido-antiguo", proveedorId: 4, items: [{ productId: 8, cantidad: 2 }] };
   test("un pedido antiguo recupera los nombres desde los datos del negocio", audit.auditDisplayDetail({ recurso: "pedidos", detalle: "pedidos: se agregaron #pedido-antiguo" }, { pedidos: [oldOrderWithoutNames], proveedores: [{ id: 4, nombre: "Mayorista Centro" }], products: [{ id: 8, nombre: "Sprite" }] }) === "Pedido generado: Mayorista Centro · 2 × Sprite");
   test("la auditoría antigua no expone el identificador aunque el pedido ya no exista", audit.auditDisplayDetail(legacyPurchaseOrder, { pedidos: [] }) === "Pedido generado");
+  const ticket = { id: "venta-9bd418ee-44c2-4bcc-83ce-8b93125512ad", numero: "V-M0K3J2-A1B2C", estado: "activo" };
+  const ticketCreated = audit.describeDataChange("tickets", [], [ticket]);
+  test("una venta muestra el número de ticket real y no el identificador interno", ticketCreated === "Venta registrada: Ticket V-M0K3J2-A1B2C" && !ticketCreated.includes(ticket.id));
+  const ticketAnulado = audit.describeDataChange("tickets", [ticket], [{ ...ticket, estado: "anulado" }]);
+  test("anular una venta se describe con el número de ticket y el cambio de estado", ticketAnulado === "Ticket V-M0K3J2-A1B2C: Activo → Anulado");
   const oldLoginEvent = { usuario: "Juan", accion: "inicio_sesion" };
   test("inicio de sesión antiguo se muestra con un nombre legible", audit.auditDisplayDetail(oldLoginEvent) === "Inicio de sesión");
   test("auditoría antigua reconoce al dueño por su cuenta", audit.auditDisplayRole(oldLoginEvent, { nombre: "Juan" }) === "Dueño");

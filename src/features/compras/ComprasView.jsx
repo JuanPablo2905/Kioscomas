@@ -13,6 +13,7 @@ import { KioscoDatePicker, datePickerHelpers } from "../../shared/KioscoDatePick
 import { buildAutomaticLowStockItems, buildReplenishmentSuggestions } from "./replenishmentRules";
 import { copyText, openEmailDraft, openWhatsApp, purchaseMessage } from "../../shared/share";
 import { crearIdOperacion } from "../ventas/salesRules";
+import { ProductModal } from "../stock/StockView";
 
 function CompartirPedidoModal({ pedido, onClose }) {
   const [phone, setPhone] = useState(pedido.phone || "");
@@ -606,6 +607,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
         <ProductModal
           onClose={() => setNuevoProductoOpen(false)}
           onSave={handleNuevoProducto}
+          proveedores={proveedores}
         />
       )}
 
