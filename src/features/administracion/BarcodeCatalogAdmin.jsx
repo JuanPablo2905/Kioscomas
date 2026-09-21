@@ -97,7 +97,7 @@ export function BarcodeCatalogAdmin({ businessData = {} }) {
       const params = new URLSearchParams({ query: deferredQuery, status: filter, page: String(page), limit: "30" });
       const response = await cloudFetch(context.config.apiUrl, `/v1/admin/catalog?${params}`, { headers: { "x-device-id": context.config.deviceId, "x-tenant-id": String(context.tenantId) } });
       const json = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(json.error || "No se pudo abrir el catalogo");
+      if (!response.ok) throw new Error(json.error || "No se pudo abrir el catálogo");
       const local = page === 1
         ? localCatalog(businessData).filter((item) => matchesItem(item, deferredQuery.trim().toLowerCase(), filter))
         : [];
@@ -160,7 +160,7 @@ export function BarcodeCatalogAdmin({ businessData = {} }) {
   const save = async () => {
     const context = requestContext();
     const codigo = String(form.codigo || "").replace(/\D/g, "");
-    if (codigo.length < 6 || !form.nombre.trim()) return setError("Completa un codigo valido y el nombre del producto.");
+    if (codigo.length < 6 || !form.nombre.trim()) return setError("Completá un código válido y el nombre del producto.");
     setSaving(true); setError("");
     try {
       const response = await cloudFetch(context.config.apiUrl, `/v1/admin/catalog/${codigo}`, {
@@ -197,7 +197,7 @@ export function BarcodeCatalogAdmin({ businessData = {} }) {
       {requestContext().session?.user?.role === "superAdmin" && <>
       <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
         <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5">
-          <Search size={18} className="text-gray-400"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por codigo, nombre, categoria o familia..." className="min-w-0 flex-1 bg-transparent text-sm outline-none"/>
+          <Search size={18} className="text-gray-400"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por código, nombre, categoría o familia..." className="min-w-0 flex-1 bg-transparent text-sm outline-none"/>
         </label>
         <button onClick={openNew} className="flex items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 py-2.5 text-sm font-semibold text-white"><Plus size={17}/>Agregar producto</button>
       </div>
@@ -206,33 +206,33 @@ export function BarcodeCatalogAdmin({ businessData = {} }) {
       </div>
       {error && <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{error}</div>}
       <div className="mt-4 space-y-2">
-        {loading && <p className="py-8 text-center text-sm text-gray-500">Cargando catalogo...</p>}
+        {loading && <p className="py-8 text-center text-sm text-gray-500">Cargando catálogo...</p>}
         {!loading && !error && data.items.length === 0 && <p className="rounded-xl border border-dashed p-8 text-center text-sm text-gray-500">No hay productos para este filtro.</p>}
         {!loading && data.items.map((item) => {
           const badge = STATUS[item.status] || STATUS.learned;
           return <article key={item.codigo} className="grid gap-3 rounded-xl border border-gray-200 bg-white p-3 sm:grid-cols-[52px_1fr_auto] sm:items-center">
             <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-lg bg-gray-100">{item.product?.imagenUrl ? <img src={item.product.imagenUrl} alt="" className="h-full w-full object-contain"/> : <Barcode size={23} className="text-gray-400"/>}</div>
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold">{item.product?.nombre || "Producto sin identificar"}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge[1]}`}>{badge[0]}</span></div><p className="mt-0.5 font-mono text-xs text-gray-500">{item.codigo}</p><p className="mt-1 text-xs text-gray-500">{item.product?.categoria || "Sin categoria"} · {item.lookupCount} consulta(s){item.lastLookupAt ? ` · ultima ${new Date(item.lastLookupAt).toLocaleString("es-AR")}` : ""}</p></div>
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold">{item.product?.nombre || "Producto sin identificar"}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge[1]}`}>{badge[0]}</span></div><p className="mt-0.5 font-mono text-xs text-gray-500">{item.codigo}</p><p className="mt-1 text-xs text-gray-500">{item.product?.categoria || "Sin categoría"} · {item.lookupCount} consulta(s){item.lastLookupAt ? ` · última ${new Date(item.lastLookupAt).toLocaleString("es-AR")}` : ""}</p></div>
             <button onClick={() => openEdit(item)} className="flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold"><Pencil size={14}/>{item.product ? "Editar" : "Completar"}</button>
           </article>;
         })}
       </div>
-      {data.total > 30 && <div className="mt-4 flex items-center justify-center gap-3"><button disabled={page === 1} onClick={() => setPage((value) => value - 1)} className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30">Anterior</button><span className="text-xs text-gray-500">Pagina {page}</span><button disabled={page * 30 >= data.total} onClick={() => setPage((value) => value + 1)} className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30">Siguiente</button></div>}
+      {data.total > 30 && <div className="mt-4 flex items-center justify-center gap-3"><button disabled={page === 1} onClick={() => setPage((value) => value - 1)} className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30">Anterior</button><span className="text-xs text-gray-500">Página {page}</span><button disabled={page * 30 >= data.total} onClick={() => setPage((value) => value + 1)} className="rounded-lg border px-3 py-2 text-xs disabled:opacity-30">Siguiente</button></div>}
 
       {editor && <div className="fixed inset-0 z-[90] grid place-items-center overflow-y-auto bg-black/60 p-3" onMouseDown={closeEditor}><div className="my-auto w-full max-w-2xl rounded-2xl bg-[#FFFCF6] p-4 shadow-2xl sm:p-6" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-3"><div><p className="text-xl font-bold">{editor === "new" ? "Agregar al catalogo" : "Editar producto del catalogo"}</p><p className="mt-1 text-sm text-gray-500">Esta correccion se usara en todos los negocios.</p></div><button onClick={closeEditor} className="rounded-lg border p-2"><X size={18}/></button></div>
+        <div className="flex items-start justify-between gap-3"><div><p className="text-xl font-bold">{editor === "new" ? "Agregar al catálogo" : "Editar producto del catálogo"}</p><p className="mt-1 text-sm text-gray-500">Esta corrección se usará en todos los negocios.</p></div><button onClick={closeEditor} className="rounded-lg border p-2"><X size={18}/></button></div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <label className="text-sm font-medium">Codigo de barras<input value={form.codigo} disabled={editor !== "new"} onChange={(event) => setForm({ ...form, codigo: event.target.value.replace(/\D/g, "") })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 disabled:bg-gray-100" inputMode="numeric"/></label>
+          <label className="text-sm font-medium">Código de barras<input value={form.codigo} disabled={editor !== "new"} onChange={(event) => setForm({ ...form, codigo: event.target.value.replace(/\D/g, "") })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 disabled:bg-gray-100" inputMode="numeric"/></label>
           <label className="text-sm font-medium">Nombre del producto<input value={form.nombre} onChange={(event) => setForm({ ...form, nombre: event.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2"/></label>
-          <label className="text-sm font-medium">Categoria<input value={form.categoria} onChange={(event) => setForm({ ...form, categoria: event.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2"/></label>
+          <label className="text-sm font-medium">Categoría<input value={form.categoria} onChange={(event) => setForm({ ...form, categoria: event.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2"/></label>
           <label className="text-sm font-medium">Unidad<input value={form.unidad} onChange={(event) => setForm({ ...form, unidad: event.target.value })} placeholder="unidad, kg, litro..." className="mt-1 w-full rounded-lg border bg-white px-3 py-2"/></label>
           <label className="text-sm font-medium">Familia<input value={form.familia} onChange={(event) => setForm({ ...form, familia: event.target.value })} placeholder="Ej: Coca-Cola" className="mt-1 w-full rounded-lg border bg-white px-3 py-2"/></label>
           <label className="text-sm font-medium">Variante<input value={form.variante} onChange={(event) => setForm({ ...form, variante: event.target.value })} placeholder="Ej: Zero 1,5 L" className="mt-1 w-full rounded-lg border bg-white px-3 py-2"/></label>
-          <label className="text-sm font-medium sm:col-span-2">Descripcion<input value={form.descripcionCatalogo} onChange={(event) => setForm({ ...form, descripcionCatalogo: event.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2"/></label>
+          <label className="text-sm font-medium sm:col-span-2">Descripción<input value={form.descripcionCatalogo} onChange={(event) => setForm({ ...form, descripcionCatalogo: event.target.value })} className="mt-1 w-full rounded-lg border bg-white px-3 py-2"/></label>
           <label className="text-sm font-medium sm:col-span-2">URL de la imagen<div className="mt-1 flex gap-2"><input value={form.imagenUrl} onChange={(event) => setForm({ ...form, imagenUrl: event.target.value })} placeholder="https://..." className="min-w-0 flex-1 rounded-lg border bg-white px-3 py-2"/><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-lg border bg-white">{form.imagenUrl ? <img src={form.imagenUrl} alt="Vista previa" className="h-full w-full object-contain"/> : <Image size={18}/>}</div></div></label>
         </div>
         {editor !== "new" && editor.history?.length > 0 && <details className="mt-4 rounded-xl border bg-white p-3 text-xs"><summary className="cursor-pointer font-semibold">Historial de correcciones ({editor.history.length})</summary><div className="mt-2 space-y-2">{editor.history.map((entry, index) => <p key={`${entry.at}-${index}`}><Clock3 size={12} className="mr-1 inline"/>{new Date(entry.at).toLocaleString("es-AR")} · {entry.action === "created" ? "creado" : "editado"}</p>)}</div></details>}
-        <div className="mt-5 grid grid-cols-2 gap-2"><button onClick={closeEditor} className="rounded-xl border px-4 py-2.5 text-sm font-semibold">Cancelar</button><button onClick={save} disabled={saving} className="flex items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Guardando..." : <><CheckCircle2 size={17}/>Guardar correccion</>}</button></div>
+        <div className="mt-5 grid grid-cols-2 gap-2"><button onClick={closeEditor} className="rounded-xl border px-4 py-2.5 text-sm font-semibold">Cancelar</button><button onClick={save} disabled={saving} className="flex items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Guardando..." : <><CheckCircle2 size={17}/>Guardar corrección</>}</button></div>
       </div></div>}
       </>}
     </div>
