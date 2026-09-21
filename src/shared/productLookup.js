@@ -134,7 +134,7 @@ async function lookupOpenFactsUniversal(code) {
   const response = await fetch(`https://world.openfoodfacts.org/api/v3/product/${encodeURIComponent(code)}?product_type=all&cc=ar&lc=es&tags_lc=es&fields=${fields}`);
   if (!response.ok) return null;
   const json = await response.json();
-  return normalizeOpenFacts(json.product || json.result?.product, code, "Open Facts universal");
+  return normalizeOpenFacts(json.product || json.result?.product, code, "Catálogo público de internet");
 }
 
 async function lookupUpcItemDb(code) {
@@ -151,7 +151,7 @@ async function lookupUpcItemDb(code) {
     categoria: categoryFrom({ category: item.category }),
     imagenUrl: item.images?.[0] || "",
     descripcionCatalogo: item.description || item.size || "",
-    fuenteCatalogo: "UPCitemdb",
+    fuenteCatalogo: "Catálogo internacional de códigos de barras",
   };
 }
 
