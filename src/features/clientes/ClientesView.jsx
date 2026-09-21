@@ -115,7 +115,7 @@ function PagoModal({ cliente, onClose, onConfirm }) {
         </AppSelect>
         {montoNumerico > cliente.saldo && (
           <p className="text-xs text-amber-700 -mt-3 mb-4">
-            Se aplicara solamente el saldo pendiente.
+            Se aplicará solamente el saldo pendiente.
           </p>
         )}
         <div className="grid grid-cols-2 gap-2">

@@ -173,7 +173,7 @@ function AperturaModal({ onClose, onConfirm }) {
           </button>
         </div>
         <p className="text-sm text-gray-500 mb-4">
-          Elegi como queres registrar el monto inicial.
+          Elegí cómo querés registrar el monto inicial.
         </p>
         <div className="grid grid-cols-2 gap-2 mb-4">
           <button
@@ -216,7 +216,7 @@ function AperturaModal({ onClose, onConfirm }) {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             />
             <p className="text-xs text-gray-400 mt-2">
-              Se registrara la apertura sin detalle de billetes.
+              Se registrará la apertura sin detalle de billetes.
             </p>
           </>
         )}
@@ -282,7 +282,7 @@ function CierreModal({ esperado, onClose, onConfirm }) {
           </>
         ) : (
           <p className="text-xs text-gray-400 py-3">
-            El cierre quedara registrado sin arqueo ni diferencia de caja.
+            El cierre quedará registrado sin arqueo ni diferencia de caja.
           </p>
         )}
         <div className="grid grid-cols-2 gap-2 mt-5">
@@ -1655,7 +1655,7 @@ export function VentasView({
 
   return (
     <div data-tour="sales-content-venta" className="ventas-view min-w-0 px-4 py-5 sm:p-8">
-      <ConfirmDialog open={Boolean(ventaARecuperar)} title="Reemplazar venta actual" message="Los productos cargados actualmente seran reemplazados por la venta suspendida." confirmLabel="Reemplazar venta" onCancel={() => setVentaARecuperar(null)} onConfirm={() => aplicarVentaSuspendida(ventaARecuperar)}/>
+      <ConfirmDialog open={Boolean(ventaARecuperar)} title="Reemplazar venta actual" message="Los productos cargados actualmente serán reemplazados por la venta suspendida." confirmLabel="Reemplazar venta" onCancel={() => setVentaARecuperar(null)} onConfirm={() => aplicarVentaSuspendida(ventaARecuperar)}/>
       <SectionHeader
         title="Ventas / Caja"
         actions={

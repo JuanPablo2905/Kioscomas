@@ -731,7 +731,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
 
   return (
     <div data-tour="administration-content" className="mx-auto max-w-6xl p-4 sm:p-8">
-      <SectionHeader title="Administracion" />
+      <SectionHeader title="Administración" />
 
       {sugerencias.filter((s) => s.estado === "pendiente").length > 0 && (identidad?.rol === "Dueño" || (identidad?.adminApp && identidad?.operandoNegocio)) && (
         <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
@@ -842,7 +842,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
           <div className="flex items-start justify-between gap-4 bg-gray-50 p-4 sm:p-5">
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Menu del negocio
+                Menú del negocio
               </p>
               <h2 className="text-lg font-semibold text-gray-900 mt-1">
                 {negocioAbierto.nombreNegocio}
@@ -856,7 +856,7 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
                 type="button"
                 onClick={() => setNegocioAbiertoId(null)}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:text-gray-700"
-                aria-label="Cerrar menu"
+                aria-label="Cerrar menú"
               >
                 <X size={20} />
               </button>
