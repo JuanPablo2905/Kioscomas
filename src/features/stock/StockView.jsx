@@ -374,7 +374,7 @@ export function ProductModal({ initial, onClose, onSave, proveedores = [], puede
               {isEdit && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-sm text-gray-700">Familia</label><input value={form.familia || ""} onChange={set("familia")} placeholder="Ej: Coca-Cola" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"/></div><div><label className="mb-1 block text-sm text-gray-700">Variante</label><input value={form.variante || ""} onChange={set("variante")} placeholder="Ej: 1,25 L" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"/></div></div>}
               <div data-tour="product-details">
                 <label className="text-sm text-gray-700 block mb-1">Proveedor habitual</label>
-                <CustomSelect value={form.proveedorId || ""} onChange={(value) => setForm((current) => ({ ...current, proveedorId: value ? Number(value) : null }))} options={[{value:"",label:"Sin proveedor asociado"}, ...proveedores.map((proveedor) => ({value:proveedor.id,label:proveedor.nombre}))]}/>
+                <CustomSelect value={form.proveedorId || ""} onChange={(value) => setForm((current) => ({ ...current, proveedorId: value ? Number(value) : null }))} options={[{value:"",label:"Sin proveedor asignado"}, ...proveedores.map((proveedor) => ({value:proveedor.id,label:proveedor.nombre}))]}/>
               </div>
               <div data-tour="product-details">
                 <label className="text-sm text-gray-700 block mb-1">Fecha de vencimiento</label>

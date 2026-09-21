@@ -382,7 +382,7 @@ function MovimientoModal({ saldo, onClose, onConfirm }) {
       <div className="mobile-dialog bg-white rounded-xl w-full max-w-sm max-h-[calc(100dvh-1rem)] overflow-y-auto p-4 sm:p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-gray-900">
-            Agregar / Retirar dinero
+            Ingreso / Retiro de dinero
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
             <X size={20} />
@@ -1672,7 +1672,7 @@ export function VentasView({
               className="flex min-h-10 flex-1 items-center justify-center gap-2 border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium hover:bg-gray-50 sm:flex-none"
             >
               <Plus size={16} />
-              Agregar / Retirar
+              Ingreso / Retiro
             </button>
             <button
               data-tour="cash-movements"

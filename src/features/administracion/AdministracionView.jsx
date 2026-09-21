@@ -1024,8 +1024,9 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
               </div>
               {(negocioAbierto.empleados || []).length === 0 ? (
                 <p className="text-xs text-gray-400">
-                  Todavía no agregaste empleados. Vos (Dueño) sos el único con
-                  acceso.
+                  {identidad?.rol === "Dueño"
+                    ? "Todavía no agregaste empleados. Vos (Dueño) sos el único con acceso."
+                    : `Todavía no hay empleados cargados. Por ahora sólo el Dueño y vos (${identidad?.rol || "administrador"}) tienen acceso.`}
                 </p>
               ) : (
                 <div className="space-y-1">

@@ -185,7 +185,7 @@ function DeudaManualModal({ cliente, onClose, onConfirm }) {
             disabled={!Number(monto) || Number(monto) <= 0}
             className="flex-1 bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-40"
           >
-            Agregar deuda
+            Cargar deuda
           </button>
         </div>
       </div>

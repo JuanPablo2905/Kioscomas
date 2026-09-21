@@ -548,7 +548,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
                     className="flex min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium hover:bg-gray-50 md:min-h-0 md:w-auto md:py-1.5"
                   >
                     <CheckCircle2 size={14} />
-                    Marcar pedido
+                    Generar pedido
                   </button>
                 )}
                 <button
