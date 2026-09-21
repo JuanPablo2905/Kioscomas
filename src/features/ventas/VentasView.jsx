@@ -853,7 +853,7 @@ function CobrarModal({ total, clientes, onClose, onConfirm, onPaymentChange, bus
   const confirmLabel = esFiado
     ? "Confirmar venta fiada"
     : incluyeMercadoPago && mercadoPagoMode === "static_qr"
-      ? "Confirmé el pago y registrar venta"
+      ? "Confirmar pago y registrar venta"
       : "Confirmar y registrar venta";
 
   return (
