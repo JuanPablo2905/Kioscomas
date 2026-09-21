@@ -12,6 +12,7 @@ const notificationService = fs.readFileSync("src/features/notificaciones/notific
 const notificationSettingsPanel = fs.readFileSync("src/features/notificaciones/NotificationSettingsPanel.jsx", "utf8");
 const smallBusinessTools = fs.readFileSync("src/features/gestion/SmallBusinessTools.jsx", "utf8");
 const settings = fs.readFileSync("src/shared/SettingsModal.jsx", "utf8");
+const providersView = fs.readFileSync("src/features/proveedores/ProveedoresView.jsx", "utf8");
 const customerDisplay = fs.readFileSync("src/features/ventas/CustomerDisplayScreen.jsx", "utf8");
 const customerDisplaySettings = fs.readFileSync("src/features/ventas/CustomerDisplaySettings.jsx", "utf8");
 const customerDisplayLayout = fs.readFileSync("src/features/ventas/CustomerDisplayLayoutEditor.jsx", "utf8");
@@ -71,6 +72,7 @@ const checks = [
   [promotionsManager.includes("Anunciar en la segunda pantalla") && promotionsManager.includes("Editar promoción") && promotionsManager.includes("diasSemana"), "Gestión debe permitir editar y programar la publicidad de las promociones."],
   [!promotionsManager.includes("window.confirm") && promotionsManager.includes("ConfirmDialog"), "Eliminar una promoción debe usar el diálogo propio de la app, no el confirm() nativo del navegador."],
   [smallBusinessTools.includes("emptyMessage=\"Todavía no agregaste nada a la lista de compras manual.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no hay envases ni productos prestados pendientes de devolución.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no registraste ningún autoconsumo.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no hay turnos cerrados en el historial.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no cargaste recordatorios de proveedores.\""), "Lista de compras, Retornables, Autoconsumo, Turnos y Recordatorios deben avisar cuando todavía no hay nada cargado, en vez de mostrar un espacio en blanco."],
+  [providersView.includes("<Truck className=\"mx-auto mb-2 text-gray-300\"/>") && providersView.includes("No hay proveedores cargados."), "El estado vacío de Proveedores debe llevar un ícono, igual que Stock, Vencimientos, Vitrina e Inventario."],
   [customerDisplaySettings.includes("Probar publicidad") && customerDisplaySettings.includes("Simular venta") && customerDisplaySettings.includes("Contacto o redes"), "La pantalla para clientes debe ofrecer contenido comercial y vistas de prueba."],
   [adminNotifications.includes("admin-notification-tab") && styles.includes(".admin-notification-tab.is-active") && styles.includes("color: #16433d !important"), "Las pestañas de avisos deben mantener contraste legible con cualquier tema."],
   [adminPanel.includes("Otra pantalla"), "El administrador debe poder abrir un negocio en otra pantalla sin abandonar el panel."],
