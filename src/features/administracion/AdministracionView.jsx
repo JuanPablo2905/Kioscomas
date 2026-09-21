@@ -407,6 +407,12 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
   const [editandoMovimiento, setEditandoMovimiento] = useState(null);
   const [nuevoEmpleadoOpen, setNuevoEmpleadoOpen] = useState(null);
   const [nuevoRolNombre, setNuevoRolNombre] = useState("");
+  const [auditoriaExpandida, setAuditoriaExpandida] = useState(() => new Set());
+  const toggleAuditoriaExpandida = (id) => setAuditoriaExpandida((previous) => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const permisosIdentidad = identidad?.rol === "Dueño" || (identidad?.adminApp && identidad?.operandoNegocio) ? null : (cuenta?.roles || []).find((r) => r.nombre === identidad?.rol)?.permisos || [];
   const puedeCorregirCaja = permisosIdentidad === null || permisosIdentidad.includes("corregir_caja");
   const puedeGestionarPersonal = permisosIdentidad === null || permisosIdentidad.includes("gestionar_personal");
@@ -959,7 +965,10 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
               <p className="rounded-lg border border-dashed p-4 text-center text-xs text-gray-400">Todavía no hay actividad auditada.</p>
             ) : (
               <div className="max-h-96 space-y-2 overflow-y-auto rounded-xl border bg-gray-50/50 p-2">
-                {[...auditoriaVisible].reverse().map((evento) => (
+                {[...auditoriaVisible].reverse().map((evento) => {
+                  const subEventos = Array.isArray(evento.eventosAgrupados) ? evento.eventosAgrupados : null;
+                  const expandido = auditoriaExpandida.has(evento.id);
+                  return (
                   <div key={evento.id} className="rounded-lg border bg-white px-3 py-2">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
@@ -973,8 +982,28 @@ export function AdministracionView({ cuenta, cuentas, setCuentas, datos, onOpenN
                       <time className="shrink-0 text-xs text-gray-400">{evento.fecha ? new Date(evento.fecha).toLocaleString("es-AR") : "Sin fecha"}</time>
                     </div>
                     {evento.origen === "administracion_app" && <span className="mt-2 inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">Hecho desde administración de la app</span>}
+                    {subEventos && subEventos.length > 1 && (
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleAuditoriaExpandida(evento.id)}
+                          className="flex min-h-8 items-center gap-1 text-xs font-semibold text-gray-500 hover:text-gray-900"
+                        >
+                          <ChevronRight size={12} className={expandido ? "rotate-90 transition-transform" : "transition-transform"} />
+                          {expandido ? "Ocultar detalle" : `Ver detalle (${subEventos.length} cambios)`}
+                        </button>
+                        {expandido && (
+                          <ul className="mt-1.5 space-y-1 border-l-2 border-gray-100 pl-3">
+                            {subEventos.map((sub) => (
+                              <li key={sub.id} className="break-words text-xs text-gray-600">{auditDisplayDetail(sub, negocioAbierto)}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

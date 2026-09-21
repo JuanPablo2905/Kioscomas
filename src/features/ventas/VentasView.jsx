@@ -1424,6 +1424,7 @@ export function VentasView({
   const handleCobrar = ({ medio, clienteId, pagos = [], providerPayment = null }) => {
     if (cartItems.length === 0) return;
     const selectedCustomer = medio === "Cuenta corriente" ? clientes.find((customer) => String(customer.id) === String(clienteId)) : null;
+    const grupoAccion = crearIdOperacion("venta");
     setProducts((prev) =>
       prev.map((p) => {
         const item = cart.find((c) => c.productId === p.id);
@@ -1441,7 +1442,8 @@ export function VentasView({
             ),
           ],
         };
-      })
+      }),
+      { groupId: grupoAccion }
     );
     const fecha = new Date();
     const identidadTicket = crearIdentidadTicket(fecha);
@@ -1490,7 +1492,7 @@ export function VentasView({
         descuentoTipo: descuentoManual > 0 ? descuentoTipo : null,
         descuentoValor: descuentoManual > 0 ? Number(descuentoValor) : 0,
     };
-    setTickets((prev) => [...prev, ticket]);
+    setTickets((prev) => [...prev, ticket], { groupId: grupoAccion });
     queueMicrotask(() => setTicketParaImprimir(ticket));
 
     const efectivoCobrado = medio === "Efectivo" ? total : medio === "Pago combinado" ? Number(pagos.find((pago) => pago.metodo === "Efectivo")?.monto || 0) : 0;
@@ -1508,7 +1510,7 @@ export function VentasView({
             fecha: fecha.toLocaleString("es-AR"),
           },
         ],
-      }));
+      }), { groupId: grupoAccion });
     } else if (medio === "Cuenta corriente" && clienteId) {
       setClientes((prev) =>
         prev.map((c) =>
@@ -1528,7 +1530,8 @@ export function VentasView({
                 ],
               }
             : c
-        )
+        ),
+        { groupId: grupoAccion }
       );
     }
     setCart([]);

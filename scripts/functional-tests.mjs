@@ -75,6 +75,16 @@ try {
   test("una venta muestra el número de ticket real y no el identificador interno", ticketCreated === "Venta registrada: Ticket V-M0K3J2-A1B2C" && !ticketCreated.includes(ticket.id));
   const ticketAnulado = audit.describeDataChange("tickets", [ticket], [{ ...ticket, estado: "anulado" }]);
   test("anular una venta se describe con el número de ticket y el cambio de estado", ticketAnulado === "Ticket V-M0K3J2-A1B2C: Activo → Anulado");
+  const saleIdentity = { nombre: "Juan", usuarioId: "u1", rol: "Dueño" };
+  const saleGroupId = "grupo-venta-1";
+  const saleProductsEvent = audit.createAuditEvent({ key: "products", previousValue: [{ id: 1, vitrina: 10 }], nextValue: [{ id: 1, vitrina: 9 }], identity: saleIdentity, tenantId: 2, view: "ventas", groupId: saleGroupId });
+  const saleTicketEvent = audit.createAuditEvent({ key: "tickets", previousValue: [], nextValue: [ticket], identity: saleIdentity, tenantId: 2, view: "ventas", groupId: saleGroupId });
+  const saleCajaEvent = audit.createAuditEvent({ key: "caja", previousValue: { saldo: 0, movimientos: [] }, nextValue: { saldo: 1000, movimientos: [{ id: "m1", monto: 1000 }] }, identity: saleIdentity, tenantId: 2, view: "ventas", groupId: saleGroupId });
+  const groupedSaleAudit = audit.compactAuditEventsForDisplay([saleProductsEvent, saleTicketEvent, saleCajaEvent]);
+  test("una venta agrupa stock, ticket y caja en una sola fila con detalle expandible", groupedSaleAudit.length === 1 && groupedSaleAudit[0].detalle === "Venta registrada: Ticket V-M0K3J2-A1B2C" && groupedSaleAudit[0].eventosAgrupados.length === 3);
+  const otherUserEvent = audit.createAuditEvent({ key: "caja", previousValue: { saldo: 0 }, nextValue: { saldo: 50 }, identity: { nombre: "Otra persona", usuarioId: "u2" }, tenantId: 2, view: "ventas", groupId: saleGroupId });
+  const mixedUsersAudit = audit.compactAuditEventsForDisplay([saleProductsEvent, saleTicketEvent, otherUserEvent]);
+  test("una acción de otro usuario nunca se agrupa aunque comparta identificador de grupo", mixedUsersAudit.length === 2 && !mixedUsersAudit[1].eventosAgrupados);
   const oldLoginEvent = { usuario: "Juan", accion: "inicio_sesion" };
   test("inicio de sesión antiguo se muestra con un nombre legible", audit.auditDisplayDetail(oldLoginEvent) === "Inicio de sesión");
   test("auditoría antigua reconoce al dueño por su cuenta", audit.auditDisplayRole(oldLoginEvent, { nombre: "Juan" }) === "Dueño");

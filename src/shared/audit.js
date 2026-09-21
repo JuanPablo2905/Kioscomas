@@ -306,7 +306,7 @@ export function auditDisplayRole(event, account = {}) {
   return employee?.rol || "Rol sin registrar";
 }
 
-export function createAuditEvent({ key, previousValue, nextValue, identity, tenantId, view, deviceId, detail }) {
+export function createAuditEvent({ key, previousValue, nextValue, identity, tenantId, view, deviceId, detail, groupId }) {
   const actor = auditActor(identity);
   const metadata = auditChangeMetadata(key, previousValue, nextValue);
   return {
@@ -319,6 +319,7 @@ export function createAuditEvent({ key, previousValue, nextValue, identity, tena
     detalle: detail || describeDataChange(key, previousValue, nextValue),
     dispositivoId: deviceId || null,
     ...metadata,
+    ...(groupId ? { grupoAccion: groupId } : {}),
     ...actor,
   };
 }
@@ -349,13 +350,42 @@ export function appendCoalescedAudit(events = [], event, windowMs = 20000) {
   return [...previousEvents.slice(0, -1), merged];
 }
 
+const GROUPED_ACTION_HEADLINE_PRIORITY = ["tickets", "caja", "clientes", "products"];
+
+function pickGroupedActionHeadline(events) {
+  for (const recurso of GROUPED_ACTION_HEADLINE_PRIORITY) {
+    const match = events.find((item) => item.recurso === recurso);
+    if (match) return match.detalle;
+  }
+  return events[0]?.detalle || "Actividad agrupada";
+}
+
+function groupEventsFromSameAction(events) {
+  return events.reduce((result, event) => {
+    const previous = result.at(-1);
+    if (event?.grupoAccion && previous?.grupoAccion === event.grupoAccion && previous?.usuarioId === event?.usuarioId) {
+      const eventosAgrupados = [...(previous.eventosAgrupados || [previous]), event];
+      result[result.length - 1] = {
+        ...previous,
+        fecha: event.fecha,
+        detalle: pickGroupedActionHeadline(eventosAgrupados),
+        eventosAgrupados,
+      };
+      return result;
+    }
+    result.push(event);
+    return result;
+  }, []);
+}
+
 export function compactAuditEventsForDisplay(events = [], windowMs = 60000) {
-  return (Array.isArray(events) ? events : []).reduce((result, event) => {
+  const groupedByAction = groupEventsFromSameAction(Array.isArray(events) ? events : []);
+  return groupedByAction.reduce((result, event) => {
     const previous = result.at(-1);
     const signature = event?.agrupacion || [event?.recurso, event?.detalle, event?.usuarioId || event?.usuario, event?.seccion].join("|");
     const previousSignature = previous?._displaySignature || previous?.agrupacion || [previous?.recurso, previous?.detalle, previous?.usuarioId || previous?.usuario, previous?.seccion].join("|");
     const elapsed = Math.abs(Date.parse(event?.fecha || "") - Date.parse(previous?.fecha || ""));
-    if (previous && signature === previousSignature && Number.isFinite(elapsed) && elapsed <= windowMs) {
+    if (previous && !event?.eventosAgrupados && !previous?.eventosAgrupados && signature === previousSignature && Number.isFinite(elapsed) && elapsed <= windowMs) {
       result[result.length - 1] = {
         ...event,
         id: previous.id,

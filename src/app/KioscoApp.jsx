@@ -831,7 +831,7 @@ export default function KioscoApp() {
     setSettingsOpen(true);
   };
 
-  const makeSetter = (key) => (updater) => {
+  const makeSetter = (key) => (updater, { groupId } = {}) => {
     if (tutorialOpen) {
       setTutorialData((previous) => {
         const current = previous || createTutorialDataset(storedData);
@@ -852,11 +852,11 @@ export default function KioscoApp() {
       const nextVal = enrichEntityHistory(key, cur[key], rawNext, auditActor(identidad));
       if (!hasMeaningfulChange(cur[key], nextVal)) return prev;
       const auditar = !["cart"].includes(key);
-      const evento = createAuditEvent({ key, previousValue: cur[key], nextValue: nextVal, identity: identidad, tenantId: currentUserId, view, deviceId: loadCloudConfig().deviceId });
+      const evento = createAuditEvent({ key, previousValue: cur[key], nextValue: nextVal, identity: identidad, tenantId: currentUserId, view, deviceId: loadCloudConfig().deviceId, groupId });
       return { ...prev, [currentUserId]: { ...cur, tenantId: String(currentUserId), [key]: nextVal, auditoria: auditar ? appendCoalescedAudit(cur.auditoria || [], evento) : (cur.auditoria || []) } };
     });
   };
-  const appendAudit = ({ key, previousValue, nextValue, detail, section = view }) => {
+  const appendAudit = ({ key, previousValue, nextValue, detail, section = view, groupId }) => {
     if (tutorialOpen || !hasMeaningfulChange(previousValue, nextValue)) return;
     setDatos((previous) => {
       const current = previous[currentUserId];
@@ -870,6 +870,7 @@ export default function KioscoApp() {
         view: section,
         deviceId: loadCloudConfig().deviceId,
         detail,
+        groupId,
       });
       return { ...previous, [currentUserId]: { ...current, auditoria: [...(current.auditoria || []), event] } };
     });
@@ -1061,14 +1062,15 @@ export default function KioscoApp() {
           ? { reintegro: { estado: "completado", fecha: mercadoPagoRefund.refundedAt || fecha.toISOString(), medios: [{ metodo: "Mercado Pago", monto: mercadoPagoRefund.amount }], referencia: mercadoPagoRefund.providerOrderId } }
           : {}),
     }, motivo.trim(), responsable, fecha.toISOString());
-    setTickets((previous = []) => previous.map((item) => item.id === ticket.id ? ticketRevertido : item));
-    setProducts((previous = []) => restaurarStock(previous, ticket));
+    const grupoAccion = crearIdOperacion("anulacion");
+    setTickets((previous = []) => previous.map((item) => item.id === ticket.id ? ticketRevertido : item), { groupId: grupoAccion });
+    setProducts((previous = []) => restaurarStock(previous, ticket), { groupId: grupoAccion });
     if (ticket.medio === "Cuenta corriente" && ticket.clienteId) {
       setClientes((previous = []) => previous.map((cliente) => cliente.id === ticket.clienteId ? {
         ...cliente,
         saldo: Number(cliente.saldo || 0) - Number(ticket.total || 0),
         movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-anulacion"), tipo: "anulacion", monto: Number(ticket.total || 0), nota: `Anulación ticket #${numeroTicket(ticket)}: ${motivo.trim()}`, fecha: fecha.toLocaleString("es-AR") }],
-      } : cliente));
+      } : cliente), { groupId: grupoAccion });
     }
     const cashAmount = efectivoDeTicket(ticket);
     if (cashAmount > 0) {
@@ -1076,7 +1078,7 @@ export default function KioscoApp() {
         ...previous,
         saldo: Number(previous.saldo || 0) - cashAmount,
         movimientos: [...(previous.movimientos || []), { id: crearIdOperacion("caja-anulacion"), tipo: "retiro", monto: cashAmount, nota: `Devolución ticket #${numeroTicket(ticket)}`, fecha: fecha.toLocaleString("es-AR") }],
-      }));
+      }), { groupId: grupoAccion });
     }
     setGlobalScanResult((current) => current?.ticket?.id === ticket.id ? { ...current, ticket: ticketRevertido } : current);
     setVoidTicketPrompt({ ticket: null, reason: "" });
@@ -1801,7 +1803,8 @@ export default function KioscoApp() {
             !["Efectivo", "Cuenta corriente", ...(mercadoPagoRefund ? ["Mercado Pago"] : [])].includes(pago?.metodo)
             && Number(pago?.monto || 0) > 0
           ));
-          setProducts((prev) => restaurarStock(prev, ticket));
+          const grupoAccion = crearIdOperacion("devolucion");
+          setProducts((prev) => restaurarStock(prev, ticket), { groupId: grupoAccion });
           setTickets((prev) => prev.map((item) => item.id === ticket.id ? {
             ...marcarTicketDevuelto(item, motivo, responsable, fecha.toISOString()),
             providerPayment: mercadoPagoRefund ? { ...item.providerPayment, status: "refunded", providerStatus: mercadoPagoRefund.providerStatus, refundedAt: mercadoPagoRefund.refundedAt } : item.providerPayment,
@@ -1810,16 +1813,16 @@ export default function KioscoApp() {
               : mercadoPagoRefund
                 ? { reintegro: { estado: "completado", fecha: mercadoPagoRefund.refundedAt || fecha.toISOString(), medios: [{ metodo: "Mercado Pago", monto: mercadoPagoRefund.amount }], referencia: mercadoPagoRefund.providerOrderId } }
                 : {}),
-          } : item));
+          } : item), { groupId: grupoAccion });
           if (ticket.medio === "Cuenta corriente" && ticket.clienteId) {
             setClientes((prev) => prev.map((cliente) => String(cliente.id) === String(ticket.clienteId) ? {
               ...cliente,
               saldo: Math.round((Number(cliente.saldo || 0) - Number(ticket.total || 0)) * 100) / 100,
               movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-devolucion"), tipo: "devolucion", monto: Number(ticket.total || 0), nota: `Devolución ticket #${numero}`, fecha: fecha.toLocaleString("es-AR"), ticketId: ticket.id }],
-            } : cliente));
+            } : cliente), { groupId: grupoAccion });
           }
           const efectivoDevuelto = efectivoDeTicket(ticket);
-          if (efectivoDevuelto > 0) setCaja((prev) => ({ ...prev, saldo: Number(prev.saldo || 0) - efectivoDevuelto, movimientos: [...(prev.movimientos || []), { id: crearIdOperacion("caja-devolucion"), tipo: "egreso", monto: efectivoDevuelto, nota: `Devolución ticket #${numero}`, fecha: fecha.toLocaleString("es-AR"), ticketId: ticket.id }] }));
+          if (efectivoDevuelto > 0) setCaja((prev) => ({ ...prev, saldo: Number(prev.saldo || 0) - efectivoDevuelto, movimientos: [...(prev.movimientos || []), { id: crearIdOperacion("caja-devolucion"), tipo: "egreso", monto: efectivoDevuelto, nota: `Devolución ticket #${numero}`, fecha: fecha.toLocaleString("es-AR"), ticketId: ticket.id }] }), { groupId: grupoAccion });
         } }} />;
       case "administracion":
         return (
