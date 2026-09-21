@@ -20,6 +20,8 @@ const adaptiveSocialCard = fs.readFileSync("src/features/ventas/AdaptiveSocialCa
 const remoteDisplayScreen = fs.readFileSync("src/features/ventas/RemoteDisplayScreen.jsx", "utf8");
 const remoteDisplays = fs.readFileSync("src/features/ventas/remoteDisplays.js", "utf8");
 const promotionsManager = fs.readFileSync("src/features/gestion/PromotionsManager.jsx", "utf8");
+const gestionView = fs.readFileSync("src/features/gestion/GestionView.jsx", "utf8");
+const layout = fs.readFileSync("src/shared/layout.jsx", "utf8");
 const salesView = fs.readFileSync("src/features/ventas/VentasView.jsx", "utf8");
 const salesSupport = fs.readFileSync("src/features/ventas/SalesSupportTools.jsx", "utf8");
 const adminNotifications = fs.readFileSync("src/features/administracion/AdminNotificationCenter.jsx", "utf8");
@@ -73,6 +75,8 @@ const checks = [
   [!promotionsManager.includes("window.confirm") && promotionsManager.includes("ConfirmDialog"), "Eliminar una promoción debe usar el diálogo propio de la app, no el confirm() nativo del navegador."],
   [smallBusinessTools.includes("emptyMessage=\"Todavía no agregaste nada a la lista de compras manual.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no hay envases ni productos prestados pendientes de devolución.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no registraste ningún autoconsumo.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no hay turnos cerrados en el historial.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no cargaste recordatorios de proveedores.\""), "Lista de compras, Retornables, Autoconsumo, Turnos y Recordatorios deben avisar cuando todavía no hay nada cargado, en vez de mostrar un espacio en blanco."],
   [providersView.includes("<Truck className=\"mx-auto mb-2 text-gray-300\"/>") && providersView.includes("No hay proveedores cargados."), "El estado vacío de Proveedores debe llevar un ícono, igual que Stock, Vencimientos, Vitrina e Inventario."],
+  [gestionView.includes('"Uso diario"') && gestionView.includes('"Ocasional"') && gestionView.includes("tabGroups"), "Las pestañas de Gestión y herramientas deben agruparse por frecuencia de uso, no tratarse todas como iguales."],
+  [layout.includes('<span className="min-w-0 flex-1 truncate text-sm font-semibold">') && !layout.includes('className="mobile-header-action text-red-600"') && layout.includes('hover:text-red-600 focus-visible:text-red-600"><Bug'), "El encabezado móvil debe truncar el nombre del negocio correctamente y el ícono de reportar un problema no debe quedar rojo de forma permanente."],
   [customerDisplaySettings.includes("Probar publicidad") && customerDisplaySettings.includes("Simular venta") && customerDisplaySettings.includes("Contacto o redes"), "La pantalla para clientes debe ofrecer contenido comercial y vistas de prueba."],
   [adminNotifications.includes("admin-notification-tab") && styles.includes(".admin-notification-tab.is-active") && styles.includes("color: #16433d !important"), "Las pestañas de avisos deben mantener contraste legible con cualquier tema."],
   [adminPanel.includes("Otra pantalla"), "El administrador debe poder abrir un negocio en otra pantalla sin abandonar el panel."],

@@ -161,14 +161,14 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
       <div className="mobile-app-header min-w-0">
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           {cuenta?.imagenNegocio ? <span className="flex h-9 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-white p-1"><img src={cuenta.imagenNegocio} alt="" className="max-h-full max-w-full object-contain"/></span> : <img src={kioscoPlusMark} alt="Kiosco+" className="h-9 w-9 shrink-0 object-contain"/>}
-          <span className="truncate text-sm font-semibold">{cuenta?.nombreNegocio || "Kiosco+"}</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{cuenta?.nombreNegocio || "Kiosco+"}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1.5">
           {onReturnAdmin && <button onClick={onReturnAdmin} aria-label="Volver al panel de la app" className="mobile-header-action text-blue-700"><ArrowLeft size={18}/></button>}
           <button data-tour="global-scan" onClick={onGlobalScan} aria-label="Escanear producto o ticket" className="mobile-header-action"><ScanLine size={18}/></button>
           <button data-tour="help-button" onClick={onHelp} aria-label="Ayuda de esta sección" className="mobile-header-action"><HelpCircle size={18}/></button>
           <button data-tour="settings-button" onClick={onOpenSettings} aria-label="Configuración" className="mobile-header-action"><Settings2 size={18}/></button>
-          <button onClick={onReportProblem} aria-label="Reportar un problema" className="mobile-header-action text-red-600"><Bug size={18}/></button>
+          <button onClick={onReportProblem} aria-label="Reportar un problema" className="mobile-header-action hover:text-red-600 focus-visible:text-red-600"><Bug size={18}/></button>
           <button onClick={onLogout} aria-label={demoMode ? "Restablecer demostración" : "Cerrar sesión"} className="mobile-header-action"><LogOut size={18}/></button>
         </div>
       </div>
@@ -272,7 +272,7 @@ export function Sidebar({ current, onNavigate, cuenta, identidad, permisos, onLo
         {trial.active && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-semibold leading-4 text-amber-900">Prueba pendiente de aprobación<br/>Vence {formatTrialExpiration(cuenta)}</p>}
         {trial.activeSubscription && <p className="mt-2 rounded-lg border border-green-200 bg-green-50 px-2 py-1.5 text-[10px] font-semibold leading-4 text-green-900">Abono activo<br/>Vence {formatAccessExpiration(cuenta)}</p>}
         {trial.readOnly && <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-[10px] font-semibold leading-4 text-red-900">Abono vencido · modo consulta</p>}
-        <div className="mt-3 grid grid-cols-[1fr_auto_auto_auto] gap-1"><button data-tour="settings-button" onClick={onOpenSettings} className="flex min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50"><Settings2 size={14}/><span className="truncate">Configurar</span></button><button data-tour="help-button" onClick={onHelp} title="Ayuda de esta sección" className="rounded-lg border px-2 py-1.5 text-gray-600 hover:bg-gray-50"><HelpCircle size={14}/></button><button data-tour="global-scan" onClick={onGlobalScan} title="Escanear producto o ticket" className="rounded-lg border px-2 py-1.5 text-gray-600 hover:bg-gray-50"><ScanLine size={14}/></button><button onClick={onReportProblem} title="Reportar problema" className="rounded-lg border px-2 py-1.5 text-red-600 hover:bg-red-50"><Bug size={14}/></button></div>
+        <div className="mt-3 grid grid-cols-[1fr_auto_auto_auto] gap-1"><button data-tour="settings-button" onClick={onOpenSettings} className="flex min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50"><Settings2 size={14}/><span className="truncate">Configurar</span></button><button data-tour="help-button" onClick={onHelp} title="Ayuda de esta sección" className="rounded-lg border px-2 py-1.5 text-gray-600 hover:bg-gray-50"><HelpCircle size={14}/></button><button data-tour="global-scan" onClick={onGlobalScan} title="Escanear producto o ticket" className="rounded-lg border px-2 py-1.5 text-gray-600 hover:bg-gray-50"><ScanLine size={14}/></button><button onClick={onReportProblem} title="Reportar problema" className="rounded-lg border px-2 py-1.5 text-gray-600 hover:bg-red-50 hover:text-red-600 focus-visible:bg-red-50 focus-visible:text-red-600"><Bug size={14}/></button></div>
         <button
           onClick={onLogout}
           className="flex items-center gap-2 mt-2 text-gray-900 font-medium hover:opacity-70"
