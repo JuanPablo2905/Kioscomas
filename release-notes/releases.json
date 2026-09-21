@@ -1,5 +1,61 @@
 [
   {
+    "version": "0.2.35",
+    "date": "2026-09-21",
+    "title": "Crear una cuenta ya no pide clave de activación y se confirma por correo; QR dinámico y Point de Mercado Pago quedan en pausa",
+    "summary": "Versión grande con tres bloques. Primero, cuentas y acceso: dar de alta un negocio nuevo o iniciar sesión ya no exige una clave de activación previa; en cambio, la cuenta nueva se confirma con un enlace enviado por correo y Juan recibe un aviso por mail de cada alta. Segundo, Mercado Pago: se sacaron QR dinámico y Point como formas de cobro mientras sigue abierto el ticket WCS-50768, y toda la sección de vinculación de esas cuentas se reemplazó por un aviso de 'próximamente' (el QR estático sigue funcionando igual que siempre). Tercero, una revisión completa de la interfaz recorriendo cada pantalla como lo haría un kiosquero: se corrigieron 19 problemas de nombres inconsistentes, íconos reciclados con significados distintos, estados vacíos sin aviso, tildes faltantes, agrupación de auditoría, el botón de avisos push que no reflejaba el estado real, y varios detalles de copy y layout, incluido el encabezado móvil en iPhone.",
+    "highlights": [
+      "Crear una cuenta ya no pide ninguna clave: se confirma con un enlace que llega por correo, y Juan recibe un aviso por mail de cada alta nueva.",
+      "QR dinámico y Point de Mercado Pago quedan pausados como forma de cobro hasta resolver un problema con el proveedor; el QR estático sigue funcionando igual.",
+      "El registro de actividad ahora muestra el número real del ticket y agrupa una venta o devolución en una sola fila con 'Ver detalle', en vez de varias líneas sueltas.",
+      "El botón de avisos push ya refleja si hay una suscripción activa de verdad, no sólo si el navegador dio permiso alguna vez.",
+      "Lista de compras, Retornables, Autoconsumo, Turnos, Recordatorios y Proveedores avisan cuando todavía no hay nada cargado, en vez de dejar un espacio en blanco.",
+      "Nombres y botones repetidos con distinto texto en cada pantalla (registrar pérdida/descarte, proveedor asociado/asignado, agregar/retirar dinero, cargar/agregar deuda) ahora dicen siempre lo mismo.",
+      "Las pestañas de Gestión y herramientas se agrupan por uso diario y ocasional, y el encabezado del celular en iPhone ya no corta el nombre del negocio ni deja el ícono de 'reportar un problema' en rojo permanente."
+    ],
+    "sections": [
+      {
+        "title": "Detalle técnico",
+        "items": [
+          "Cuentas y acceso: se reemplazó el bloqueo `requireDeviceActivation` (exigía canjear una clave antes de crear cuenta o iniciar sesión) por `ensureDeviceActivation()`, que crea el registro de activación solo con el primer uso del dispositivo, sin pedir clave. Sigue bloqueando si ese registro fue revocado explícitamente, el mismo mecanismo que ya usaba un superadmin (`/v1/admin/activations/:deviceId/revoke`) o un dueño (`/v1/devices/revoke`) para desactivar un dispositivo puntual; ambos caminos ahora devuelven el mismo mensaje ('Este dispositivo fue desactivado.') para que el cliente los detecte igual. `ActivationView.jsx` suma un modo 'revocado' que muestra ese aviso sin pedir clave. La app de escritorio no se tocó: sigue con su propio mecanismo de activación de Electron.",
+          "Confirmación de correo: al crear una cuenta se genera un token de un solo uso (mismo patrón hasheado que la recuperación de contraseña) y se envía por correo con un enlace (`?verify_email_token=...`). El login del dueño queda bloqueado hasta confirmarlo, con nuevas rutas `POST /v1/auth/verify-email` y `POST /v1/auth/verify-email/resend` (respuesta genérica, no revela si el correo existe). Si el servidor no tiene el correo configurado, la cuenta queda usable de inmediato. Nueva pantalla `EmailVerificationView.jsx` y botón 'Reenviar mail de confirmación' en `LoginView.jsx`. De paso se corrigió que el tercer camino de `handleLogin` (el que usa alguien recién registrado) no tenía el chequeo de dispositivo desactivado que sí tenían los otros dos.",
+          "Aviso al superadmin: además del push que ya recibía, si `KIOSCO_SUPERADMIN_EMAIL` está configurado ahora también llega un correo (`sendNewAccountAdminAlert`) por cada cuenta nueva.",
+          "Mercado Pago: se sacaron `dynamic_qr` y `point` de `PAYMENT_MODES` para no seguir pisando el bug de `property_value` en `POST /v1/orders` (ticket WCS-50768); un negocio con una de esas preferencias guardada cae automáticamente a QR estático. En Configuración se bloquean conexiones nuevas de esos dos modos, pero se conserva el estado de cuentas ya conectadas para desconectarlas o conciliar cobros históricos. Toda la sección de vinculación (conectar/desconectar, caja QR con dirección fiscal, Point) se reemplazó por un aviso de 'próximamente'. QR estático no se tocó.",
+          "Auditoría: `describeDataChange()` tiene un caso propio para `tickets` que usa `numero` en vez del ID interno. `createAuditEvent()` acepta un `groupId` opcional que se propaga desde la venta y las tres rutas de anulación/devolución; `compactAuditEventsForDisplay()` colapsa los eventos de un mismo grupo y usuario en una fila, con 'Ver detalle' para desplegar las líneas agrupadas.",
+          "Notificaciones push: `Notification.permission` nunca vuelve a 'no otorgado' por código aunque se haya desactivado la suscripción real. Se agregó `resolvePushState()`, que además consulta si existe una suscripción activa en el service worker; el panel corrige el estado al montarse.",
+          "Consistencia de nombres e íconos: 'Registrar descarte' → 'Registrar pérdida'; 'Sin proveedor asociado' → 'Sin proveedor asignado'; 'Marcar pedido' → 'Generar pedido'; 'Agregar / Retirar' → 'Ingreso / Retiro'; 'Agregar deuda' → 'Cargar deuda'. `PackageCheck` (pedir/recibir/reponer/crear producto), `ClipboardList` (vincular ticket/tareas/lista de compras) y `Archive` (devoluciones/archivo de comprobantes) dejaron de compartir dibujo entre conceptos distintos.",
+          "Estados vacíos y estados reales: el componente `List` compartido de `SmallBusinessTools.jsx` (Lista de compras, Retornables, Autoconsumo, Turnos, Recordatorios) y el de Proveedores ahora muestran un aviso (con ícono en Proveedores) cuando no hay nada cargado. Promociones dejó de usar `window.confirm()` nativo y pasó a `ConfirmDialog`, el mismo componente que ya usan `AdminAppPanel` e `InvoiceTicketManager`.",
+          "Nombres técnicos y tildes: 'UPCitemdb' y 'Open Facts universal' (`productLookup.js`) ahora se muestran como 'Catálogo internacional de códigos de barras' y 'Catálogo público de internet'; el error de importar `.xlsx` ya no menciona 'Excel 97-2003'; el botón de imprimir etiquetas calcula el total real (productos × copias). Pasada de tildes en `BarcodeCatalogAdmin.jsx` y varias pantallas más (Ventas, Clientes, Administración).",
+          "Detalles de copy y layout: los pasos numerados de Configuración → Pantalla del cliente ya no saltan del 2 al 4; en Promociones 'Cancelar' se movió junto a 'Guardar cambios'/'Crear promoción'; 'Vitrina / Exhibición' pasó a 'Vitrina'; 'Mostrar número en tickets nuevos', 'Prefijo de tickets nuevos' y 'Redondeo de precios' se movieron de la sección Seguridad a Funcionamiento; un nombre de empleado largo ya no se come el badge de su rol; la pestaña 'Para administrar' pasó a 'Bandeja administrativa'; el botón de confirmar cobro con QR estático corrigió su mezcla de tiempos verbales.",
+          "Gestión y herramientas: las 5 pestañas se agrupan visualmente en 'Uso diario' (Tareas y metas, Devoluciones) y 'Ocasional' (Promociones, Etiquetas, Facturación), conservando el mismo contenido y las mismas rutas del tutorial guiado.",
+          "Encabezado móvil (iPhone): el `<span>` truncado del nombre del negocio no tenía `min-w-0` propio dentro del flex y se cortaba a lo bruto en vez de truncar con puntos suspensivos; los 5 íconos pasaron de 4px a 6px de separación; el ícono de 'Reportar un problema' dejó de estar en rojo permanente (ahora es neutro y sólo se pone rojo al pasar el mouse o enfocarlo con teclado, corregido también en el botón equivalente del menú de escritorio)."
+        ]
+      },
+      {
+        "title": "En criollo",
+        "items": [
+          "Si ibas a abrir una cuenta nueva o entrar desde un dispositivo nuevo y te pedía una clave que no tenías, eso ya no pasa más: ahora entrás directo y confirmás tu cuenta con un enlace que te llega por mail. Y si vos sos el administrador, te llega un aviso por correo cada vez que alguien se registra, además del aviso dentro de la app.",
+          "Mercado Pago QR dinámico y Point quedan pausados por ahora — todavía estamos esperando que soporte de Mercado Pago resuelva un problema de su lado. El QR estático (el que subís vos como imagen) sigue funcionando exactamente igual.",
+          "En el historial de actividad ya no vas a ver códigos raros tipo '#venta-9bd4...': ahora aparece el número real del ticket, y una venta o devolución se ve como una sola línea con un 'Ver detalle' en vez de tres o cuatro líneas sueltas.",
+          "Si desactivaste los avisos push y la app te seguía diciendo que estaban activos, era un bug real: ahora el botón muestra el estado correcto.",
+          "Varias pantallas (Lista de compras, Retornables, Autoconsumo, Turnos, Recordatorios, Proveedores) antes se veían vacías sin explicación cuando no habías cargado nada; ahora avisan.",
+          "Se prolijaron un montón de nombres y botones que decían cosas distintas para la misma acción según la pantalla en la que estuvieras, y se sacaron tildes faltantes en varios lugares.",
+          "En Gestión y herramientas, las pestañas que usás todos los días (Tareas y metas, Devoluciones) quedaron separadas visualmente de las que usás de vez en cuando (Promociones, Etiquetas, Facturación). Y si entrás desde el iPhone, el nombre de tu negocio ya no queda cortado feo en el encabezado, los íconos de arriba están un poco más separados, y el ícono para reportar un problema ya no se ve prendido en rojo todo el tiempo."
+        ]
+      },
+      {
+        "title": "Comprobaciones",
+        "items": [
+          "Se corrió `pnpm run test:all` (build de producción + todas las suites funcionales, incluidas `payment-backend-tests`, `payment-ui-tests`, `remote-display-tests`, `pwa-tests`, `release-notes-tests`, `launch-readiness-tests`, `device-activation-enforcement-tests`, `password-recovery-tests` y `smoke-views`) y `pnpm run test:cloud` (104 pruebas de sincronización y aislamiento por negocio), ambos sin cambios de expectativas salvo la versión.",
+          "El flujo nuevo de activación se probó explícitamente: un dispositivo nuevo puede registrarse y entrar sin clave, y un superadmin todavía puede revocarlo puntualmente y que ese dispositivo (y sólo ese) quede bloqueado con el mensaje correcto.",
+          "El flujo de confirmación de correo se probó de punta a punta contra un servidor de prueba aislado: registro, bloqueo de login antes de confirmar, confirmación con el enlace, y login posterior habilitado.",
+          "Los cambios de Mercado Pago se probaron con las suites dedicadas `test:payments` y `test:payment-ui` sin tocar cuentas ni cobros reales; QR estático se verificó que siga sin depender de la cuenta conectada.",
+          "Cada uno de los 19 puntos de interfaz se validó por separado antes de commitear: build de producción limpio y la suite `pwa-tests.mjs` (49 comprobaciones) con una regla nueva agregada por cada corrección, para que una regresión futura se detecte sola."
+        ]
+      }
+    ]
+  },
+  {
     "version": "0.2.34",
     "date": "2026-09-17",
     "title": "El administrador ya puede volver a su panel desde el celular",
