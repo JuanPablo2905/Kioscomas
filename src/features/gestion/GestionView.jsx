@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Archive, ArrowDown, ArrowUp, BadgePercent, Check, ClipboardList, FileText, Flag, Plus, Printer, ReceiptText, Tags, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, BadgePercent, Check, ClipboardList, FileText, Flag, Plus, Printer, ReceiptText, Tags, Trash2, Undo2 } from "lucide-react";
 import { money } from "../../shared/domain";
 import { PromotionsManager } from "./PromotionsManager";
 import { LabelDesignerV2 } from "./LabelDesignerV2";
@@ -9,7 +9,7 @@ import { crearIdOperacion, numeroTicket, ticketActivo, ticketDevuelto } from "..
 
 const tabs = [
   ["tareas", "Tareas y metas", ClipboardList], ["promos", "Promociones", BadgePercent],
-  ["devoluciones", "Devoluciones", Archive], ["etiquetas", "Etiquetas", Tags], ["facturacion", "Facturación", ReceiptText],
+  ["devoluciones", "Devoluciones", Undo2], ["etiquetas", "Etiquetas", Tags], ["facturacion", "Facturación", ReceiptText],
 ];
 const Input = (props) => <input {...props} className={`rounded-lg border px-3 py-2 text-sm ${props.className || ""}`}/>;
 const Button = ({ children, ...props }) => <button {...props} className={`flex items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm text-white disabled:opacity-40 ${props.className || ""}`}>{children}</button>;

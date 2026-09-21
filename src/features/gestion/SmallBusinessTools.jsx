@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { Banknote, BellRing, Check, ClipboardList, Clock, Copy, PackageOpen, Plus, Printer, RotateCcw, Trash2, Users } from "lucide-react";
+import { Banknote, BellRing, Check, Clock, Copy, PackageOpen, Plus, Printer, RotateCcw, ShoppingBag, Trash2, Users } from "lucide-react";
 import { money } from "../../shared/domain";
 import { AppSelect, PromptDialog } from "../../shared/controls";
 import { KioscoDatePicker } from "../../shared/KioscoDatePicker";
 import { crearIdOperacion, ticketActivo } from "../ventas/salesRules";
 
-const sections = [["lista","Lista de compras",ClipboardList],["retornables","Retornables",PackageOpen],["cambio","Cambio",Banknote],["autoconsumo","Autoconsumo",RotateCcw],["turnos","Turnos",Users],["recordatorios","Recordatorios",BellRing],["resumen","Resumen diario",Printer]];
+const sections = [["lista","Lista de compras",ShoppingBag],["retornables","Retornables",PackageOpen],["cambio","Cambio",Banknote],["autoconsumo","Autoconsumo",RotateCcw],["turnos","Turnos",Users],["recordatorios","Recordatorios",BellRing],["resumen","Resumen diario",Printer]];
 const input = "w-full rounded-lg border px-3 py-2 text-sm";
 const today = () => new Date().toISOString().slice(0,10);
 const addItem = (setter, payload) => setter((prev) => [{ id: crearIdOperacion("gestion"), fecha: new Date().toISOString(), ...payload }, ...(prev || [])]);

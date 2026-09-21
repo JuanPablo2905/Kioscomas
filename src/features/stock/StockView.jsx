@@ -3,7 +3,7 @@ import {
   Package, Store, ShoppingCart, BarChart3, Shield, LogOut, ScanLine, Search,
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
-  MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
+  MessageCircle, CheckCircle2, PackageCheck, PackagePlus, History, UserPlus, Banknote,
   ChevronRight, Percent, FileSpreadsheet, Copy, FolderPlus,
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money, formatQuantity } from "../../shared/domain";
@@ -457,7 +457,7 @@ function HistorialProductoModal({ producto, onClose }) {
   const iconos = {
     creacion: <Plus size={13} className="text-gray-500" />,
     edicion: <Pencil size={13} className="text-blue-600" />,
-    reposicion: <PackageCheck size={13} className="text-green-600" />,
+    reposicion: <PackagePlus size={13} className="text-green-600" />,
     venta: <ShoppingCart size={13} className="text-orange-600" />,
     eliminacion: <Trash2 size={13} className="text-red-600" />,
   };
