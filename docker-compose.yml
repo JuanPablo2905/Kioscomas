@@ -1,0 +1,111 @@
+name: kioscomas
+
+# Producción en tu PC. Las variables salen de .env.docker (ver docker.env.example):
+#   docker compose --env-file .env.docker up -d --build
+# Para publicarlo con tu dominio, sumá el perfil "public" (túnel de Cloudflare).
+
+services:
+  db:
+    build: ./docker/postgres
+    environment:
+      POSTGRES_USER: kiosco
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env.docker}
+      POSTGRES_DB: kiosco
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kiosco -d kiosco"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: .
+    command: node server/cloud-server.mjs
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      PORT: "8787"
+      DATABASE_URL: postgresql://kiosco:${POSTGRES_PASSWORD}@db:5432/kiosco
+      KIOSCO_LOCAL_MODE: "0"
+      KIOSCO_REQUIRE_DEVICE_ACTIVATION: "1"
+      KIOSCO_SUPERADMIN_USERNAME: kiosco-admin
+      KIOSCO_SUPERADMIN_PASSWORD: ${KIOSCO_SUPERADMIN_PASSWORD:-}
+      KIOSCO_SUPERADMIN_EMAIL: ${KIOSCO_SUPERADMIN_EMAIL:-}
+      KIOSCO_RESEND_API_KEY: ${KIOSCO_RESEND_API_KEY:-}
+      KIOSCO_EMAIL_FROM: ${KIOSCO_EMAIL_FROM:-}
+      KIOSCO_EMAIL_REPLY_TO: ${KIOSCO_EMAIL_REPLY_TO:-}
+      KIOSCO_PUBLIC_APP_URL: https://app.kioscomas.ar
+      KIOSCO_PUBLIC_DISPLAY_URL: https://kioscomas.ar/pantalla
+      KIOSCO_PASSWORD_RESET_MINUTES: "30"
+      KIOSCO_ACCESS_TOKEN_HOURS: "2"
+      KIOSCO_ALLOWED_ORIGINS: https://app.kioscomas.ar,https://kioscomas.ar,https://www.kioscomas.ar
+      KIOSCO_VAPID_PUBLIC_KEY: ${KIOSCO_VAPID_PUBLIC_KEY:-}
+      KIOSCO_VAPID_PRIVATE_KEY: ${KIOSCO_VAPID_PRIVATE_KEY:-}
+      KIOSCO_VAPID_SUBJECT: mailto:soporte@kioscomas.ar
+      KIOSCO_BACKUP_RETENTION_DAYS: "7"
+      KIOSCO_MERCADOPAGO_BACKEND_ENABLED: ${KIOSCO_MERCADOPAGO_BACKEND_ENABLED:-}
+      KIOSCO_MERCADOPAGO_TEST_MODE: ${KIOSCO_MERCADOPAGO_TEST_MODE:-1}
+      KIOSCO_MERCADOPAGO_QR_CLIENT_ID: ${KIOSCO_MERCADOPAGO_QR_CLIENT_ID:-}
+      KIOSCO_MERCADOPAGO_QR_CLIENT_SECRET: ${KIOSCO_MERCADOPAGO_QR_CLIENT_SECRET:-}
+      KIOSCO_MERCADOPAGO_QR_WEBHOOK_SECRET: ${KIOSCO_MERCADOPAGO_QR_WEBHOOK_SECRET:-}
+      KIOSCO_MERCADOPAGO_POINT_CLIENT_ID: ${KIOSCO_MERCADOPAGO_POINT_CLIENT_ID:-}
+      KIOSCO_MERCADOPAGO_POINT_CLIENT_SECRET: ${KIOSCO_MERCADOPAGO_POINT_CLIENT_SECRET:-}
+      KIOSCO_MERCADOPAGO_POINT_WEBHOOK_SECRET: ${KIOSCO_MERCADOPAGO_POINT_WEBHOOK_SECRET:-}
+      KIOSCO_MERCADOPAGO_CLIENT_ID: ${KIOSCO_MERCADOPAGO_CLIENT_ID:-}
+      KIOSCO_MERCADOPAGO_CLIENT_SECRET: ${KIOSCO_MERCADOPAGO_CLIENT_SECRET:-}
+      KIOSCO_MERCADOPAGO_REDIRECT_URI: ${PUBLIC_API_URL:?Falta PUBLIC_API_URL en .env.docker}/v1/payments/mercado-pago/oauth/callback
+      KIOSCO_MERCADOPAGO_RETURN_URI: https://app.kioscomas.ar
+      KIOSCO_MERCADOPAGO_TOKEN_ENCRYPTION_KEY: ${KIOSCO_MERCADOPAGO_TOKEN_ENCRYPTION_KEY:-}
+      KIOSCO_MERCADOPAGO_WEBHOOK_SECRET: ${KIOSCO_MERCADOPAGO_WEBHOOK_SECRET:-}
+      KIOSCO_MERCADOPAGO_PLATFORM_ID: ${KIOSCO_MERCADOPAGO_PLATFORM_ID:-}
+      KIOSCO_MERCADOPAGO_INTEGRATOR_ID: ${KIOSCO_MERCADOPAGO_INTEGRATOR_ID:-}
+      KIOSCO_MERCADOPAGO_SPONSOR_ID: ${KIOSCO_MERCADOPAGO_SPONSOR_ID:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/v1/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+      args:
+        PUBLIC_API_URL: ${PUBLIC_API_URL:?Falta PUBLIC_API_URL en .env.docker}
+    ports:
+      - "127.0.0.1:8090:80"
+    restart: unless-stopped
+
+  site:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+      args:
+        PUBLIC_API_URL: ${PUBLIC_API_URL:?Falta PUBLIC_API_URL en .env.docker}
+        BUILD_SCRIPT: build:public
+        OUT_DIR: dist-public
+    ports:
+      - "127.0.0.1:8091:80"
+    restart: unless-stopped
+
+  cloudflared:
+    profiles: ["public"]
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - api
+      - web
+      - site
+    restart: unless-stopped
+
+volumes:
+  pgdata:
