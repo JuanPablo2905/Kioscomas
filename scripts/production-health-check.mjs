@@ -1,4 +1,4 @@
-const apiUrl = String(process.env.KIOSCO_MONITOR_API_URL || "https://kiosco-plus-api.onrender.com").replace(/\/$/, "");
+const apiUrl = String(process.env.KIOSCO_MONITOR_API_URL || "https://api.kioscomas.ar").replace(/\/$/, "");
 const appUrl = String(process.env.KIOSCO_MONITOR_APP_URL || "https://app.kioscomas.ar").replace(/\/$/, "");
 const timeoutMs = Math.max(3000, Number(process.env.KIOSCO_MONITOR_TIMEOUT_MS || 20000));
 
