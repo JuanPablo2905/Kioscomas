@@ -57,6 +57,6 @@ test("el entorno público apunta a los dos instaladores Mac", publicEnv.includes
 test("la publicación de Mac separa Apple Silicon e Intel", releaseWorkflow.includes("arch: arm64") && releaseWorkflow.includes("arch: x64") && !releaseWorkflow.includes("--universal"));
 test("cada instalador Mac usa el equipo nativo correcto", releaseWorkflow.includes("runner: macos-15") && releaseWorkflow.includes("runner: macos-15-intel") && releaseWorkflow.includes("runs-on: ${{ matrix.runner }}"));
 test("los instaladores Mac tienen órdenes separadas", packageManifest.includes("desktop:build:mac:arm64") && packageManifest.includes("desktop:build:mac:x64"));
-test("la compilación de nube activa el control de dispositivos", cloudEnv.includes("VITE_REQUIRE_DEVICE_ACTIVATION=true"));
+test("la compilación de nube no exige clave de activación para dispositivos nuevos", cloudEnv.includes("VITE_REQUIRE_DEVICE_ACTIVATION=false"));
 
 console.log(`Sitio público y acceso: ${passed} comprobaciones superadas`);

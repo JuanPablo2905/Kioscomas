@@ -299,3 +299,15 @@ Cada decisión distingue lo acordado de lo que todavía está abierto. Si una ne
 **No se eligió:** eliminar carpetas porque “parecen viejas” durante otro arreglo.
 
 **Pendiente:** una tarea específica de inventario, actualización y archivo después de cerrar Mercado Pago.
+
+## D-033 — Sin clave de activación para dispositivos nuevos
+
+**Decisión:** la app real ya no pide una clave de instalación para usar un dispositivo nuevo. El servidor corre con `KIOSCO_REQUIRE_DEVICE_ACTIVATION=0` y el cliente se compila con `VITE_REQUIRE_DEVICE_ACTIVATION=false`.
+
+**Por qué:** pedir una clave emitida a mano frena la prueba de un comercio nuevo. Se prioriza que pueda entrar y probar solo.
+
+**Qué sigue protegido:** la sesión sigue atada a negocio, usuario y dispositivo, el servidor valida todo en cada petición, y el administrador puede bloquear dispositivos y cuentas. El código de activación (`/v1/activation/redeem`, claves del panel) sigue existiendo y se puede volver a exigir cambiando esas dos variables.
+
+**Qué se pierde:** el control manual de quién empieza a usar la app y el límite práctico de dispositivos por plan (2 incluidos, extra $5.000). Hoy ningún otro mecanismo cuenta dispositivos por negocio.
+
+**Pendiente:** si se quiere hacer cumplir el límite de dispositivos del plan, hay que contarlos por negocio en el servidor. Los instaladores ya publicados siguen mostrando la pantalla de clave hasta que salga una versión nueva.

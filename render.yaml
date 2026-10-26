@@ -47,7 +47,7 @@ services:
       - key: KIOSCO_LOCAL_MODE
         value: "0"
       - key: KIOSCO_REQUIRE_DEVICE_ACTIVATION
-        value: "1"
+        value: "0"
       - key: KIOSCO_SUPERADMIN_USERNAME
         value: kiosco-admin
       - key: KIOSCO_SUPERADMIN_PASSWORD
