@@ -1,5 +1,12 @@
 import { cloudFetch } from "../../cloud/cloudAuth";
-import { loadCloudConfig } from "../../cloud/config";
+import { loadCloudConfig, normalizeCloudApiUrl } from "../../cloud/config";
+
+// La pantalla pública (kioscomas.ar/pantalla) no se conecta sola a la nube, pero igual necesita
+// hablar con el servidor publicado para pedir su código de vinculación.
+const displayConfig = () => {
+  const config = loadCloudConfig();
+  return { ...config, apiUrl: config.apiUrl || normalizeCloudApiUrl(import.meta.env?.VITE_PUBLIC_API_URL) };
+};
 
 const context = (businessId) => {
   const config = loadCloudConfig();
@@ -68,7 +75,7 @@ const cachedPairingRequest = () => {
 };
 
 export async function requestRemoteDisplayPairing({ force = false } = {}) {
-  const config = loadCloudConfig();
+  const config = displayConfig();
   if (!config.apiUrl) throw new Error("Esta pantalla no conoce la dirección del servidor.");
   if (!force && pendingPairingRequest) return pendingPairingRequest;
   if (!force) {
@@ -89,7 +96,7 @@ export async function requestRemoteDisplayPairing({ force = false } = {}) {
 }
 
 export async function pollRemoteDisplayPairing(requestToken) {
-  const config = loadCloudConfig();
+  const config = displayConfig();
   if (!config.apiUrl) throw new Error("Esta pantalla no conoce la dirección del servidor.");
   const response = await fetch(`${config.apiUrl}/v1/displays/pairing-status`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestToken }),
@@ -114,7 +121,7 @@ export function remoteDisplayEntryUrl() {
 }
 
 export async function pairRemoteDisplay(code) {
-  const config = loadCloudConfig();
+  const config = displayConfig();
   if (!config.apiUrl) throw new Error("Esta pantalla no conoce la dirección del servidor.");
   const response = await fetch(`${config.apiUrl}/v1/displays/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, deviceId: remoteDeviceId() }) });
   const payload = await result(response);
@@ -124,7 +131,7 @@ export async function pairRemoteDisplay(code) {
 }
 
 export async function loadRemoteDisplay() {
-  const config = loadCloudConfig();
+  const config = displayConfig();
   const displayToken = localStorage.getItem("kiosco:remote-display-token") || "";
   if (!config.apiUrl || !displayToken) throw new Error("Esta pantalla todavía no está vinculada.");
   const payload = await result(await fetch(`${config.apiUrl}/v1/displays/content`, { headers: { authorization: `Display ${displayToken}` } }));
