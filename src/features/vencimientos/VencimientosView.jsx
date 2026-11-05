@@ -31,7 +31,7 @@ function PerdidaModal({ product, onClose, onConfirm }) {
       <label className="mb-1 block text-sm">Motivo</label>
       <AppSelect value={motivo} onChange={setMotivo} className="mb-4 w-full" options={motivos}/>
       <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">Pérdida estimada: <b>{money((Number(product.costo) || 0) * (number || 0))}</b></div>
-      <div className="grid grid-cols-2 gap-2"><button onClick={onClose} className="min-h-11 rounded-lg border px-3 py-2 text-sm">Cancelar</button><button data-tour="loss-confirm" disabled={!number || number <= 0 || number > disponible} onClick={() => onConfirm({ cantidad: number, motivo })} className="min-h-11 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">Registrar descarte</button></div>
+      <div className="grid grid-cols-2 gap-2"><button onClick={onClose} className="min-h-11 rounded-lg border px-3 py-2 text-sm">Cancelar</button><button data-tour="loss-confirm" disabled={!number || number <= 0 || number > disponible} onClick={() => onConfirm({ cantidad: number, motivo })} className="min-h-11 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">Registrar pérdida</button></div>
     </div>
   </div>;
 }

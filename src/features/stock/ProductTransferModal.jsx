@@ -5,7 +5,7 @@ import { AppSelect } from "../../shared/controls";
 
 export function ProductTransferModal({ products, setProducts, onClose }) {
   const [imported, setImported] = useState([]); const [filename, setFilename] = useState(""); const [mode, setMode] = useState("actualizar"); const [error, setError] = useState("");
-  const read = async (event) => { const file = event.target.files?.[0]; if (!file) return; setError(""); try { if (/\.xlsx$/i.test(file.name)) throw new Error("Guardá el archivo como Excel 97-2003 (.xls) o CSV para importarlo."); const parsed = parseProductFile(await file.text(), file.name); if (!parsed.length) throw new Error("No encontramos productos ni encabezados compatibles."); setImported(parsed); setFilename(file.name); } catch (reason) { setError(reason.message || "No se pudo leer el archivo."); setImported([]); } };
+  const read = async (event) => { const file = event.target.files?.[0]; if (!file) return; setError(""); try { if (/\.xlsx$/i.test(file.name)) throw new Error("Guardá el archivo como Excel (.xls) o CSV para importarlo."); const parsed = parseProductFile(await file.text(), file.name); if (!parsed.length) throw new Error("No encontramos productos ni encabezados compatibles."); setImported(parsed); setFilename(file.name); } catch (reason) { setError(reason.message || "No se pudo leer el archivo."); setImported([]); } };
   const apply = () => { const result = mergeImportedProducts(products, imported, mode); setProducts(result.products); onClose(`${result.added} agregado(s), ${result.updated} actualizado(s)${result.skipped ? ` y ${result.skipped} omitido(s)` : ""}`); };
   const stamp = new Date().toISOString().slice(0,10);
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4">

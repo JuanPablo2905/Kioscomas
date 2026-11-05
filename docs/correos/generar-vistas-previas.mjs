@@ -38,10 +38,12 @@ const examples = [
   },
   {
     file: "02-solicitud-recibida.html",
-    send: () => service.sendWelcome({
+    send: () => service.sendEmailVerification({
       to: "cliente@ejemplo.com",
       name: "Martín",
       businessName: "Almacén San Martín",
+      verifyUrl: "https://app.kioscomas.ar/?verify_email_token=ejemplo-seguro",
+      expiresInHours: 48,
       accountId: "preview-account",
     }),
   },
@@ -61,6 +63,16 @@ const examples = [
       to: "cliente@ejemplo.com",
       name: "Martín",
       requestId: "preview-changed",
+    }),
+  },
+  {
+    file: "05-cuenta-nueva-aviso-admin.html",
+    send: () => service.sendNewAccountAdminAlert({
+      to: "juan@kioscomas.ar",
+      businessName: "Almacén San Martín",
+      ownerName: "Martín",
+      ownerEmail: "cliente@ejemplo.com",
+      accountId: "preview-account",
     }),
   },
 ];

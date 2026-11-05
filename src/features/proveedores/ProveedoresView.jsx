@@ -177,7 +177,7 @@ export function ProveedoresView({ proveedores, setProveedores, products, setProd
         })}
       </div>
       {filtered.length === 0 && (
-        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-gray-400 sm:p-10">No hay proveedores cargados.</p>
+        <div className="rounded-xl border border-dashed p-8 text-center sm:p-10"><Truck className="mx-auto mb-2 text-gray-300"/><p className="text-sm text-gray-400">No hay proveedores cargados.</p></div>
       )}
       {editing !== undefined && <ProveedorModal initial={editing} onClose={() => setEditing(undefined)} onSave={save} />}
       {assigning && <AsignarProductosModal proveedor={assigning} products={products} setProducts={setProducts} onClose={() => setAssigning(null)} />}

@@ -43,8 +43,6 @@ const dataDirectory = process.env.KIOSCO_CLOUD_DATA_DIR || path.dirname(database
 // KIOSCO_CLOUD_PORT remains available for the local desktop server.
 const port = Number(process.env.PORT || process.env.KIOSCO_CLOUD_PORT || 8787);
 const localMode = process.env.KIOSCO_LOCAL_MODE !== "0";
-const requireDeviceActivation = process.env.KIOSCO_REQUIRE_DEVICE_ACTIVATION === "1"
-  || (!localMode && process.env.KIOSCO_REQUIRE_DEVICE_ACTIVATION !== "0");
 const databaseUrl = String(process.env.DATABASE_URL || "").trim();
 let postgresStore = null;
 const configuredSuperAdminUsername = String(process.env.KIOSCO_SUPERADMIN_USERNAME || "").trim();
@@ -60,6 +58,12 @@ const passwordResetTtlMinutes = Number.isFinite(configuredResetMinutes)
   ? Math.max(10, Math.min(120, configuredResetMinutes))
   : 30;
 const passwordResetTtlMs = passwordResetTtlMinutes * 60 * 1000;
+const configuredVerifyHours = Number(process.env.KIOSCO_EMAIL_VERIFY_HOURS || 48);
+const emailVerificationTtlHours = Number.isFinite(configuredVerifyHours)
+  ? Math.max(1, Math.min(168, configuredVerifyHours))
+  : 48;
+const emailVerificationTtlMs = emailVerificationTtlHours * 60 * 60 * 1000;
+const emailNotVerifiedMessage = "Confirmá tu correo antes de iniciar sesión. Revisá tu casilla o pedí que te reenviemos el enlace.";
 const emailTestMode = localMode && process.env.KIOSCO_EMAIL_TEST_MODE === "1";
 const emailService = createEmailService({
   apiKey: process.env.KIOSCO_RESEND_API_KEY || process.env.RESEND_API_KEY,
@@ -1067,6 +1071,30 @@ const activationView = (entry = {}) => ({
   revokedAt: entry.revokedAt || null,
 });
 const cleanActivationDeviceId = (value) => String(value || "").trim().slice(0, 160);
+// Ya no hace falta una clave para crear cuenta o iniciar sesión: el registro
+// de activación se crea solo la primera vez que se ve un dispositivo. Sigue
+// existiendo para que un superadmin pueda desactivar ese dispositivo puntual
+// más adelante (ver /v1/admin/activations/:deviceId/revoke) — eso es lo único
+// que este registro bloquea a partir de ahora.
+const ensureDeviceActivation = (db, deviceId, appVersion = "") => {
+  db.activations ||= {};
+  let current = db.activations[deviceId];
+  if (!current) {
+    const now = new Date().toISOString();
+    current = {
+      id: crypto.randomUUID(),
+      deviceId,
+      codeId: null,
+      activatedAt: now,
+      lastSeenAt: now,
+      appVersion: cleanCatalogText(appVersion || "", 40) || null,
+      legacy: true,
+      revokedAt: null,
+    };
+    db.activations[deviceId] = current;
+  }
+  return current;
+};
 const verifyAppPassword = (password, subject) => {
   try {
     if (subject?.passwordHash && subject?.passwordSalt) {
@@ -1212,6 +1240,11 @@ const consumePasswordResetEmailLimit = (db, email, now = Date.now()) => {
 const passwordResetUrl = (rawToken) => {
   const url = new URL(emailService.appUrl);
   url.searchParams.set("reset_token", rawToken);
+  return url.toString();
+};
+const emailVerificationUrl = (rawToken) => {
+  const url = new URL(emailService.appUrl);
+  url.searchParams.set("verify_email_token", rawToken);
   return url.toString();
 };
 const sendEmailBestEffort = async (event, operation) => {
@@ -1952,6 +1985,8 @@ const enforceSensitiveRequestLimit = (req, res) => {
     "POST /v1/auth/pair-device": { maximum: 8, windowMs: 15 * 60 * 1000 },
     "POST /v1/auth/bootstrap": { maximum: 4, windowMs: 60 * 60 * 1000 },
     "POST /v1/auth/password/forgot": { maximum: 10, windowMs: 60 * 60 * 1000 },
+    "POST /v1/auth/verify-email": { maximum: 15, windowMs: 60 * 60 * 1000 },
+    "POST /v1/auth/verify-email/resend": { maximum: 6, windowMs: 60 * 60 * 1000 },
     "POST /v1/payments/mercado-pago/oauth/start": { maximum: 10, windowMs: 60 * 60 * 1000 },
     "POST /v1/payments/mercado-pago/qr/setup": { maximum: 6, windowMs: 60 * 60 * 1000 },
     "POST /v1/payments/mercado-pago/point/setup": { maximum: 12, windowMs: 60 * 60 * 1000 },
@@ -1984,7 +2019,6 @@ const handleRequest = async (req, res) => {
       service: "kiosco-cloud-local",
       schemaVersion: 9,
       localMode,
-      deviceActivationRequired: requireDeviceActivation,
       emailDeliveryConfigured: emailService.configured && !emailTestMode,
       pushDeliveryConfigured,
       paymentProviders: { mercadoPago: mercadoPagoAvailability(mercadoPago) },
@@ -2519,9 +2553,9 @@ const handleRequest = async (req, res) => {
         return send(res, 400, { error: "Leé y aceptá la versión vigente de los Términos y Condiciones para crear la cuenta." });
       }
       const db = await readDb();
-      const activation = db.activations?.[deviceId];
-      if (!activation || activation.revokedAt) {
-        return send(res, 403, { error: "Este dispositivo todavía no fue autorizado. Ingresá la clave del administrador para crear un negocio nuevo." });
+      const activation = ensureDeviceActivation(db, deviceId, payload.appVersion);
+      if (activation.revokedAt) {
+        return send(res, 403, { error: "Este dispositivo fue desactivado." });
       }
       const normalizedUsername = username.toLowerCase();
       const usernameExists = Object.values(db.users || {}).some(
@@ -2566,6 +2600,10 @@ const handleRequest = async (req, res) => {
         registrationDeviceId: deviceId,
         termsAcceptedAt: now,
         termsVersion: TERMS_VERSION,
+        // Sin correo configurado no hay forma de mandar el enlace, así que no
+        // se le puede exigir a nadie confirmarlo: la cuenta queda usable.
+        emailVerifiedAt: null,
+        emailVerificationRequired: emailService.configured,
         ...appPasswordFields(password),
       };
       const secured = hashPassword(password);
@@ -2606,16 +2644,114 @@ const handleRequest = async (req, res) => {
         action: { view: "administracion" },
       }).notification;
       await sendPushNotification(db, registrationNotice);
+      let verificationRawToken = "";
+      if (account.emailVerificationRequired) {
+        verificationRawToken = token();
+        db.emailVerificationTokens ||= {};
+        db.emailVerificationTokens[sha256(verificationRawToken)] = {
+          id: crypto.randomUUID(),
+          businessId,
+          createdAt: now,
+          expiresAt: new Date(Date.now() + emailVerificationTtlMs).toISOString(),
+          usedAt: null,
+          revokedAt: null,
+        };
+      }
       await writeDb(db);
       if (emailService.configured) {
-        void sendEmailBestEffort("de bienvenida", () => emailService.sendWelcome({
+        void sendEmailBestEffort("de confirmación de correo", () => emailService.sendEmailVerification({
           to: email,
           name,
           businessName,
+          verifyUrl: emailVerificationUrl(verificationRawToken),
+          expiresInHours: emailVerificationTtlHours,
           accountId: businessId,
         }));
+        const adminAlertEmail = normalizeEmail(process.env.KIOSCO_SUPERADMIN_EMAIL);
+        if (isValidEmail(adminAlertEmail)) {
+          void sendEmailBestEffort("de cuenta nueva para el administrador", () => emailService.sendNewAccountAdminAlert({
+            to: adminAlertEmail,
+            businessName,
+            ownerName: name,
+            ownerEmail: email,
+            accountId: businessId,
+          }));
+        }
       }
-      return send(res, 201, { ok: true, businessId, account });
+      return send(res, 201, {
+        ok: true,
+        businessId,
+        account,
+        ...(emailTestMode && isLoopback(req) && verificationRawToken ? { testEmailVerifyToken: verificationRawToken } : {}),
+      });
+    }
+    if (req.method === "POST" && req.url === "/v1/auth/verify-email") {
+      const payload = await body(req);
+      const rawToken = String(payload.token || "").trim();
+      const db = await readDb();
+      const entry = rawToken.length >= 30 ? db.emailVerificationTokens?.[sha256(rawToken)] : null;
+      const now = Date.now();
+      const tokenExpiresAt = Date.parse(entry?.expiresAt || "");
+      if (!entry || entry.usedAt || entry.revokedAt || !Number.isFinite(tokenExpiresAt) || tokenExpiresAt <= now) {
+        return send(res, 400, { error: "El enlace de confirmación es inválido, ya fue usado o venció." });
+      }
+      const account = tenantAccount(db, entry.businessId);
+      if (!account) return send(res, 400, { error: "La cuenta ya no existe." });
+      const nowIso = new Date(now).toISOString();
+      account.emailVerifiedAt = account.emailVerifiedAt || nowIso;
+      entry.usedAt = nowIso;
+      for (const candidate of Object.values(db.emailVerificationTokens || {})) {
+        if (candidate.businessId === entry.businessId && candidate.id !== entry.id && !candidate.usedAt && !candidate.revokedAt) {
+          candidate.revokedAt = nowIso;
+          candidate.revokedReason = "verified";
+        }
+      }
+      await writeDb(db);
+      return send(res, 200, { ok: true, businessId: account.id, businessName: account.nombreNegocio });
+    }
+    if (req.method === "POST" && req.url === "/v1/auth/verify-email/resend") {
+      const payload = await body(req);
+      const email = normalizeEmail(payload.email);
+      const genericMessage = "Si el correo corresponde a una cuenta sin confirmar, te reenviamos el enlace.";
+      if (!isValidEmail(email) || !emailService.configured) {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return send(res, 202, { ok: true, message: genericMessage });
+      }
+      const db = await readDb();
+      const account = (db.system?.cuentas || []).find((item) => (
+        item && !item.superAdmin && item.emailVerificationRequired && !item.emailVerifiedAt && normalizeEmail(item.email) === email
+      ));
+      if (account) {
+        const now = Date.now();
+        const nowIso = new Date(now).toISOString();
+        for (const candidate of Object.values(db.emailVerificationTokens || {})) {
+          if (candidate.businessId === account.id && !candidate.usedAt && !candidate.revokedAt) {
+            candidate.revokedAt = nowIso;
+            candidate.revokedReason = "replaced";
+          }
+        }
+        const rawToken = token();
+        db.emailVerificationTokens ||= {};
+        db.emailVerificationTokens[sha256(rawToken)] = {
+          id: crypto.randomUUID(),
+          businessId: account.id,
+          createdAt: nowIso,
+          expiresAt: new Date(now + emailVerificationTtlMs).toISOString(),
+          usedAt: null,
+          revokedAt: null,
+        };
+        await writeDb(db);
+        void sendEmailBestEffort("de confirmación de correo", () => emailService.sendEmailVerification({
+          to: account.email,
+          name: account.nombre,
+          businessName: account.nombreNegocio,
+          verifyUrl: emailVerificationUrl(rawToken),
+          expiresInHours: emailVerificationTtlHours,
+          accountId: account.id,
+        }));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      return send(res, 202, { ok: true, message: genericMessage });
     }
     if (req.method === "POST" && req.url === "/v1/auth/register-local") {
       if (!localMode || !isLoopback(req)) return send(res, 404, { error: "Ruta inexistente" });
@@ -2699,7 +2835,7 @@ const handleRequest = async (req, res) => {
       const db = await readDb();
       const deviceId = cleanActivationDeviceId(payload.deviceId);
       if (deviceId.length < 3) return send(res, 400, { error: "El identificador del dispositivo no es válido" });
-      if (db.devices?.[deviceId]?.revokedAt) return send(res, 403, { error: "Este dispositivo fue bloqueado por el administrador" });
+      if (db.devices?.[deviceId]?.revokedAt) return send(res, 403, { error: "Este dispositivo fue desactivado." });
       const username = String(payload.username || "").trim();
       const existingUser = Object.values(db.users || {}).find(
         (entry) => String(entry?.username || "").trim().toLowerCase() === username.toLowerCase(),
@@ -2712,11 +2848,17 @@ const handleRequest = async (req, res) => {
       if (!sessionSubjectIsActive(db, { userId: user.id, businessId: user.businessId, role: user.role })) {
         return send(res, 403, { error: "Esta cuenta fue bloqueada, eliminada o ya no pertenece al negocio" });
       }
-      const activation = db.activations?.[deviceId];
-      if (requireDeviceActivation && (!activation || activation.revokedAt)) {
-        return send(res, 403, { error: "Este dispositivo todavía no fue autorizado. Ingresá una clave de activación antes de iniciar sesión." });
+      if (user.role === "owner") {
+        const account = tenantAccount(db, user.businessId);
+        if (account?.emailVerificationRequired && !account.emailVerifiedAt) {
+          return send(res, 403, { error: emailNotVerifiedMessage, code: "email_not_verified", email: account.email });
+        }
       }
-      if (activation) activation.lastSeenAt = new Date().toISOString();
+      const activation = ensureDeviceActivation(db, deviceId);
+      if (activation.revokedAt) {
+        return send(res, 403, { error: "Este dispositivo fue desactivado." });
+      }
+      activation.lastSeenAt = new Date().toISOString();
       const accessToken = token();
       const refreshToken = token();
       const expiresAt = accessTokenExpiresAt();
@@ -2746,7 +2888,7 @@ const handleRequest = async (req, res) => {
       const deviceId = cleanActivationDeviceId(payload.deviceId);
       const invalidCredentialMessage = "La credencial de este dispositivo ya no es válida. Iniciá sesión con tu contraseña.";
       if (deviceId.length < 3) return send(res, 400, { error: "El identificador del dispositivo no es válido" });
-      if (db.devices?.[deviceId]?.revokedAt) return send(res, 403, { error: "Este dispositivo fue bloqueado por el administrador" });
+      if (db.devices?.[deviceId]?.revokedAt) return send(res, 403, { error: "Este dispositivo fue desactivado." });
       const existingUser = Object.values(db.users || {}).find(
         (item) => String(item?.username || "").trim().toLowerCase() === String(payload.username || "").trim().toLowerCase(),
       );
@@ -2757,11 +2899,11 @@ const handleRequest = async (req, res) => {
       if (!sessionSubjectIsActive(db, { userId: existingUser.id, businessId: existingUser.businessId, role: existingUser.role })) {
         return send(res, 403, { error: "Esta cuenta fue bloqueada, eliminada o ya no pertenece al negocio" });
       }
-      const activation = db.activations?.[deviceId];
-      if (requireDeviceActivation && (!activation || activation.revokedAt)) {
-        return send(res, 403, { error: "Este dispositivo todavía no fue autorizado. Ingresá una clave de activación antes de iniciar sesión." });
+      const activation = ensureDeviceActivation(db, deviceId);
+      if (activation.revokedAt) {
+        return send(res, 403, { error: "Este dispositivo fue desactivado." });
       }
-      if (activation) activation.lastSeenAt = new Date().toISOString();
+      activation.lastSeenAt = new Date().toISOString();
       // Igual que el token de sesión, la credencial del dispositivo rota en
       // cada uso: si alguien copiara el blob cifrado, dejaría de servir apenas
       // el dueño real vuelva a entrar desde su equipo.
@@ -2798,12 +2940,12 @@ const handleRequest = async (req, res) => {
       if (!entry) return send(res, 401, { error: "Sesión inválida" });
       const [, old] = entry;
       if (!sessionSubjectIsActive(db, old)) return send(res, 401, { error: "La cuenta ya no está habilitada" });
-      if (db.devices[old.deviceId]?.revokedAt) return send(res, 403, { error: "Dispositivo bloqueado" });
-      const activation = db.activations?.[old.deviceId];
-      if (requireDeviceActivation && (!activation || activation.revokedAt)) {
-        return send(res, 403, { error: "Este dispositivo ya no está autorizado" });
+      if (db.devices[old.deviceId]?.revokedAt) return send(res, 403, { error: "Este dispositivo fue desactivado." });
+      const activation = ensureDeviceActivation(db, old.deviceId);
+      if (activation.revokedAt) {
+        return send(res, 403, { error: "Este dispositivo fue desactivado." });
       }
-      if (activation) activation.lastSeenAt = new Date(now).toISOString();
+      activation.lastSeenAt = new Date(now).toISOString();
       if (!old.revokedAt) {
         old.revokedAt = new Date(now).toISOString();
         old.revokedReason = "refreshed";
@@ -2845,9 +2987,9 @@ const handleRequest = async (req, res) => {
       session = activeSession(db, req);
       const canAccessTenant = session && (session.businessId === tenantId || session.role === "superAdmin");
       if (!canAccessTenant || session.deviceId !== deviceId) return send(res, 401, { error: "Sesión o dispositivo no autorizados" });
-      if (db.devices[deviceId]?.revokedAt) return send(res, 403, { error: "Dispositivo bloqueado" });
-      if (requireDeviceActivation && (!db.activations?.[deviceId] || db.activations[deviceId].revokedAt)) {
-        return send(res, 403, { error: "Este dispositivo ya no está autorizado" });
+      if (db.devices[deviceId]?.revokedAt) return send(res, 403, { error: "Este dispositivo fue desactivado." });
+      if (ensureDeviceActivation(db, deviceId).revokedAt) {
+        return send(res, 403, { error: "Este dispositivo fue desactivado." });
       }
     }
     db.devices[deviceId] = { ...(db.devices[deviceId] || {}), tenantId, lastSeenAt: new Date().toISOString() };

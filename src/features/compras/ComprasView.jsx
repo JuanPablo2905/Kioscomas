@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import {
   Package, Store, ShoppingCart, BarChart3, Shield, LogOut, ScanLine, Search,
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
-  ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
+  ArrowDownCircle, Clock, Lock, Users, ClipboardList, ListChecks, Wallet, CreditCard,
   MessageCircle, Mail, Copy, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
   ChevronRight,
 } from "lucide-react";
@@ -13,6 +13,7 @@ import { KioscoDatePicker, datePickerHelpers } from "../../shared/KioscoDatePick
 import { buildAutomaticLowStockItems, buildReplenishmentSuggestions } from "./replenishmentRules";
 import { copyText, openEmailDraft, openWhatsApp, purchaseMessage } from "../../shared/share";
 import { crearIdOperacion } from "../ventas/salesRules";
+import { ProductModal } from "../stock/StockView";
 
 function CompartirPedidoModal({ pedido, onClose }) {
   const [phone, setPhone] = useState(pedido.phone || "");
@@ -358,7 +359,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
           activos.length > 0 && (
             <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
               <button onClick={compartirTodo} className="flex min-w-0 items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50"><MessageCircle size={16} className="shrink-0"/><span className="truncate">Compartir todo</span></button>
-              {activos.some((item) => item.estado === "pendiente") && <button data-tour="purchase-generate" onClick={generarPedidosPorProveedor} className="flex min-w-0 items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white"><PackageCheck size={16} className="shrink-0"/><span className="truncate">Generar pedidos</span></button>}
+              {activos.some((item) => item.estado === "pendiente") && <button data-tour="purchase-generate" onClick={generarPedidosPorProveedor} className="flex min-w-0 items-center justify-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white"><ListChecks size={16} className="shrink-0"/><span className="truncate">Generar pedidos</span></button>}
             </div>
           )
         }
@@ -467,7 +468,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
         onClick={() => setNuevoProductoOpen(true)}
         className="mb-4 flex w-full items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 sm:w-auto sm:bg-transparent sm:px-0"
       >
-        <PackageCheck size={15} className="mt-0.5 shrink-0" />
+        <Plus size={15} className="mt-0.5 shrink-0" />
         ¿No está en tu Stock? Creá un producto nuevo para pedirlo
       </button>
 
@@ -547,7 +548,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
                     className="flex min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium hover:bg-gray-50 md:min-h-0 md:w-auto md:py-1.5"
                   >
                     <CheckCircle2 size={14} />
-                    Marcar pedido
+                    Generar pedido
                   </button>
                 )}
                 <button
@@ -606,6 +607,7 @@ export function ComprasView({ products, setProducts, comprasItems, setComprasIte
         <ProductModal
           onClose={() => setNuevoProductoOpen(false)}
           onSave={handleNuevoProducto}
+          proveedores={proveedores}
         />
       )}
 

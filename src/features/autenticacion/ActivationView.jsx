@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { CheckCircle2, KeyRound, Loader2, ShieldCheck } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
 import { CloudWarmupStatus } from "./CloudWarmupStatus";
 
 const kioscoPlusLockup = `${import.meta.env.BASE_URL}kiosco-plus-lockup.svg`;
 
 const formatCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 29);
 
-export function ActivationView({ deviceId, onActivate, onAdminActivate, cloudWarmupState, onRetryCloud }) {
+export function ActivationView({ deviceId, onActivate, onAdminActivate, cloudWarmupState, onRetryCloud, revoked = false }) {
   const [code, setCode] = useState("");
   const [adminKey, setAdminKey] = useState("");
   const [adminMode, setAdminMode] = useState(false);
@@ -39,57 +39,68 @@ export function ActivationView({ deviceId, onActivate, onAdminActivate, cloudWar
         <section className="flex flex-col justify-between bg-[#173f3a] p-7 text-white sm:p-10">
           <img src={kioscoPlusLockup} alt="Kiosco+" className="h-12 w-auto max-w-[220px] object-contain object-left brightness-0 invert"/>
           <div className="my-12">
-            <span className="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-white/10"><ShieldCheck size={29}/></span>
-            <h1 className="max-w-md text-3xl font-bold leading-tight sm:text-4xl">Activá Kiosco+ en este dispositivo</h1>
-            <p className="mt-4 max-w-md text-sm leading-6 text-white/75 sm:text-base">La clave confirma que este dispositivo fue autorizado. Se pide una sola vez en este navegador o instalación.</p>
+            <span className="mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-white/10">{revoked ? <ShieldAlert size={29}/> : <ShieldCheck size={29}/>}</span>
+            <h1 className="max-w-md text-3xl font-bold leading-tight sm:text-4xl">{revoked ? "Este dispositivo fue desactivado" : "Activá Kiosco+ en este dispositivo"}</h1>
+            <p className="mt-4 max-w-md text-sm leading-6 text-white/75 sm:text-base">{revoked ? "El administrador de Kiosco+ o el dueño del negocio desactivaron el acceso desde este dispositivo puntual." : "La clave confirma que este dispositivo fue autorizado. Se pide una sola vez en este navegador o instalación."}</p>
           </div>
           <p className="text-xs text-white/50">Dispositivo {String(deviceId || "").slice(-8).toUpperCase()}</p>
         </section>
 
-        <section className="flex items-center p-7 sm:p-10 lg:p-14">
-          <form onSubmit={submit} className="w-full">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-100 text-amber-700"><KeyRound size={24}/></span>
-            <h2 className="mt-6 text-2xl font-bold">{adminMode ? "Activar dispositivo administrador" : "Clave de activación"}</h2>
-            <p className="mt-2 text-sm leading-6 text-gray-500">{adminMode ? "Usá la clave privada configurada en Render para recuperar tu dispositivo administrador." : "Pedile una clave al administrador de Kiosco+ y pegala acá."}</p>
-            <CloudWarmupStatus state={cloudWarmupState} onRetry={onRetryCloud} className="mt-5"/>
-            <label className="mt-7 block text-xs font-bold uppercase tracking-wide text-gray-600" htmlFor="installation-code">{adminMode ? "Clave privada de Render" : "Clave"}</label>
-            {adminMode ? (
-              <input
-                id="installation-code"
-                type="password"
-                value={adminKey}
-                onChange={(event) => { setAdminKey(event.target.value); setError(""); }}
-                autoFocus
-                autoComplete="current-password"
-                placeholder="Clave privada del administrador"
-                className="mt-2 min-h-14 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 text-base outline-none transition focus:border-[#1C4A44] focus:ring-4 focus:ring-[#1C4A44]/10"
-              />
-            ) : (
-              <input
-                id="installation-code"
-                value={code}
-                onChange={(event) => { setCode(formatCode(event.target.value)); setError(""); }}
-                autoFocus
-                autoComplete="off"
-                spellCheck="false"
-                placeholder="KIOSCO-XXXX-XXXX-XXXX-XXXX"
-                className="mt-2 min-h-14 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 font-mono text-base font-semibold uppercase tracking-wide outline-none transition focus:border-[#1C4A44] focus:ring-4 focus:ring-[#1C4A44]/10"
-              />
-            )}
-            {error && <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>}
-            <button type="submit" disabled={working} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 font-semibold text-white transition hover:bg-[#163d38] disabled:cursor-wait disabled:opacity-60">
-              {working ? <><Loader2 size={18} className="animate-spin"/>Comprobando...</> : <><CheckCircle2 size={18}/>{adminMode ? "Activar como administrador" : "Activar este dispositivo"}</>}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setAdminMode((value) => !value); setError(""); }}
-              className="mt-3 min-h-11 w-full rounded-xl border border-gray-200 px-4 text-sm font-semibold text-[#1C4A44] hover:bg-gray-50"
-            >
-              {adminMode ? "Volver a la clave de activación" : "Este es mi dispositivo administrador"}
-            </button>
-            <p className="mt-5 text-center text-xs leading-5 text-gray-400">Necesitás Internet únicamente para validar la clave por primera vez.</p>
-          </form>
-        </section>
+        {revoked ? (
+          <section className="flex items-center p-7 sm:p-10 lg:p-14">
+            <div className="w-full">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-red-100 text-red-700"><ShieldAlert size={24}/></span>
+              <h2 className="mt-6 text-2xl font-bold">Sin acceso desde este dispositivo</h2>
+              <p className="mt-2 text-sm leading-6 text-gray-500">Ya no se puede iniciar sesión, ver datos ni sincronizar desde este navegador o instalación. El resto de tus dispositivos no se ven afectados.</p>
+              <p className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600">Si creés que es un error, pedile al dueño del negocio o al administrador de Kiosco+ que lo revise. Ellos son los únicos que pueden reactivarlo.</p>
+            </div>
+          </section>
+        ) : (
+          <section className="flex items-center p-7 sm:p-10 lg:p-14">
+            <form onSubmit={submit} className="w-full">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-100 text-amber-700"><KeyRound size={24}/></span>
+              <h2 className="mt-6 text-2xl font-bold">{adminMode ? "Activar dispositivo administrador" : "Clave de activación"}</h2>
+              <p className="mt-2 text-sm leading-6 text-gray-500">{adminMode ? "Usá la clave privada configurada en Render para recuperar tu dispositivo administrador." : "Pedile una clave al administrador de Kiosco+ y pegala acá."}</p>
+              <CloudWarmupStatus state={cloudWarmupState} onRetry={onRetryCloud} className="mt-5"/>
+              <label className="mt-7 block text-xs font-bold uppercase tracking-wide text-gray-600" htmlFor="installation-code">{adminMode ? "Clave privada de Render" : "Clave"}</label>
+              {adminMode ? (
+                <input
+                  id="installation-code"
+                  type="password"
+                  value={adminKey}
+                  onChange={(event) => { setAdminKey(event.target.value); setError(""); }}
+                  autoFocus
+                  autoComplete="current-password"
+                  placeholder="Clave privada del administrador"
+                  className="mt-2 min-h-14 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 text-base outline-none transition focus:border-[#1C4A44] focus:ring-4 focus:ring-[#1C4A44]/10"
+                />
+              ) : (
+                <input
+                  id="installation-code"
+                  value={code}
+                  onChange={(event) => { setCode(formatCode(event.target.value)); setError(""); }}
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck="false"
+                  placeholder="KIOSCO-XXXX-XXXX-XXXX-XXXX"
+                  className="mt-2 min-h-14 w-full rounded-xl border border-gray-300 bg-gray-50 px-4 font-mono text-base font-semibold uppercase tracking-wide outline-none transition focus:border-[#1C4A44] focus:ring-4 focus:ring-[#1C4A44]/10"
+                />
+              )}
+              {error && <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</p>}
+              <button type="submit" disabled={working} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#1C4A44] px-4 font-semibold text-white transition hover:bg-[#163d38] disabled:cursor-wait disabled:opacity-60">
+                {working ? <><Loader2 size={18} className="animate-spin"/>Comprobando...</> : <><CheckCircle2 size={18}/>{adminMode ? "Activar como administrador" : "Activar este dispositivo"}</>}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAdminMode((value) => !value); setError(""); }}
+                className="mt-3 min-h-11 w-full rounded-xl border border-gray-200 px-4 text-sm font-semibold text-[#1C4A44] hover:bg-gray-50"
+              >
+                {adminMode ? "Volver a la clave de activación" : "Este es mi dispositivo administrador"}
+              </button>
+              <p className="mt-5 text-center text-xs leading-5 text-gray-400">Necesitás Internet únicamente para validar la clave por primera vez.</p>
+            </form>
+          </section>
+        )}
       </div>
     </main>
   );

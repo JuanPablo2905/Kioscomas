@@ -9,7 +9,10 @@ const serviceWorker = fs.readFileSync("public/sw.js", "utf8");
 const terms = fs.readFileSync("src/terminos.jsx", "utf8");
 const privacy = fs.readFileSync("src/privacidad.jsx", "utf8");
 const notificationService = fs.readFileSync("src/features/notificaciones/notificationService.js", "utf8");
+const notificationSettingsPanel = fs.readFileSync("src/features/notificaciones/NotificationSettingsPanel.jsx", "utf8");
+const smallBusinessTools = fs.readFileSync("src/features/gestion/SmallBusinessTools.jsx", "utf8");
 const settings = fs.readFileSync("src/shared/SettingsModal.jsx", "utf8");
+const providersView = fs.readFileSync("src/features/proveedores/ProveedoresView.jsx", "utf8");
 const customerDisplay = fs.readFileSync("src/features/ventas/CustomerDisplayScreen.jsx", "utf8");
 const customerDisplaySettings = fs.readFileSync("src/features/ventas/CustomerDisplaySettings.jsx", "utf8");
 const customerDisplayLayout = fs.readFileSync("src/features/ventas/CustomerDisplayLayoutEditor.jsx", "utf8");
@@ -17,6 +20,8 @@ const adaptiveSocialCard = fs.readFileSync("src/features/ventas/AdaptiveSocialCa
 const remoteDisplayScreen = fs.readFileSync("src/features/ventas/RemoteDisplayScreen.jsx", "utf8");
 const remoteDisplays = fs.readFileSync("src/features/ventas/remoteDisplays.js", "utf8");
 const promotionsManager = fs.readFileSync("src/features/gestion/PromotionsManager.jsx", "utf8");
+const gestionView = fs.readFileSync("src/features/gestion/GestionView.jsx", "utf8");
+const layout = fs.readFileSync("src/shared/layout.jsx", "utf8");
 const salesView = fs.readFileSync("src/features/ventas/VentasView.jsx", "utf8");
 const salesSupport = fs.readFileSync("src/features/ventas/SalesSupportTools.jsx", "utf8");
 const adminNotifications = fs.readFileSync("src/features/administracion/AdminNotificationCenter.jsx", "utf8");
@@ -34,8 +39,9 @@ const checks = [
   [index.includes("apple-touch-icon.png"), "Falta el ícono de instalación para iPhone."],
   [main.includes('import "./shared/pwaInstall"'), "La captura del aviso de instalación debe comenzar antes de renderizar."],
   [login.includes("requestPwaInstall"), "El botón móvil debe invocar la instalación nativa del navegador."],
-  [login.includes("requiresRegistrationCode"), "La web debe ofrecer la clave al crear un negocio desde un dispositivo nuevo."],
-  [app.includes("await redeemInstallationCode") && app.includes("activationCode"), "La clave móvil debe autorizar el dispositivo antes de registrar el negocio."],
+  [!login.includes("requiresRegistrationCode") && !login.includes("activationCode"), "La web ya no debe pedir ninguna clave al crear un negocio desde un dispositivo nuevo."],
+  [app.includes("handleRegister = async ({ nombre, email, usuario, password, nombreNegocio, modoNegocio") && !app.includes("activationCode = \"\"") && app.includes("redeemInstallationCode"), "El alta web ya no debe pedir clave, pero la app de escritorio conserva su propia activación."],
+  [styles.includes("[data-sidebar-size=\"angosto\"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar)") && styles.includes("[data-sidebar-size=\"ancho\"] :is(.kiosco-themed > div:first-child, .kiosco-themed .app-sidebar)"), "El ancho del menú lateral debe aplicarse por su clase fija, no sólo por ser el primer hijo (roto por el link de accesibilidad)."],
   [serviceWorker.includes("pwa-icon-maskable-512.png"), "Los íconos deben estar disponibles sin conexión."],
   [app.includes("Modo sin conexión: podés seguir trabajando") && app.includes('window.addEventListener("offline"'), "La app debe avisar claramente que puede seguir trabajando sin conexión."],
   [fs.existsSync("terminos.html") && terms.includes("BOTÓN DE BAJA DE SERVICIO") && terms.includes("BOTÓN DE ARREPENTIMIENTO"), "El sitio debe publicar los términos y los accesos de baja y arrepentimiento."],
@@ -44,6 +50,7 @@ const checks = [
   [serviceWorker.includes('addEventListener("push"') && serviceWorker.includes("showNotification"), "El service worker debe mostrar avisos push."],
   [serviceWorker.includes('addEventListener("notificationclick"') && serviceWorker.includes("openWindow"), "Los avisos deben abrir Kiosco+ al tocarlos."],
   [notificationService.includes("Notification.requestPermission") && notificationService.includes("pushManager.subscribe"), "La app debe pedir permiso antes de registrar el dispositivo para avisos."],
+  [notificationService.includes("hasActivePushSubscription") && notificationService.includes("resolvePushState") && notificationSettingsPanel.includes("resolvePushState"), "El botón de avisos debe reflejar si hay una suscripción real, no sólo el permiso del navegador (que nunca se puede revocar por código)."],
   [settings.includes("VITE_APP_VERSION") && settings.includes("Versión actual:") && settings.includes("Aplicación web instalada"), "Configuración debe mostrar claramente la versión y el tipo de aplicación."],
   [settings.includes("Buscar actualizaciones") && settings.includes("Reiniciar e instalar actualización") && desktopMain.includes("quitAndInstall(true, true)"), "Ayuda debe permitir buscar una versión y reiniciar la aplicación para instalarla."],
   [settings.includes("settings-mobile-safe-header") && styles.includes("(display-mode: standalone)") && styles.includes("env(safe-area-inset-top) + .75rem") && styles.includes("backdrop-filter: none"), "Las pestañas de Configuración deben quedar debajo del área segura de iPhone sin arrastrar el degradado."],
@@ -65,6 +72,11 @@ const checks = [
   [salesSupport.includes("KioscoDatePicker") && salesSupport.includes('type="time"') && salesSupport.includes("customerOrderMessage") && salesSupport.includes("WhatsApp") && salesSupport.includes("BellRing"), "Los pedidos de clientes deben guardar WhatsApp, fecha, hora y un aviso programado."],
   [main.includes('mode === "remote-display"') && remoteDisplayScreen.includes("Vinculá esta pantalla") && remoteDisplayScreen.includes("authorizationUrl") && remoteDisplays.includes("kiosco:remote-display-cache"), "La pantalla remota debe mostrar su QR, vincularse de forma aislada y conservar contenido sin conexión."],
   [promotionsManager.includes("Anunciar en la segunda pantalla") && promotionsManager.includes("Editar promoción") && promotionsManager.includes("diasSemana"), "Gestión debe permitir editar y programar la publicidad de las promociones."],
+  [!promotionsManager.includes("window.confirm") && promotionsManager.includes("ConfirmDialog"), "Eliminar una promoción debe usar el diálogo propio de la app, no el confirm() nativo del navegador."],
+  [smallBusinessTools.includes("emptyMessage=\"Todavía no agregaste nada a la lista de compras manual.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no hay envases ni productos prestados pendientes de devolución.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no registraste ningún autoconsumo.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no hay turnos cerrados en el historial.\"") && smallBusinessTools.includes("emptyMessage=\"Todavía no cargaste recordatorios de proveedores.\""), "Lista de compras, Retornables, Autoconsumo, Turnos y Recordatorios deben avisar cuando todavía no hay nada cargado, en vez de mostrar un espacio en blanco."],
+  [providersView.includes("<Truck className=\"mx-auto mb-2 text-gray-300\"/>") && providersView.includes("No hay proveedores cargados."), "El estado vacío de Proveedores debe llevar un ícono, igual que Stock, Vencimientos, Vitrina e Inventario."],
+  [gestionView.includes('"Uso diario"') && gestionView.includes('"Ocasional"') && gestionView.includes("tabGroups"), "Las pestañas de Gestión y herramientas deben agruparse por frecuencia de uso, no tratarse todas como iguales."],
+  [layout.includes('<span className="min-w-0 flex-1 truncate text-sm font-semibold">') && !layout.includes('className="mobile-header-action text-red-600"') && layout.includes('hover:text-red-600 focus-visible:text-red-600"><Bug'), "El encabezado móvil debe truncar el nombre del negocio correctamente y el ícono de reportar un problema no debe quedar rojo de forma permanente."],
   [customerDisplaySettings.includes("Probar publicidad") && customerDisplaySettings.includes("Simular venta") && customerDisplaySettings.includes("Contacto o redes"), "La pantalla para clientes debe ofrecer contenido comercial y vistas de prueba."],
   [adminNotifications.includes("admin-notification-tab") && styles.includes(".admin-notification-tab.is-active") && styles.includes("color: #16433d !important"), "Las pestañas de avisos deben mantener contraste legible con cualquier tema."],
   [adminPanel.includes("Otra pantalla"), "El administrador debe poder abrir un negocio en otra pantalla sin abandonar el panel."],

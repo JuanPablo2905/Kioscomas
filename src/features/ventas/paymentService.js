@@ -54,10 +54,8 @@ export const acknowledgePaymentPresentation = (businessId, presentationId) => re
 export const closePaymentPresentation = (businessId, presentationId) => request(businessId, `/v1/payments/presentations/${encodeURIComponent(presentationId)}`, { method: "DELETE" });
 
 export const PAYMENT_MODES = [
-  { id: "ask", label: "Preguntarme en cada venta", detail: "Elegís QR estático, QR dinámico o Point al cobrar." },
+  { id: "ask", label: "Preguntarme en cada venta", detail: "Por ahora sólo está disponible QR estático." },
   { id: "static_qr", label: "Siempre QR estático", detail: "Muestra la imagen cargada; la caja confirma el comprobante manualmente." },
-  { id: "dynamic_qr", label: "Siempre QR dinámico", detail: "Genera un QR nuevo por el importe exacto y espera la acreditación." },
-  { id: "point", label: "Siempre Mercado Pago Point", detail: "Envía el importe al número de terminal configurado." },
 ];
 
 export const PAYMENT_TARGETS = [

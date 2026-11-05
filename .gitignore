@@ -1,5 +1,6 @@
 node_modules/
 .agents/
+.claude/
 .git-kioscoplus/
 .docx-qa/
 .pnpm-store*/

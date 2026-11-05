@@ -3,7 +3,7 @@ import {
   Package, Store, ShoppingCart, BarChart3, Shield, LogOut, ScanLine, Search,
   Plus, Pencil, Trash2, X, AlertTriangle, Save, Bell, Minus, ArrowUpCircle,
   ArrowDownCircle, Clock, Lock, Users, ClipboardList, Wallet, CreditCard,
-  MessageCircle, CheckCircle2, PackageCheck, History, UserPlus, Banknote,
+  MessageCircle, CheckCircle2, PackageCheck, PackagePlus, History, UserPlus, Banknote,
   ChevronRight, Percent, FileSpreadsheet, Copy, FolderPlus,
 } from "lucide-react";
 import { CATEGORIES, UNIDAD_GRUPOS, unidadInfo, nowFecha, historialEntry, money, formatQuantity } from "../../shared/domain";
@@ -41,7 +41,7 @@ function PreciosMasivosModal({ products, onClose, onApply }) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm text-gray-600">Precio a modificar<CustomSelect value={campo} onChange={setCampo} className="mt-1" options={[{value:"venta",label:"Precio de venta"},{value:"costo",label:"Precio de costo"}]}/></label>
           <label className="text-sm text-gray-600">Productos<CustomSelect value={categoria} onChange={setCategoria} className="mt-1" options={categorias}/></label>
-          <label className="text-sm text-gray-600">Tipo de cambio<CustomSelect value={modo} onChange={setModo} className="mt-1" options={[{value:"porcentaje",label:"Por porcentaje"},{value:"monto",label:"Por monto fijo"}]}/></label>
+          <label className="text-sm text-gray-600">Forma de ajuste<CustomSelect value={modo} onChange={setModo} className="mt-1" options={[{value:"porcentaje",label:"Por porcentaje"},{value:"monto",label:"Por monto fijo"}]}/></label>
           <label className="text-sm text-gray-600">{modo === "porcentaje" ? "Porcentaje (puede ser negativo)" : "Monto (puede ser negativo)"}<NumberInput value={valor} onChange={(e) => setValor(e.target.value)} className="mt-1 w-full" placeholder={modo === "porcentaje" ? "Ej: 10" : "Ej: 500"}/></label>
         </div>
         <div className="mt-5 rounded-lg bg-gray-50 p-3"><p className="mb-2 text-xs font-semibold text-gray-500">VISTA PREVIA · {seleccionados.length} PRODUCTO(S)</p>{preview.length === 0 ? <p className="text-sm text-gray-400">Ingresá un valor para ver los cambios.</p> : preview.map((p) => <div key={p.id} className="flex flex-col gap-0.5 py-1 text-sm sm:flex-row sm:justify-between sm:gap-3"><span className="min-w-0 truncate">{p.nombre}</span><span className="shrink-0">{money(p[campo])} → <b>{money(p.nuevo)}</b></span></div>)}{seleccionados.length > 5 && <p className="mt-1 text-xs text-gray-400">y {seleccionados.length - 5} producto(s) más...</p>}</div>
@@ -374,7 +374,7 @@ export function ProductModal({ initial, onClose, onSave, proveedores = [], puede
               {isEdit && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-sm text-gray-700">Familia</label><input value={form.familia || ""} onChange={set("familia")} placeholder="Ej: Coca-Cola" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"/></div><div><label className="mb-1 block text-sm text-gray-700">Variante</label><input value={form.variante || ""} onChange={set("variante")} placeholder="Ej: 1,25 L" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"/></div></div>}
               <div data-tour="product-details">
                 <label className="text-sm text-gray-700 block mb-1">Proveedor habitual</label>
-                <CustomSelect value={form.proveedorId || ""} onChange={(value) => setForm((current) => ({ ...current, proveedorId: value ? Number(value) : null }))} options={[{value:"",label:"Sin proveedor asociado"}, ...proveedores.map((proveedor) => ({value:proveedor.id,label:proveedor.nombre}))]}/>
+                <CustomSelect value={form.proveedorId || ""} onChange={(value) => setForm((current) => ({ ...current, proveedorId: value ? Number(value) : null }))} options={[{value:"",label:"Sin proveedor asignado"}, ...proveedores.map((proveedor) => ({value:proveedor.id,label:proveedor.nombre}))]}/>
               </div>
               <div data-tour="product-details">
                 <label className="text-sm text-gray-700 block mb-1">Fecha de vencimiento</label>
@@ -457,7 +457,7 @@ function HistorialProductoModal({ producto, onClose }) {
   const iconos = {
     creacion: <Plus size={13} className="text-gray-500" />,
     edicion: <Pencil size={13} className="text-blue-600" />,
-    reposicion: <PackageCheck size={13} className="text-green-600" />,
+    reposicion: <PackagePlus size={13} className="text-green-600" />,
     venta: <ShoppingCart size={13} className="text-orange-600" />,
     eliminacion: <Trash2 size={13} className="text-red-600" />,
   };

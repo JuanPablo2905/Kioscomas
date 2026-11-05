@@ -127,11 +127,45 @@ export async function loginCloud(apiUrl, username, password, deviceId) {
     const detail = await response.json().catch(() => ({}));
     const error = new Error(detail.error || `No se pudo iniciar sesión en la nube (${response.status}).`);
     error.status = response.status;
+    error.code = detail.code || "";
+    error.email = detail.email || "";
     throw error;
   }
   const session = await response.json();
   save({ ...session, apiUrl });
   return session;
+}
+
+export async function verifyCloudEmail(apiUrl, verifyToken) {
+  await waitForCloudReady(apiUrl);
+  const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/verify-email`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: verifyToken }),
+  }, CLOUD_AUTH_TIMEOUT_MS);
+  const detail = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(detail.error || "No se pudo confirmar el correo.");
+    error.status = response.status;
+    throw error;
+  }
+  return detail;
+}
+
+export async function resendCloudEmailVerification(apiUrl, email) {
+  await waitForCloudReady(apiUrl);
+  const response = await cloudRequest(`${apiUrl.replace(/\/$/, "")}/v1/auth/verify-email/resend`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  }, CLOUD_AUTH_TIMEOUT_MS);
+  const detail = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(detail.error || "No se pudo reenviar la confirmación en este momento.");
+    error.status = response.status;
+    throw error;
+  }
+  return detail;
 }
 
 // Cuentas recordadas por PIN: la credencial de dispositivo nunca es la

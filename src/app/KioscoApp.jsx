@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { repository } from "../cloud/repository";
 import { loadCloudConfig } from "../cloud/config";
-import { cloudFetch, cloudSession, ensureLocalCloudSession, loginCloud, loginCloudWithDeviceCredential, logoutCloud, pairCloudDevice, registerCloudAccount, registerDeviceCredential, requestCloudPasswordReset, resetCloudPassword } from "../cloud/cloudAuth";
+import { cloudFetch, cloudSession, ensureLocalCloudSession, loginCloud, loginCloudWithDeviceCredential, logoutCloud, pairCloudDevice, registerCloudAccount, registerDeviceCredential, requestCloudPasswordReset, resendCloudEmailVerification, resetCloudPassword, verifyCloudEmail } from "../cloud/cloudAuth";
 import { dismissRememberPrompt, listRememberedAccounts, rememberAccountShortcut, shouldOfferToRemember } from "../security/deviceVault";
 import { RememberedAccountsPicker } from "../features/autenticacion/RememberedAccountsPicker";
 import { RememberDevicePrompt } from "../features/autenticacion/RememberDevicePrompt";
@@ -15,6 +15,7 @@ import { reportPlatformIssue } from "../features/notificaciones/notificationServ
 import { ActivationView } from "../features/autenticacion/ActivationView";
 import { LoginView } from "../features/autenticacion/LoginView";
 import { PasswordResetView } from "../features/autenticacion/PasswordResetView";
+import { EmailVerificationView } from "../features/autenticacion/EmailVerificationView";
 import { SettingsModal, applyPreferences, DEFAULT_PREFERENCES, migrateBrandPreferences } from "../shared/SettingsModal";
 import { useInteractionFeedback } from "../shared/useInteractionFeedback";
 import { useMobileKeyboardViewport } from "../shared/useMobileKeyboardViewport";
@@ -276,6 +277,8 @@ export default function KioscoApp() {
   const [rememberPrompt, setRememberPrompt] = useState(null);
   const [useAnotherAccount, setUseAnotherAccount] = useState(false);
   const [passwordResetToken, setPasswordResetToken] = useState(() => PUBLIC_DEMO_MODE ? "" : (new URLSearchParams(window.location.search).get("reset_token") || ""));
+  const [emailVerifyToken, setEmailVerifyToken] = useState(() => PUBLIC_DEMO_MODE ? "" : (new URLSearchParams(window.location.search).get("verify_email_token") || ""));
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState("");
   const [notasAdmin, setNotasAdmin] = useState([]);
   const [authSecurity, setAuthSecurity] = useState({});
   const [sessionExpiresAt, setSessionExpiresAt] = useState(null);
@@ -828,7 +831,7 @@ export default function KioscoApp() {
     setSettingsOpen(true);
   };
 
-  const makeSetter = (key) => (updater) => {
+  const makeSetter = (key) => (updater, { groupId } = {}) => {
     if (tutorialOpen) {
       setTutorialData((previous) => {
         const current = previous || createTutorialDataset(storedData);
@@ -849,11 +852,11 @@ export default function KioscoApp() {
       const nextVal = enrichEntityHistory(key, cur[key], rawNext, auditActor(identidad));
       if (!hasMeaningfulChange(cur[key], nextVal)) return prev;
       const auditar = !["cart"].includes(key);
-      const evento = createAuditEvent({ key, previousValue: cur[key], nextValue: nextVal, identity: identidad, tenantId: currentUserId, view, deviceId: loadCloudConfig().deviceId });
+      const evento = createAuditEvent({ key, previousValue: cur[key], nextValue: nextVal, identity: identidad, tenantId: currentUserId, view, deviceId: loadCloudConfig().deviceId, groupId });
       return { ...prev, [currentUserId]: { ...cur, tenantId: String(currentUserId), [key]: nextVal, auditoria: auditar ? appendCoalescedAudit(cur.auditoria || [], evento) : (cur.auditoria || []) } };
     });
   };
-  const appendAudit = ({ key, previousValue, nextValue, detail, section = view }) => {
+  const appendAudit = ({ key, previousValue, nextValue, detail, section = view, groupId }) => {
     if (tutorialOpen || !hasMeaningfulChange(previousValue, nextValue)) return;
     setDatos((previous) => {
       const current = previous[currentUserId];
@@ -867,6 +870,7 @@ export default function KioscoApp() {
         view: section,
         deviceId: loadCloudConfig().deviceId,
         detail,
+        groupId,
       });
       return { ...previous, [currentUserId]: { ...current, auditoria: [...(current.auditoria || []), event] } };
     });
@@ -1058,14 +1062,15 @@ export default function KioscoApp() {
           ? { reintegro: { estado: "completado", fecha: mercadoPagoRefund.refundedAt || fecha.toISOString(), medios: [{ metodo: "Mercado Pago", monto: mercadoPagoRefund.amount }], referencia: mercadoPagoRefund.providerOrderId } }
           : {}),
     }, motivo.trim(), responsable, fecha.toISOString());
-    setTickets((previous = []) => previous.map((item) => item.id === ticket.id ? ticketRevertido : item));
-    setProducts((previous = []) => restaurarStock(previous, ticket));
+    const grupoAccion = crearIdOperacion("anulacion");
+    setTickets((previous = []) => previous.map((item) => item.id === ticket.id ? ticketRevertido : item), { groupId: grupoAccion });
+    setProducts((previous = []) => restaurarStock(previous, ticket), { groupId: grupoAccion });
     if (ticket.medio === "Cuenta corriente" && ticket.clienteId) {
       setClientes((previous = []) => previous.map((cliente) => cliente.id === ticket.clienteId ? {
         ...cliente,
         saldo: Number(cliente.saldo || 0) - Number(ticket.total || 0),
         movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-anulacion"), tipo: "anulacion", monto: Number(ticket.total || 0), nota: `Anulación ticket #${numeroTicket(ticket)}: ${motivo.trim()}`, fecha: fecha.toLocaleString("es-AR") }],
-      } : cliente));
+      } : cliente), { groupId: grupoAccion });
     }
     const cashAmount = efectivoDeTicket(ticket);
     if (cashAmount > 0) {
@@ -1073,7 +1078,7 @@ export default function KioscoApp() {
         ...previous,
         saldo: Number(previous.saldo || 0) - cashAmount,
         movimientos: [...(previous.movimientos || []), { id: crearIdOperacion("caja-anulacion"), tipo: "retiro", monto: cashAmount, nota: `Devolución ticket #${numeroTicket(ticket)}`, fecha: fecha.toLocaleString("es-AR") }],
-      }));
+      }), { groupId: grupoAccion });
     }
     setGlobalScanResult((current) => current?.ticket?.id === ticket.id ? { ...current, ticket: ticketRevertido } : current);
     setVoidTicketPrompt({ ticket: null, reason: "" });
@@ -1147,7 +1152,13 @@ export default function KioscoApp() {
     if (!cloudConfig.enabled || !cloudConfig.apiUrl || !navigator.onLine) {
       throw new Error("Necesitás conexión a internet para entrar con una cuenta recordada.");
     }
-    const remoteSession = await loginCloudWithDeviceCredential(cloudConfig.apiUrl, rememberedEntry.username, cloudConfig.deviceId, deviceCredential);
+    let remoteSession;
+    try {
+      remoteSession = await loginCloudWithDeviceCredential(cloudConfig.apiUrl, rememberedEntry.username, cloudConfig.deviceId, deviceCredential);
+    } catch (error) {
+      if (isDeviceRevokedError(error)) { setActivationDeviceId(cloudConfig.deviceId); setActivationStatus("revoked"); }
+      throw error;
+    }
     const remoteAccount = await prepareCloudAccount(remoteSession.account);
     if (!remoteAccount) throw new Error("La cuenta ya no está disponible en este dispositivo.");
     saveCloudAccountLocally(remoteAccount);
@@ -1198,10 +1209,17 @@ export default function KioscoApp() {
   // cuentas va a pedir la contraseña real de todas formas para estas.
   const handlePasswordShortcutLogin = (entry, password) => handleLogin({ usuario: entry.username, password });
 
+  // El servidor devuelve este mensaje exacto cuando el superadmin (o el dueño
+  // del negocio) desactivó este dispositivo puntual. En vez de un error de
+  // formulario más, se muestra la misma pantalla de activación pero avisando
+  // que fue desactivado, sin pedir ninguna clave.
+  const isDeviceRevokedError = (error) => String(error?.message || "") === "Este dispositivo fue desactivado.";
+
   const handleLogin = async ({ usuario, password }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "");
     setLoginNotice("");
+    setPendingVerificationEmail("");
     const guard = loginGuard(authSecurity, normalizedUser);
     if (guard.blocked) { setLoginError(`Acceso bloqueado temporalmente. Probá nuevamente en ${Math.ceil(guard.remainingMs / 60000)} minuto(s).`); return; }
     const cuentaCandidate = cuentas.find((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase());
@@ -1220,6 +1238,8 @@ export default function KioscoApp() {
           }
           cloudReady = true;
         } catch (error) {
+          if (isDeviceRevokedError(error)) { setActivationDeviceId(cloudConfig.deviceId); setActivationStatus("revoked"); return; }
+          if (error?.code === "email_not_verified") { setPendingVerificationEmail(error.email || ""); setLoginError(error.message); return; }
           if ([401, 403].includes(Number(error?.status))) {
             setLoginError(error?.message || "La nube ya no autoriza estas credenciales.");
             return;
@@ -1279,6 +1299,7 @@ export default function KioscoApp() {
             saveCloudAccountLocally(remoteAccount);
             cloudReady = true;
           } catch (error) {
+            if (isDeviceRevokedError(error)) { setActivationDeviceId(cloudConfig.deviceId); setActivationStatus("revoked"); return; }
             if ([401, 403].includes(Number(error?.status))) {
               setLoginError(error?.message || "La nube ya no autoriza estas credenciales.");
               return;
@@ -1354,6 +1375,8 @@ export default function KioscoApp() {
         offerRememberDeviceIfEligible(normalizedUser, { ...identity, nombreNegocio: remoteAccount.nombreNegocio });
         return;
       } catch (error) {
+        if (isDeviceRevokedError(error)) { setActivationDeviceId(cloudConfig.deviceId); setActivationStatus("revoked"); return; }
+        if (error?.code === "email_not_verified") { setPendingVerificationEmail(error.email || ""); setLoginError(error.message); return; }
         setAuthSecurity((previous) => registerLoginFailure(previous, normalizedUser));
         setLoginError(error?.message || "Usuario o contraseña incorrectos.");
         return;
@@ -1386,7 +1409,7 @@ export default function KioscoApp() {
     }
   };
 
-  const handleRegister = async ({ nombre, email, usuario, password, nombreNegocio, modoNegocio = "solo", activationCode = "", referralCode = "", termsAccepted = false, termsVersion = "" }) => {
+  const handleRegister = async ({ nombre, email, usuario, password, nombreNegocio, modoNegocio = "solo", referralCode = "", termsAccepted = false, termsVersion = "" }) => {
     const normalizedUser = String(usuario || "").trim();
     const normalizedPassword = String(password || "");
     if (cuentas.some((c) => String(c.usuario || "").trim().toLowerCase() === normalizedUser.toLowerCase())) {
@@ -1403,14 +1426,6 @@ export default function KioscoApp() {
       return;
     }
     try {
-      const receipt = loadInstallationReceipt();
-      const deviceActivated = receipt?.activated && receipt.deviceId === cloudConfig.deviceId;
-      if (!deviceActivated) {
-        if (String(activationCode).replace(/[^A-Z0-9]/gi, "").length < 12) {
-          throw new Error("Ingresá la clave que te dio el administrador para crear un negocio nuevo.");
-        }
-        await redeemInstallationCode(cloudConfig.apiUrl, activationCode, cloudConfig.deviceId, import.meta.env.VITE_APP_VERSION || "web");
-      }
       const result = await registerCloudAccount(cloudConfig.apiUrl, {
         deviceId: cloudConfig.deviceId,
         name: nombre,
@@ -1427,12 +1442,9 @@ export default function KioscoApp() {
       if (!account) throw new Error("La nube no devolvió la cuenta creada.");
       saveCloudAccountLocally(account);
       setLoginError("");
-      setLoginNotice("Solicitud enviada. La cuenta quedó pendiente; vas a poder entrar con este usuario y contraseña cuando el administrador la habilite.");
+      setLoginNotice(`Cuenta creada. Te mandamos un mail a ${email} para confirmarla. Apenas la confirmes, entrás directo con 30 días de prueba sin cargo.`);
       return { ok: true };
     } catch (error) {
-      if (error?.status === 403 && /dispositivo.*autoriza/i.test(String(error?.message || ""))) {
-        clearInstallationReceipt();
-      }
       setLoginNotice("");
       setLoginError(error?.message || "No se pudo enviar la solicitud de cuenta.");
       return { ok: false };
@@ -1541,12 +1553,42 @@ export default function KioscoApp() {
     setLoginNotice(completed ? "Contraseña actualizada. Iniciá sesión con tu contraseña nueva." : "");
   };
 
+  const handleCloudEmailVerify = async () => {
+    const cloudConfig = loadCloudConfig();
+    if (!cloudConfig.enabled || !cloudConfig.apiUrl) throw new Error("La aplicación no tiene configurada la dirección de la nube.");
+    if (!navigator.onLine) throw new Error("Necesitás Internet para confirmar el correo.");
+    return verifyCloudEmail(cloudConfig.apiUrl, emailVerifyToken);
+  };
+
+  const handleResendEmailVerification = async () => {
+    const cloudConfig = loadCloudConfig();
+    if (!cloudConfig.enabled || !cloudConfig.apiUrl || !pendingVerificationEmail) return;
+    try {
+      await resendCloudEmailVerification(cloudConfig.apiUrl, pendingVerificationEmail);
+      setLoginNotice("Si la cuenta todavía no está confirmada, te reenviamos el enlace. Revisá tu casilla (y spam).");
+    } catch (error) {
+      setLoginError(error?.message || "No se pudo reenviar la confirmación.");
+    }
+  };
+
+  const closeEmailVerification = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("verify_email_token");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    setEmailVerifyToken("");
+    setLoginError("");
+  };
+
   if (passwordResetToken) {
     return <PasswordResetView onSubmit={handleCloudPasswordReset} onDone={closePasswordReset}/>;
   }
 
-  if (activationStatus === "required") {
-    return <ActivationView deviceId={activationDeviceId} onActivate={handleInstallationActivation} onAdminActivate={handleAdministratorActivation} cloudWarmupState={cloudWarmupState} onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}/>;
+  if (emailVerifyToken) {
+    return <EmailVerificationView onVerify={handleCloudEmailVerify} onDone={closeEmailVerification}/>;
+  }
+
+  if (activationStatus === "required" || activationStatus === "revoked") {
+    return <ActivationView revoked={activationStatus === "revoked"} deviceId={activationDeviceId} onActivate={handleInstallationActivation} onAdminActivate={handleAdministratorActivation} cloudWarmupState={cloudWarmupState} onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}/>;
   }
 
   if (cargando) {
@@ -1561,7 +1603,6 @@ export default function KioscoApp() {
 
   if (!currentUserId) {
     const cloudConfig = loadCloudConfig();
-    const installationReceipt = loadInstallationReceipt();
     if (!useAnotherAccount && cloudConfig.enabled && cloudConfig.apiUrl && listRememberedAccounts(cloudConfig.apiUrl).length > 0) {
       return (
         <RememberedAccountsPicker
@@ -1584,9 +1625,10 @@ export default function KioscoApp() {
         notice={loginNotice}
         onReset={handleReset}
         showDemoAccounts={PUBLIC_DEMO_MODE}
-        requiresRegistrationCode={!PUBLIC_DEMO_MODE && !(installationReceipt?.activated && installationReceipt.deviceId === cloudConfig.deviceId)}
         cloudWarmupState={cloudWarmupState}
         onRetryCloud={() => warmCloud({ force: true }).catch(() => {})}
+        pendingVerificationEmail={pendingVerificationEmail}
+        onResendEmailVerification={handleResendEmailVerification}
       />
     );
   }
@@ -1761,7 +1803,8 @@ export default function KioscoApp() {
             !["Efectivo", "Cuenta corriente", ...(mercadoPagoRefund ? ["Mercado Pago"] : [])].includes(pago?.metodo)
             && Number(pago?.monto || 0) > 0
           ));
-          setProducts((prev) => restaurarStock(prev, ticket));
+          const grupoAccion = crearIdOperacion("devolucion");
+          setProducts((prev) => restaurarStock(prev, ticket), { groupId: grupoAccion });
           setTickets((prev) => prev.map((item) => item.id === ticket.id ? {
             ...marcarTicketDevuelto(item, motivo, responsable, fecha.toISOString()),
             providerPayment: mercadoPagoRefund ? { ...item.providerPayment, status: "refunded", providerStatus: mercadoPagoRefund.providerStatus, refundedAt: mercadoPagoRefund.refundedAt } : item.providerPayment,
@@ -1770,16 +1813,16 @@ export default function KioscoApp() {
               : mercadoPagoRefund
                 ? { reintegro: { estado: "completado", fecha: mercadoPagoRefund.refundedAt || fecha.toISOString(), medios: [{ metodo: "Mercado Pago", monto: mercadoPagoRefund.amount }], referencia: mercadoPagoRefund.providerOrderId } }
                 : {}),
-          } : item));
+          } : item), { groupId: grupoAccion });
           if (ticket.medio === "Cuenta corriente" && ticket.clienteId) {
             setClientes((prev) => prev.map((cliente) => String(cliente.id) === String(ticket.clienteId) ? {
               ...cliente,
               saldo: Math.round((Number(cliente.saldo || 0) - Number(ticket.total || 0)) * 100) / 100,
               movimientos: [...(cliente.movimientos || []), { id: crearIdOperacion("cliente-devolucion"), tipo: "devolucion", monto: Number(ticket.total || 0), nota: `Devolución ticket #${numero}`, fecha: fecha.toLocaleString("es-AR"), ticketId: ticket.id }],
-            } : cliente));
+            } : cliente), { groupId: grupoAccion });
           }
           const efectivoDevuelto = efectivoDeTicket(ticket);
-          if (efectivoDevuelto > 0) setCaja((prev) => ({ ...prev, saldo: Number(prev.saldo || 0) - efectivoDevuelto, movimientos: [...(prev.movimientos || []), { id: crearIdOperacion("caja-devolucion"), tipo: "egreso", monto: efectivoDevuelto, nota: `Devolución ticket #${numero}`, fecha: fecha.toLocaleString("es-AR"), ticketId: ticket.id }] }));
+          if (efectivoDevuelto > 0) setCaja((prev) => ({ ...prev, saldo: Number(prev.saldo || 0) - efectivoDevuelto, movimientos: [...(prev.movimientos || []), { id: crearIdOperacion("caja-devolucion"), tipo: "egreso", monto: efectivoDevuelto, nota: `Devolución ticket #${numero}`, fecha: fecha.toLocaleString("es-AR"), ticketId: ticket.id }] }), { groupId: grupoAccion });
         } }} />;
       case "administracion":
         return (
