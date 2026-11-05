@@ -3,6 +3,10 @@ export const CLOUD_CONFIG_KEY = "kiosco_cloud_config";
 export const normalizeCloudApiUrl = (value) => String(value || "").trim().replace(/\/+$/, "");
 export const isLocalCloudApiUrl = (value) => /^(http:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+):8787|https:\/\/[a-z0-9.-]+\.ts\.net:8443)\/?$/i.test(normalizeCloudApiUrl(value));
 
+// API servida temporalmente desde una PC por túnel; los navegadores que la guardaron deben volver al servidor publicado.
+const retiredCloudApiUrls = new Set(["https://api.kioscomas.ar"]);
+const isRetiredCloudApiUrl = (value) => retiredCloudApiUrls.has(normalizeCloudApiUrl(value));
+
 const publishedApiUrl = normalizeCloudApiUrl(import.meta.env?.VITE_PUBLIC_API_URL || "");
 const autoConnectPublishedCloud = import.meta.env?.VITE_CLOUD_AUTO_CONNECT === "true";
 
@@ -25,7 +29,7 @@ export function resolveCloudConfig({ saved = {}, localUrl = "", publicApiUrl = p
   // atrapada en la URL local que guardaron las versiones de desarrollo. La
   // edición de desarrollo no define publicApiUrl, por lo que sigue pudiendo
   // utilizar el servidor local con normalidad.
-  const migrateLegacyLocal = Boolean(normalizedPublicUrl && autoConnect && savedIsLocal);
+  const migrateLegacyLocal = Boolean(normalizedPublicUrl && autoConnect && (savedIsLocal || isRetiredCloudApiUrl(savedApiUrl)));
   let apiUrl = savedApiUrl;
 
   if (normalizedPublicUrl && autoConnect && (!savedApiUrl || migrateLegacyLocal)) apiUrl = normalizedPublicUrl;
@@ -63,7 +67,7 @@ export function saveCloudConfig(config) {
   const forcePublishedCloud = Boolean(
     publishedApiUrl
     && autoConnectPublishedCloud
-    && (!requestedApiUrl || isLocalCloudApiUrl(requestedApiUrl)),
+    && (!requestedApiUrl || isLocalCloudApiUrl(requestedApiUrl) || isRetiredCloudApiUrl(requestedApiUrl)),
   );
   const apiUrl = forcePublishedCloud ? publishedApiUrl : requestedApiUrl;
   const saved = {

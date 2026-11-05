@@ -55,6 +55,23 @@ assert.equal(staleExplicitLocal.apiUrl, remoteUrl, "a published build must repla
 assert.equal(staleExplicitLocal.serverMode, "remote");
 assert.equal(staleExplicitLocal.migratedFromLocal, true);
 
+const retiredTunnelApi = resolveCloudConfig({
+  saved: { apiUrl: "https://api.kioscomas.ar", enabled: true, deviceId: "browser-1" },
+  localUrl: "",
+  publicApiUrl: remoteUrl,
+  autoConnect: true,
+});
+assert.equal(retiredTunnelApi.apiUrl, remoteUrl, "a browser that saved the retired tunnel API must return to Render");
+assert.equal(retiredTunnelApi.deviceId, "browser-1", "the migration must keep the device identity");
+
+const customRemoteStillRespected = resolveCloudConfig({
+  saved: { apiUrl: "https://otro-servidor.example.com", enabled: true },
+  localUrl: "",
+  publicApiUrl: remoteUrl,
+  autoConnect: true,
+});
+assert.equal(customRemoteStillRespected.apiUrl, "https://otro-servidor.example.com", "only the retired address is migrated, other saved servers stay");
+
 const developmentLocal = resolveCloudConfig({
   saved: { apiUrl: localUrl, enabled: true, serverMode: "local" },
   localUrl,
