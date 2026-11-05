@@ -302,11 +302,11 @@ Cada decisión distingue lo acordado de lo que todavía está abierto. Si una ne
 
 ## D-033 — Sin clave de activación para dispositivos nuevos
 
-**Decisión:** la app real ya no pide una clave de instalación para usar un dispositivo nuevo. El servidor corre con `KIOSCO_REQUIRE_DEVICE_ACTIVATION=0` y el cliente se compila con `VITE_REQUIRE_DEVICE_ACTIVATION=false`.
+**Decisión:** la app real ya no pide una clave de instalación para usar un dispositivo nuevo. El cliente se compila con `VITE_REQUIRE_DEVICE_ACTIVATION=false` y, desde la 0.2.35, el servidor no exige clave para un dispositivo nuevo por sí mismo (la variable `KIOSCO_REQUIRE_DEVICE_ACTIVATION` ya no se lee; `render.yaml` la deja en `0` por claridad).
 
 **Por qué:** pedir una clave emitida a mano frena la prueba de un comercio nuevo. Se prioriza que pueda entrar y probar solo.
 
-**Qué sigue protegido:** la sesión sigue atada a negocio, usuario y dispositivo, el servidor valida todo en cada petición, y el administrador puede bloquear dispositivos y cuentas. El código de activación (`/v1/activation/redeem`, claves del panel) sigue existiendo y se puede volver a exigir cambiando esas dos variables.
+**Qué sigue protegido:** la sesión sigue atada a negocio, usuario y dispositivo, el servidor valida todo en cada petición, y el administrador puede bloquear dispositivos y cuentas. El código de activación (`/v1/activation/redeem`, claves del panel) sigue existiendo y para volver a exigirla hay que reintroducir esa comprobación en el servidor y en el cliente.
 
 **Qué se pierde:** el control manual de quién empieza a usar la app y el límite práctico de dispositivos por plan (2 incluidos, extra $5.000). Hoy ningún otro mecanismo cuenta dispositivos por negocio.
 
