@@ -15,7 +15,24 @@ const check = async (label, url, validate) => {
   } finally { clearTimeout(timer); }
 };
 
+const warmupMs = Math.max(timeoutMs, Number(process.env.KIOSCO_MONITOR_WARMUP_MS || 90000));
+
+// El plan gratuito de Render duerme la API tras 15 minutos sin uso: el primer pedido tarda en despertarla.
+const warmUp = async () => {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), warmupMs);
+  try {
+    const response = await fetch(`${apiUrl}/v1/ready`, { signal: controller.signal, headers: { "user-agent": "KioscoPlus-Production-Monitor/1.0" } });
+    await response.text();
+    console.log(`Despertar API · ${Date.now() - startedAt} ms`);
+  } catch (error) {
+    console.log(`La API no respondió al despertarla (${error?.name === "AbortError" ? `superó ${warmupMs} ms` : error.message}); se comprueba igual.`);
+  } finally { clearTimeout(timer); }
+};
+
 const failures = [];
+await warmUp();
 for (const [label, url, validate] of [
   ["API /v1/health", `${apiUrl}/v1/health`, (text) => {
     const detail = JSON.parse(text);

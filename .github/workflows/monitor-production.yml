@@ -11,7 +11,7 @@ permissions:
 jobs:
   health:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - name: Descargar el proyecto
         uses: actions/checkout@v4
